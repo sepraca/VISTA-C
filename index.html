@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>3D Monte Carlo Cloud Radiative Transfer Simulator (v4.0)</title>
+<div class="version-tag">v4.0</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: white;
+    overflow: hidden;
+  }
+
+  #ui {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    width: 418px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    backdrop-filter: blur(8px);
+      max-height: calc(100vh - 24px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
+      -webkit-overflow-scrolling: touch;
+  }
+
+  h1 {
+    font-size: 19px;
+    margin: 0 0 6px;
+  }
+
+  .subtitle {
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.35;
+    margin-bottom: 12px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 96px;
+    gap: 8px 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  input, select {
+    width: 96px;
+  }
+
+  select#bottomPanelMode,
+  select#bdfColorScale {
+    width: 104px;
+  }
+
+  input[type="checkbox"] {
+    width: auto;
+    transform: scale(1.15);
+  }
+
+  input[type="range"] {
+    width: 70px;
+  }
+
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    width: 104px;
+  }
+
+  .slider-value {
+    color: #e2e8f0;
+    font-size: 12px;
+    min-width: 34px;
+    text-align: right;
+  }
+
+  button {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 9px;
+    background: #2563eb;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #1d4ed8;
+  }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+  }
+
+  #stats {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #e2e8f0;
+    white-space: pre-line;
+  }
+
+  #exportButtons {
+    position: absolute;
+    left: 485px;
+    top: 14px;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  #exportButtons button {
+    background: rgba(37, 99, 235, 0.92);
+    border: 1px solid rgba(191, 219, 254, 0.55);
+    padding: 7px 10px;
+    font-size: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  }
+
+  #exportButtons button:hover {
+    background: rgba(29, 78, 216, 0.98);
+  }
+
+  #legend {
+    position: absolute;
+    right: 18px;
+    top: 16px;
+    z-index: 10;
+    background: rgba(71, 85, 105, 0.88);
+    border: 1px solid rgba(203, 213, 225, 0.55);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    backdrop-filter: blur(8px);
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 18px;
+    row-gap: 4px;
+    max-width: 640px;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    margin-right: 7px;
+    vertical-align: middle;
+    border-radius: 4px;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 7px;
+    vertical-align: middle;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(255,255,255,0.45);
+  }
+
+  .square {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 7px;
+    vertical-align: middle;
+    box-shadow: 0 0 5px rgba(255,255,255,0.35);
+  }
+
+  #note {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 10;
+    text-align: center;
+    color: #cbd5e1;
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  #muPanel {
+    position: absolute;
+    left: calc(460px + (100vw - 460px) / 2);
+    transform: translateX(-50%);
+    bottom: 34px;
+    z-index: 10;
+    width: 700px;
+    background: rgba(71, 85, 105, 0.88);
+    border: 1px solid rgba(203, 213, 225, 0.55);
+    border-radius: 12px;
+    padding: 10px 12px 12px;
+    backdrop-filter: blur(8px);
+    color: white;
+  }
+
+  #muPanelTitle {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #f8fafc;
+  }
+
+  #muCanvas {
+    width: 100%;
+    height: 245px;
+    display: block;
+  }
+
+  #limitWarning {
+    position: absolute;
+    left: 12px;
+    bottom: 42px;
+    z-index: 30;
+    max-width: 420px;
+    background: rgba(251, 191, 36, 0.95);
+    color: #111827;
+    border: 1px solid rgba(254, 240, 138, 0.95);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 650;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.30);
+    display: none;
+  }
+
+  #errorBox {
+    display: none;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(127, 29, 29, 0.94);
+    border: 1px solid #fecaca;
+    color: white;
+    z-index: 20;
+    max-width: 720px;
+    padding: 18px;
+    border-radius: 12px;
+    line-height: 1.45;
+  }
+
+  #ui::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  #ui::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 10px;
+  }
+
+  #ui::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.65);
+    border-radius: 10px;
+  }
+
+  #ui::-webkit-scrollbar-thumb:hover {
+    background: rgba(203, 213, 225, 0.78);
+  }
+
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>3D Monte Carlo Cloud RT Simulator <span style="font-size:12px;color:#cbd5e1">(v3.2)</span></h1>
+  <div class="subtitle">
+    Full 3-D Henyey–Greenstein photon scattering in a plane-parallel cloud slab with optional Lambertian surface reflection.
+    Now with same-side top/bottom footprint histograms, glowing photon-head animation, fading tails, scattering flashes, and 2-D reflected/transmitted footprint heatmaps.
+  </div>
+
+  <div class="controls">
+    <label>Photons</label>
+    <input id="photonCount" type="number" value="400" min="1" max="100000" onblur="UI.getPhotonCount()">
+
+    <label>Cloud optical thickness τ</label>
+    <input id="tauCloud" type="number" value="10" min="0.1" max="100" step="0.1" onblur="UI.getTauCloud(); RunControl.resetScene()">
+
+    <label>Horizontal extent (optical path)</label>
+    <input id="hExtent" type="number" value="40" min="2" max="200" step="1" onblur="UI.getHorizontalExtent(); RunControl.resetScene()">
+
+    <label>Incident zenith Θ₀</label>
+    <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad()">
+
+    <label>HG asymmetry g</label>
+    <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
+
+    <label>Single-scattering albedo ω₀</label>
+    <input id="omega0" type="number" value="1.00" min="0" max="1" step="0.01" onblur="UI.getOmega0()">
+
+    <label>Surface albedo A<sub>s</sub></label>
+    <input id="surfaceAlbedo" type="number" value="0.00" min="0" max="1" step="0.01" onblur="UI.getSurfaceAlbedo(); Scene.buildCloudBox()">
+
+    <label>Cloud β<sub>ext</sub> (km⁻¹)</label>
+    <input id="cloudBetaExt" type="number" value="10.0" min="0.001" max="1000" step="0.1" onblur="UI.getCloudBetaExt(); Scene.buildCloudBox()">
+
+    <label>Cloud-base to surface (km)</label>
+    <input id="surfaceDistanceKm" type="number" value="0.50" min="0" max="20" step="0.05" onblur="UI.getSurfaceDistanceKm(); Scene.buildCloudBox()">
+
+    <label>Max paths drawn</label>
+    <input id="maxPaths" type="number" value="250" min="0" max="1000" step="25" onblur="UI.getMaxPaths()">
+
+    <label>Endpoint caps shown</label>
+    <div class="slider-wrap">
+      <span id="endpointCapValue" class="slider-value">6000</span>
+      <input id="endpointCap" type="range" value="6000" min="0" max="20000" step="500" oninput="RunControl.refreshEndpointDisplay()">
+    </div>
+
+    <label>Fade older endpoints</label>
+    <input id="fadeEndpoints" type="checkbox" checked onchange="RunControl.refreshEndpointDisplay()">
+
+    
+    <label>Bottom panel</label>
+    <select id="bottomPanelMode" onchange="BottomPanel.drawBottomPanel()">
+      <option value="mu" selected>μ histograms</option>
+      <option value="bdf">BDF plots</option>
+      <option value="path">Path lengths</option>
+      <option value="hidden">hidden</option>
+    </select>
+
+    <label>BDF color scale</label>
+    <select id="bdfColorScale" onchange="BottomPanel.drawBottomPanel()">
+      <option value="linear" selected>linear 0–1</option>
+      <option value="log">log 0.01–1</option>
+    </select>
+
+    <label>Avg near-nadir BDF</label>
+    <input id="avgNadirBdf" type="checkbox" checked onchange="BottomPanel.drawBottomPanel()">
+
+    <label>Footprint grid</label>
+    <input id="footprintGrid" type="number" value="28" min="8" max="60" step="2" onblur="UI.getFootprintGrid(); BottomPanel.drawBottomPanel()">
+
+    <label>Animate paths</label>
+    <input id="animatePaths" type="checkbox">
+
+    <label>Animation speed</label>
+    <input id="animSpeed" type="number" value="1.0" min="0.1" max="10" step="0.1" onblur="UI.getAnimSpeed()">
+
+    <label>Tail length</label>
+    <input id="tailLength" type="number" value="18" min="2" max="80" step="1" onblur="UI.getTailLength()">
+
+    <label>Scatter flashes</label>
+    <input id="scatterFlashes" type="checkbox" checked title="Show bright flashes at scattering events">
+  </div>
+
+  <div class="button-row">
+    <button onclick="RunControl.runOne()">Launch One</button>
+    <button onclick="RunControl.runEnsemble()">Launch Ensemble</button>
+    <button onclick="RunControl.togglePause()" id="pauseBtn">Pause</button>
+    <button onclick="RunControl.stepPhoton()" id="stepBtn">Step</button>
+    <button onclick="RunControl.resetScene()">Reset</button>
+    <button onclick="Scene.resetCamera()">Reset View</button>
+  </div>
+
+  <div id="stats">Loading 3-D renderer...</div>
+</div>
+
+<div id="exportButtons">
+  <button onclick="Export.download3DView()">Download 3D View PNG</button>
+  <button onclick="Export.downloadBottomPanel()">Download Bottom Panel PNG</button>
+</div>
+
+<div id="legend">
+  <div><span class="swatch" style="background:#60a5fa"></span>Reflected photon paths</div>
+  <div><span class="swatch" style="background:#86efac"></span>Transmitted photon paths</div>
+  <div><span class="swatch" style="background:#94a3b8"></span>Absorbed photon paths</div>
+  <div><span class="dot" style="background:#f7ee0a"></span>top reflected endpoints</div>
+  <div><span class="dot" style="background:#22c55e"></span>bottom transmitted endpoints</div>
+  <div><span class="dot" style="background:#111827"></span>absorption locations</div>
+  <div><span class="dot" style="background:#f97316"></span>side boundary escape</div>
+  <div><span class="square" style="background:#60a5fa"></span>reflected 2-D top footprint</div>
+  <div><span class="square" style="background:#86efac"></span>transmitted 2-D bottom footprint</div>
+  <div><span class="swatch" style="background:#fff700;height:8px"></span>glowing photon head / active trail</div>
+  <div><span style="color:#fef08a">✦</span> scattering-event flash</div>
+  <div><span style="color:#f7d4bc">●</span> last scatter marker while paused</div>
+  <div><span class="dot" style="background:#a855f7"></span>surface reflected events</div>
+  <div><span class="dot" style="background:#7c2d12"></span>surface absorbed events</div>
+</div>
+
+<div id="muPanel">
+  <div id="muPanelTitle">Exit-angle panel</div>
+  <canvas id="muCanvas" width="700" height="245"></canvas>
+</div>
+
+<div id="note">
+  Drag to rotate • Scroll to zoom • Shift-drag to pan • Free path: s = −ln(ξ), mean optical path = 1 • HG phase function uses g = &lt;cosΘs&gt;
+</div>
+
+<div id="limitWarning"></div>
+<div id="errorBox"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>3D Monte Carlo Cloud Radiative Transfer Simulator (v4.0)</title>
+<div class="version-tag">v4.0</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: white;
+    overflow: hidden;
+  }
+
+  #ui {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    width: 418px;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    backdrop-filter: blur(8px);
+      max-height: calc(100vh - 24px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
+      -webkit-overflow-scrolling: touch;
+  }
+
+  h1 {
+    font-size: 19px;
+    margin: 0 0 6px;
+  }
+
+  .subtitle {
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.35;
+    margin-bottom: 12px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 96px;
+    gap: 8px 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  input, select {
+    width: 96px;
+  }
+
+  select#bottomPanelMode,
+  select#bdfColorScale {
+    width: 104px;
+  }
+
+  input[type="checkbox"] {
+    width: auto;
+    transform: scale(1.15);
+  }
+
+  input[type="range"] {
+    width: 70px;
+  }
+
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    width: 104px;
+  }
+
+  .slider-value {
+    color: #e2e8f0;
+    font-size: 12px;
+    min-width: 34px;
+    text-align: right;
+  }
+
+  button {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 9px;
+    background: #2563eb;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #1d4ed8;
+  }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+  }
+
+  #stats {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #e2e8f0;
+    white-space: pre-line;
+  }
+
+  #exportButtons {
+    position: absolute;
+    left: 485px;
+    top: 14px;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  #exportButtons button {
+    background: rgba(37, 99, 235, 0.92);
+    border: 1px solid rgba(191, 219, 254, 0.55);
+    padding: 7px 10px;
+    font-size: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  }
+
+  #exportButtons button:hover {
+    background: rgba(29, 78, 216, 0.98);
+  }
+
+  #legend {
+    position: absolute;
+    right: 18px;
+    top: 16px;
+    z-index: 10;
+    background: rgba(71, 85, 105, 0.88);
+    border: 1px solid rgba(203, 213, 225, 0.55);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    backdrop-filter: blur(8px);
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 18px;
+    row-gap: 4px;
+    max-width: 640px;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    margin-right: 7px;
+    vertical-align: middle;
+    border-radius: 4px;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 7px;
+    vertical-align: middle;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(255,255,255,0.45);
+  }
+
+  .square {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 7px;
+    vertical-align: middle;
+    box-shadow: 0 0 5px rgba(255,255,255,0.35);
+  }
+
+  #note {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 10;
+    text-align: center;
+    color: #cbd5e1;
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  #muPanel {
+    position: absolute;
+    left: calc(460px + (100vw - 460px) / 2);
+    transform: translateX(-50%);
+    bottom: 34px;
+    z-index: 10;
+    width: 700px;
+    background: rgba(71, 85, 105, 0.88);
+    border: 1px solid rgba(203, 213, 225, 0.55);
+    border-radius: 12px;
+    padding: 10px 12px 12px;
+    backdrop-filter: blur(8px);
+    color: white;
+  }
+
+  #muPanelTitle {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #f8fafc;
+  }
+
+  #muCanvas {
+    width: 100%;
+    height: 245px;
+    display: block;
+  }
+
+  #limitWarning {
+    position: absolute;
+    left: 12px;
+    bottom: 42px;
+    z-index: 30;
+    max-width: 420px;
+    background: rgba(251, 191, 36, 0.95);
+    color: #111827;
+    border: 1px solid rgba(254, 240, 138, 0.95);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 650;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.30);
+    display: none;
+  }
+
+  #errorBox {
+    display: none;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(127, 29, 29, 0.94);
+    border: 1px solid #fecaca;
+    color: white;
+    z-index: 20;
+    max-width: 720px;
+    padding: 18px;
+    border-radius: 12px;
+    line-height: 1.45;
+  }
+
+  #ui::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  #ui::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 10px;
+  }
+
+  #ui::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.65);
+    border-radius: 10px;
+  }
+
+  #ui::-webkit-scrollbar-thumb:hover {
+    background: rgba(203, 213, 225, 0.78);
+  }
+
+</style>
+</head>
+
+<body>
+<div id="ui">
+  <h1>3D Monte Carlo Cloud RT Simulator <span style="font-size:12px;color:#cbd5e1">(v3.2)</span></h1>
+  <div class="subtitle">
+    Full 3-D Henyey–Greenstein photon scattering in a plane-parallel cloud slab with optional Lambertian surface reflection.
+    Now with same-side top/bottom footprint histograms, glowing photon-head animation, fading tails, scattering flashes, and 2-D reflected/transmitted footprint heatmaps.
+  </div>
+
+  <div class="controls">
+    <label>Photons</label>
+    <input id="photonCount" type="number" value="400" min="1" max="100000" onblur="UI.getPhotonCount()">
+
+    <label>Cloud optical thickness τ</label>
+    <input id="tauCloud" type="number" value="10" min="0.1" max="100" step="0.1" onblur="UI.getTauCloud(); RunControl.resetScene()">
+
+    <label>Horizontal extent (optical path)</label>
+    <input id="hExtent" type="number" value="40" min="2" max="200" step="1" onblur="UI.getHorizontalExtent(); RunControl.resetScene()">
+
+    <label>Incident zenith Θ₀</label>
+    <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad()">
+
+    <label>HG asymmetry g</label>
+    <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
+
+    <label>Single-scattering albedo ω₀</label>
+    <input id="omega0" type="number" value="1.00" min="0" max="1" step="0.01" onblur="UI.getOmega0()">
+
+    <label>Surface albedo A<sub>s</sub></label>
+    <input id="surfaceAlbedo" type="number" value="0.00" min="0" max="1" step="0.01" onblur="UI.getSurfaceAlbedo(); Scene.buildCloudBox()">
+
+    <label>Cloud β<sub>ext</sub> (km⁻¹)</label>
+    <input id="cloudBetaExt" type="number" value="10.0" min="0.001" max="1000" step="0.1" onblur="UI.getCloudBetaExt(); Scene.buildCloudBox()">
+
+    <label>Cloud-base to surface (km)</label>
+    <input id="surfaceDistanceKm" type="number" value="0.50" min="0" max="20" step="0.05" onblur="UI.getSurfaceDistanceKm(); Scene.buildCloudBox()">
+
+    <label>Max paths drawn</label>
+    <input id="maxPaths" type="number" value="250" min="0" max="1000" step="25" onblur="UI.getMaxPaths()">
+
+    <label>Endpoint caps shown</label>
+    <div class="slider-wrap">
+      <span id="endpointCapValue" class="slider-value">6000</span>
+      <input id="endpointCap" type="range" value="6000" min="0" max="20000" step="500" oninput="RunControl.refreshEndpointDisplay()">
+    </div>
+
+    <label>Fade older endpoints</label>
+    <input id="fadeEndpoints" type="checkbox" checked onchange="RunControl.refreshEndpointDisplay()">
+
+    
+    <label>Bottom panel</label>
+    <select id="bottomPanelMode" onchange="BottomPanel.drawBottomPanel()">
+      <option value="mu" selected>μ histograms</option>
+      <option value="bdf">BDF plots</option>
+      <option value="path">Path lengths</option>
+      <option value="hidden">hidden</option>
+    </select>
+
+    <label>BDF color scale</label>
+    <select id="bdfColorScale" onchange="BottomPanel.drawBottomPanel()">
+      <option value="linear" selected>linear 0–1</option>
+      <option value="log">log 0.01–1</option>
+    </select>
+
+    <label>Avg near-nadir BDF</label>
+    <input id="avgNadirBdf" type="checkbox" checked onchange="BottomPanel.drawBottomPanel()">
+
+    <label>Footprint grid</label>
+    <input id="footprintGrid" type="number" value="28" min="8" max="60" step="2" onblur="UI.getFootprintGrid(); BottomPanel.drawBottomPanel()">
+
+    <label>Animate paths</label>
+    <input id="animatePaths" type="checkbox">
+
+    <label>Animation speed</label>
+    <input id="animSpeed" type="number" value="1.0" min="0.1" max="10" step="0.1" onblur="UI.getAnimSpeed()">
+
+    <label>Tail length</label>
+    <input id="tailLength" type="number" value="18" min="2" max="80" step="1" onblur="UI.getTailLength()">
+
+    <label>Scatter flashes</label>
+    <input id="scatterFlashes" type="checkbox" checked title="Show bright flashes at scattering events">
+  </div>
+
+  <div class="button-row">
+    <button onclick="RunControl.runOne()">Launch One</button>
+    <button onclick="RunControl.runEnsemble()">Launch Ensemble</button>
+    <button onclick="RunControl.togglePause()" id="pauseBtn">Pause</button>
+    <button onclick="RunControl.stepPhoton()" id="stepBtn">Step</button>
+    <button onclick="RunControl.resetScene()">Reset</button>
+    <button onclick="Scene.resetCamera()">Reset View</button>
+  </div>
+
+  <div id="stats">Loading 3-D renderer...</div>
+</div>
+
+<div id="exportButtons">
+  <button onclick="Export.download3DView()">Download 3D View PNG</button>
+  <button onclick="Export.downloadBottomPanel()">Download Bottom Panel PNG</button>
+</div>
+
+<div id="legend">
+  <div><span class="swatch" style="background:#60a5fa"></span>Reflected photon paths</div>
+  <div><span class="swatch" style="background:#86efac"></span>Transmitted photon paths</div>
+  <div><span class="swatch" style="background:#94a3b8"></span>Absorbed photon paths</div>
+  <div><span class="dot" style="background:#f7ee0a"></span>top reflected endpoints</div>
+  <div><span class="dot" style="background:#22c55e"></span>bottom transmitted endpoints</div>
+  <div><span class="dot" style="background:#111827"></span>absorption locations</div>
+  <div><span class="dot" style="background:#f97316"></span>side boundary escape</div>
+  <div><span class="square" style="background:#60a5fa"></span>reflected 2-D top footprint</div>
+  <div><span class="square" style="background:#86efac"></span>transmitted 2-D bottom footprint</div>
+  <div><span class="swatch" style="background:#fff700;height:8px"></span>glowing photon head / active trail</div>
+  <div><span style="color:#fef08a">✦</span> scattering-event flash</div>
+  <div><span style="color:#f7d4bc">●</span> last scatter marker while paused</div>
+  <div><span class="dot" style="background:#a855f7"></span>surface reflected events</div>
+  <div><span class="dot" style="background:#7c2d12"></span>surface absorbed events</div>
+</div>
+
+<div id="muPanel">
+  <div id="muPanelTitle">Exit-angle panel</div>
+  <canvas id="muCanvas" width="700" height="245"></canvas>
+</div>
+
+<div id="note">
+  Drag to rotate • Scroll to zoom • Shift-drag to pan • Free path: s = −ln(ξ), mean optical path = 1 • HG phase function uses g = &lt;cosΘs&gt;
+</div>
+
+<div id="limitWarning"></div>
+<div id="errorBox"></div>
+
+<script type="module">
+try {
+  const THREE = await import("three");
+  const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+
+  let scene, camera, renderer, controls;
+  let cloudGroup, pathGroup, endpointGroup, histogramGroup;
+
+  // ============================================================
+  // SimStats — simulation statistics accumulation
+  //   Single source of truth for all photon outcome counters and
+  //   directional/endpoint arrays. Call SimStats.record() once per
+  //   photon and SimStats.registerCloudBaseTransmission() at each
+  //   cloud-base crossing. Call SimStats.reset() to clear everything.
+  //
+  //   NOTE (Option B): Physics.simulatePhoton still writes directly
+  //   to SimStats.netTransmittedDirs and SimStats.surfaceInteractionEvents
+  //   mid-loop. These will be replaced by a structured event return.
+  //
+  // ============================================================
+  const SimStats = {
+
+    // Photon outcome counters
+    stats: {
+      launched: 0,
+      reflected: 0,
+      transmitted: 0,       // cloud-base boundary crossings
+      finalTransmitted: 0,  // terminal bottom exit when A_s = 0
+      absorbed: 0,
+      side: 0,
+      surfaceReflected: 0,
+      surfaceAbsorbed: 0,
+      totalScatterings: 0,
+      totalPath: 0
+    },
+
+    // Per-photon accumulation arrays
+    reflectedEndpoints: [],
+    reflectedMu: [],
+    transmittedMu: [],
+    reflectedDirs: [],
+    transmittedDirs: [],            // write-only in current code; reserved for future use
+    netTransmittedDirs: [],
+    reflectedPathLengths: [],
+    transmittedPathLengths: [],
+    transmittedEndpoints: [],
+    surfaceInteractionEvents: [],
+
+    // Reset all counters and arrays to their initial empty state.
+    reset() {
+      const s = SimStats.stats;
+      s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
+      s.absorbed = 0; s.side = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
+      s.totalScatterings = 0; s.totalPath = 0;
+      SimStats.reflectedEndpoints = [];    SimStats.transmittedEndpoints = [];
+      SimStats.surfaceInteractionEvents = [];
+      SimStats.reflectedMu = [];           SimStats.transmittedMu = [];
+      SimStats.reflectedDirs = [];         SimStats.transmittedDirs = [];
+      SimStats.netTransmittedDirs = [];
+      SimStats.reflectedPathLengths = [];  SimStats.transmittedPathLengths = [];
+    },
+
+    // Record a cloud-base boundary crossing (independent of surface outcome).
+    // Called once each time a photon crosses τ_cloud downward, even if it
+    // is subsequently reflected back up by the surface.
+    registerCloudBaseTransmission(result) {
+      SimStats.stats.transmitted++;
+      SimStats.transmittedEndpoints.push({x: result.xExit, y: result.yExit});
+      SimStats.transmittedMu.push(Math.abs(result.dirZ ?? 0));
+      SimStats.transmittedDirs.push({
+        x: result.dirX ?? 0,
+        y: result.dirY ?? 0,
+        z: result.dirZ ?? 0
+      });
+      // Downward cloud-base crossings contribute weight +1 to the net BDF.
+      SimStats.netTransmittedDirs.push({
+        x: result.dirX ?? 0,
+        y: result.dirY ?? 0,
+        z: result.dirZ ?? 0,
+        weight: 1
+      });
+      SimStats.transmittedPathLengths.push(result.totalPath ?? 0);
+    },
+
+    // Record the final outcome of a completed photon trajectory.
+    record(result) {
+      SimStats.stats.launched++;
+      SimStats.stats.totalScatterings += result.scatterings;
+      SimStats.stats.totalPath += result.totalPath;
+      SimStats.stats.surfaceReflected += result.surfaceBounceCount ?? 0;
+
+      if (result.status === "reflected") {
+        SimStats.stats.reflected++;
+        SimStats.reflectedEndpoints.push({x: result.xExit, y: result.yExit});
+        SimStats.reflectedMu.push(Math.abs(result.dirZ ?? 0));
+        SimStats.reflectedDirs.push({x: result.dirX ?? 0, y: result.dirY ?? 0, z: result.dirZ ?? 0});
+        SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
+      } else if (result.status === "transmitted") {
+        SimStats.stats.finalTransmitted++;
+      } else if (result.status === "side_escape") {
+        SimStats.stats.side++;
+      } else if (result.status === "surface_absorbed") {
+        SimStats.stats.surfaceAbsorbed++;
+      } else {
+        SimStats.stats.absorbed++;
+      }
+    },
+
+    // Recompute and render the left-panel stats text and bottom panel.
+    updateDisplay() {
+      BottomPanel.drawBottomPanel();
+
+      const s = SimStats.stats;
+      const launched = Math.max(s.launched, 1);
+
+      // Cloud transmittance: normalized net transmitted energy at the surface.
+      //   T_net = E_down_sfc - E_up_sfc
+      // For A_s = 0 this reduces to the original black-surface transmittance.
+      const EdownSfc = s.transmitted / launched;
+      const EupSfc   = s.surfaceReflected / launched;
+      const Rfinal   = s.reflected / launched;
+      const Tnet     = Math.max(0, EdownSfc - EupSfc);
+      const Acloud   = s.absorbed / launched;
+      const Asurface = s.surfaceAbsorbed / launched;
+      const Sfinal   = s.side / launched;
+
+      const finalSumRTAS = Rfinal + Tnet + Acloud + Sfinal;
+      const meanScat = s.totalScatterings / launched;
+      const meanPath = s.totalPath / launched;
+
+      const activeInfo = activePhotonID
+        ? `Active photon: #${activePhotonID}, step ${activePhotonStep}/${activePhotonTotalSteps}, status=${activePhotonStatus}`
+        : "Active photon: none";
+
+      const endpointCap  = UI.getEndpointCap();
+      const endpointShown = endpointGroup ? endpointGroup.children.length : 0;
+      const bottomMode   = document.getElementById("bottomPanelMode")?.value ?? "mu";
+
+      document.getElementById("stats").textContent =
+`Launched: ${s.launched}
+
+FINAL OUTCOMES
+Top reflected R: ${Rfinal.toFixed(3)} (${s.reflected})
+Net surface transmittance T: ${Tnet.toFixed(3)} (${(s.transmitted - s.surfaceReflected)})
+Cloud absorbed A: ${Acloud.toFixed(3)} (${s.absorbed})
+Side escape S: ${Sfinal.toFixed(3)} (${s.side})
+R + T + A + S: ${finalSumRTAS.toFixed(3)}
+
+SURFACE ENERGY DIAGNOSTICS
+E_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
+E_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
+E_down_sfc - E_up_sfc: ${Tnet.toFixed(3)}
+Surface absorbed A_sfc: ${Asurface.toFixed(3)} (${s.surfaceAbsorbed})
+
+BOUNDARY / MULTI-PASS DIAGNOSTICS
+Cloud-base crossings: ${EdownSfc.toFixed(3)} (${s.transmitted})
+Surface reflections / photon: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
+
+Mean scatterings / photon: ${meanScat.toFixed(2)}
+Mean optical path / photon: ${meanPath.toFixed(2)}
+
+τ: ${UI.getTauCloud().toFixed(2)}
+Horizontal extent: ${UI.getHorizontalExtent().toFixed(1)}
+Θ₀: ${(UI.getTheta0Rad() * 180 / Math.PI).toFixed(1)}°
+g: ${UI.getG().toFixed(2)}
+ω₀: ${UI.getOmega0().toFixed(2)}
+Surface A_s: ${UI.getSurfaceAlbedo().toFixed(2)}
+
+Endpoint caps shown: ${endpointShown}/${endpointCap}
+Fade endpoints: ${UI.getFadeEndpoints() ? "on" : "off"}
+Bottom panel: ${bottomMode}
+Animate: ${UI.getAnimatePaths() ? "on" : "off"}
+Speed: ${UI.getAnimSpeed().toFixed(1)}
+Tail length: ${UI.getTailLength()}
+Scatter flashes: ${UI.getScatterFlashes() ? "on" : "off"}
+
+${activeInfo}`;
+    }
+
+  };
+
+
+  // ============================================================
+  // RNG — Deterministic random number generator
+  //   RNG.rand()        — next uniform sample in [0, 1)
+  //   RNG.randOpen01()  — clamps away from 0 (safe for log-sampling)
+  //   RNG.reset(seed)   — reset to seed (default: DEFAULT_SEED = 42)
+  //   RNG.DEFAULT_SEED  — canonical seed for reproducible MC runs
+  // ============================================================
+  const RNG = (() => {
+    const DEFAULT_SEED = 42;
+
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return function() {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    let _rng = mulberry32(DEFAULT_SEED);
+
+    function reset(seed = DEFAULT_SEED) {
+      _rng = mulberry32(seed);
+    }
+
+    function rand() {
+      return _rng();
+    }
+
+    // Clamp away from zero so -log() never returns Infinity
+    function randOpen01() {
+      return Math.max(1e-12, rand());
+    }
+
+    return { DEFAULT_SEED, reset, rand, randOpen01 };
+  })();
+
+  // ============================================================
+  // Coords — coordinate and unit conversions
+  //   All transforms between simulation space (τ, km),
+  //   world/render space (Three.js units), and geometry helpers.
+  //   Depends on: world (global state), UI.getCloudBetaExt(),
+  //               UI.getSurfaceDistanceKm() (both in UI namespace).
+  // ============================================================
+  const Coords = {
+
+    // Optical depth τ → Three.js world Z position.
+    // Cloud top is at +slabH/2; increasing τ moves downward.
+    tauToZ(tau) {
+      return world.slabH / 2 - tau * world.zScale;
+    },
+
+    // Simulation point {x, y, tau} → Three.js world Vector3.
+    simToWorldPoint(p) {
+      return new THREE.Vector3(p.x, p.y, Coords.tauToZ(p.tau));
+    },
+
+    // Physical distance in km → world Z distance (same scale as tauToZ).
+    // Used for placing geometry in the clear sub-cloud gap.
+
+    // τ position of the Lambertian surface below the cloud.
+    // The clear sub-cloud gap adds β_ext * d_km to the cloud-base τ.
+    getSurfaceTau() {
+      return world.tauCloud + UI.getCloudBetaExt() * UI.getSurfaceDistanceKm();
+    }
+
+  };
+
+  // ============================================================
+  // Physics — Monte Carlo photon transport kernel
+  //   Pure RT physics: free-path sampling, HG phase function,
+  //   Lambertian surface reflection, full photon transport loop.
+  //   Inputs come via a params object (no DOM reads inside).
+  //   Depends on: RNG, Coords (for surface tau calc).
+  //
+  //   NOTE (Option B): simulatePhoton currently writes directly
+  //   to netTransmittedDirs, SimStats.surfaceInteractionEvents, and calls
+  //   registerCloudBaseTransmission mid-loop. These will move to
+  //   SimStats in Option B via a structured event return value.
+  // ============================================================
+  const Physics = {
+
+    // Normalize a direction vector {x, y, z} to unit length.
+    normalize(v) {
+      const mag = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+      if (mag <= 0) return {x: 0, y: 0, z: 1};
+      return {x: v.x/mag, y: v.y/mag, z: v.z/mag};
+    },
+
+    // Sample exponentially-distributed free path: s = -ln(ξ), <s> = 1.
+    sampleFreePath() {
+      return -Math.log(RNG.randOpen01());
+    },
+
+    // Sample cosine of scattering angle from Henyey-Greenstein phase function.
+    sampleHGCosTheta(g) {
+      const xi = RNG.rand();
+      if (Math.abs(g) < 1e-6) return 2 * xi - 1;
+      const term = (1 - g * g) / (1 - g + 2 * g * xi);
+      return (1 + g * g - term * term) / (2 * g);
+    },
+
+    // Rotate direction vector dir into a new direction sampled from the
+    // HG phase function with asymmetry parameter g.
+    scatterDirectionHG(dir, g) {
+      const muS = Physics.sampleHGCosTheta(g);
+      const sinS = Math.sqrt(Math.max(0, 1 - muS * muS));
+      const phi = 2 * Math.PI * RNG.rand();
+      const cosPhi = Math.cos(phi);
+      const sinPhi = Math.sin(phi);
+
+      const w = Physics.normalize(dir);
+
+      let helper;
+      if (Math.abs(w.z) < 0.9) {
+        helper = {x: 0, y: 0, z: 1};
+      } else {
+        helper = {x: 1, y: 0, z: 0};
+      }
+
+      let u = {
+        x: helper.y * w.z - helper.z * w.y,
+        y: helper.z * w.x - helper.x * w.z,
+        z: helper.x * w.y - helper.y * w.x
+      };
+      u = Physics.normalize(u);
+
+      const v = {
+        x: w.y * u.z - w.z * u.y,
+        y: w.z * u.x - w.x * u.z,
+        z: w.x * u.y - w.y * u.x
+      };
+
+      return Physics.normalize({
+        x: muS * w.x + sinS * (cosPhi * u.x + sinPhi * v.x),
+        y: muS * w.y + sinS * (cosPhi * u.y + sinPhi * v.y),
+        z: muS * w.z + sinS * (cosPhi * u.z + sinPhi * v.z)
+      });
+    },
+
+    // Sample a cosine-weighted upward direction for Lambertian surface reflection.
+    // Upward means dir.z < 0 in cloud optical-depth coordinates.
+    sampleLambertianUpwardDirection() {
+      const mu = Math.sqrt(RNG.rand()); // p(mu) = 2μ (cosine-weighted)
+      const sinTheta = Math.sqrt(Math.max(0, 1 - mu * mu));
+      const phi = 2 * Math.PI * RNG.rand();
+      return {
+        x: sinTheta * Math.cos(phi),
+        y: sinTheta * Math.sin(phi),
+        z: -mu
+      };
+    },
+
+    // Full Monte Carlo photon transport through the cloud slab.
+    // params: { tauCloud, slabW, slabD, theta0, g, omega0,
+    //           surfaceAlbedo, betaExt, surfaceDistanceKm }
+    // storePath: whether to accumulate the path array for visualization.
+    simulatePhoton(params, storePath = true) {
+      const { tauCloud, slabW, slabD, theta0, g, omega0,
+              surfaceAlbedo, betaExt, surfaceDistanceKm } = params;
+
+      let x = 0, y = 0, tau = 0;
+      let dir = {
+        x: Math.sin(theta0),
+        y: 0,
+        z: Math.cos(theta0)
+      };
+
+      let path = [{x, y, tau}];
+      let totalPath = 0;
+      let scatterings = 0;
+      let surfaceBounceCount = 0;
+
+      const maxEvents = 25000;
+
+      for (let event = 0; event < maxEvents; event++) {
+        const s = Physics.sampleFreePath();
+
+        const xNew = x + s * dir.x;
+        const yNew = y + s * dir.y;
+        const tauNew = tau + s * dir.z;
+
+        const halfW = slabW / 2;
+        const halfD = slabD / 2;
+
+        // Side boundary escape.
+        if (Math.abs(xNew) > halfW || Math.abs(yNew) > halfD) {
+          let fx = Infinity, fy = Infinity;
+          if (dir.x !== 0) { const boundX = dir.x > 0 ? halfW : -halfW; fx = (boundX - x) / (xNew - x); }
+          if (dir.y !== 0) { const boundY = dir.y > 0 ? halfD : -halfD; fy = (boundY - y) / (yNew - y); }
+          const f = Math.min(fx, fy);
+          const xb = x + f * (xNew - x);
+          const yb = y + f * (yNew - y);
+          const taub = tau + f * (tauNew - tau);
+          totalPath += s * f;
+          if (storePath) path.push({x: xb, y: yb, tau: taub});
+          return {status: "side_escape", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+        }
+
+        // Top boundary escape (reflected).
+        if (tauNew < 0) {
+          const f = (0 - tau) / (tauNew - tau);
+          const xb = x + f * (xNew - x);
+          const yb = y + f * (yNew - y);
+          totalPath += s * f;
+          if (storePath) path.push({x: xb, y: yb, tau: 0});
+          return {status: "reflected", xExit: xb, yExit: yb, tauExit: 0, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+        }
+
+        // Cloud-base crossing.
+        if (tauNew > tauCloud) {
+          const f = (tauCloud - tau) / (tauNew - tau);
+          const xb = x + f * (xNew - x);
+          const yb = y + f * (yNew - y);
+          totalPath += s * f;
+          if (storePath) path.push({x: xb, y: yb, tau: tauCloud});
+
+          SimStats.registerCloudBaseTransmission({xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
+
+          if (surfaceAlbedo > 0) {
+            // Surface tau computed directly from params (avoids Coords dependency).
+            const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
+
+            // Geometric lateral displacement through the clear sub-cloud gap.
+            const muDown = Math.max(dir.z, 1e-9);
+            const horizontalFactorDown = surfaceDistanceKm * betaExt / muDown;
+            const xs = xb + horizontalFactorDown * dir.x;
+            const ys = yb + horizontalFactorDown * dir.y;
+            if (storePath && path.length < 3500) path.push({x: xs, y: ys, tau: tauSurface});
+
+            // Analog Lambertian surface decision.
+            if (RNG.rand() < surfaceAlbedo) {
+              SimStats.surfaceInteractionEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_reflected"});
+              dir = Physics.sampleLambertianUpwardDirection();
+
+              SimStats.netTransmittedDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1});
+              surfaceBounceCount++; // increment before side-escape check so stats.surfaceReflected
+                                    // correctly counts ALL surface reflections, including those
+                                    // followed by a lateral side escape from the cloud.
+
+              const muUp = Math.max(-dir.z, 1e-9);
+              const horizontalFactorUp = surfaceDistanceKm * betaExt / muUp;
+              const xEnter = xs + horizontalFactorUp * dir.x;
+              const yEnter = ys + horizontalFactorUp * dir.y;
+              if (storePath && path.length < 3500) path.push({x: xEnter, y: yEnter, tau: tauCloud});
+
+              if (Math.abs(xEnter) > halfW || Math.abs(yEnter) > halfD) {
+                return {status: "side_escape", xExit: xEnter, yExit: yEnter, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+              }
+
+              x = xEnter; y = yEnter; tau = tauCloud;
+              continue;
+            }
+
+            SimStats.surfaceInteractionEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_absorbed"});
+            return {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+          }
+
+          // A_s = 0: photon terminates at cloud base.
+          return {status: "transmitted", xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+        }
+
+        // Interior scattering event.
+        x = xNew; y = yNew; tau = tauNew;
+        totalPath += s;
+        if (storePath && path.length < 3500) path.push({x, y, tau});
+
+        if (RNG.rand() > omega0) {
+          return {status: "absorbed", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+        }
+
+        dir = Physics.scatterDirectionHG(dir, g);
+        scatterings++;
+      }
+
+      return {status: "terminated", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount};
+    }
+
+  };
+
+  const world = {
+    tauCloud: 10,
+    slabW: 40,
+    slabD: 40,
+    slabH: 10,
+    zScale: 1
+  };
+
+  let nextPhotonId = 1;
+
+  // For very large ensembles, keep all statistics and heatmaps,
+  // but limit individual endpoint spheres so the browser remains responsive.
+  // The cap is user-adjustable from the left control panel.
+  const DEFAULT_ENDPOINT_MARKERS = 6000;
+
+  let isAnimating = false;
+  let isPaused = false;
+  let stepRequested = false;
+  let activePhotonID = null;
+  let activePhotonStep = 0;
+  let activePhotonTotalSteps = 0;
+  let activePhotonStatus = "none";
+  let lastScatterMarker = null;
+
+  // ============================================================
+  // UI — All DOM input readers
+  // Reads slider / checkbox / select values from the HTML panel.
+  // This is the ONLY namespace that touches the DOM for input.
+  // Uses property-function syntax (not method shorthand) so that
+  // replace_all on "getFoo(" cannot accidentally match "getFoo:"
+  // object keys and create double-prefixed names.
+  // Placed here (before RunControl.init()) because RunControl.init() → Scene.updateWorld()
+  // calls UI getters; const declarations are not hoisted.
+  // ============================================================
+  const UI = {
+
+    // Private helper: reads a numeric input, clamps to [min,max],
+    // and shows a warning banner if the value was adjusted.
+    _getClampedInput: function(id, minValue, maxValue, fallback, label, integer=false) {
+      const el = document.getElementById(id);
+      let raw = el ? Number(el.value) : fallback;
+
+      if (Number.isNaN(raw)) {
+        raw = fallback;
+        if (el) el.value = fallback;
+        RunControl.showLimitWarning(`${label}: invalid value; reset to ${fallback}.`);
+      }
+
+      let x = raw;
+
+      if (x < minValue) {
+        x = minValue;
+        if (el) el.value = integer ? Math.round(x) : x;
+        RunControl.showLimitWarning(`${label}: minimum allowed value is ${minValue}.`);
+      } else if (x > maxValue) {
+        x = maxValue;
+        if (el) el.value = integer ? Math.round(x) : x;
+        RunControl.showLimitWarning(`${label}: maximum allowed value is ${maxValue}.`);
+      }
+
+      if (integer) x = Math.round(x);
+      return x;
+    },
+
+    // --- Physics / geometry inputs ---
+    getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 100000, 400, "Photons", true); },
+    getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.1, 100, 10, "Cloud optical thickness τ"); },
+    getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 200, 40, "Horizontal extent"); },
+    getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },
+    getG:                 function() { return UI._getClampedInput("gValue", -0.99, 0.99, 0.85, "HG asymmetry g"); },
+    getOmega0:            function() { return UI._getClampedInput("omega0", 0, 1, 1, "Single-scattering albedo ω₀"); },
+    getSurfaceAlbedo:     function() { return UI._getClampedInput("surfaceAlbedo", 0, 1, 0, "Surface albedo A_s"); },
+    getCloudBetaExt:      function() { return UI._getClampedInput("cloudBetaExt", 0.001, 1000, 10.0, "Cloud extinction β_ext"); },
+    getSurfaceDistanceKm: function() { return UI._getClampedInput("surfaceDistanceKm", 0, 20, 0.5, "Cloud-base to surface distance"); },
+
+    // --- Display / visualization inputs ---
+    getMaxPaths:      function() { return UI._getClampedInput("maxPaths", 0, 1000, 250, "Max paths drawn", true); },
+    getEndpointCap:   function() { return UI._getClampedInput("endpointCap", 0, 20000, DEFAULT_ENDPOINT_MARKERS, "Endpoint caps shown", true); },
+    getFadeEndpoints: function() { const el = document.getElementById("fadeEndpoints"); return el ? el.checked : true; },
+    getFootprintGrid: function() { return UI._getClampedInput("footprintGrid", 8, 60, 28, "Footprint grid", true); },
+
+    // --- Animation inputs ---
+    getAnimatePaths:  function() { return document.getElementById("animatePaths").checked; },
+    getAnimSpeed:     function() { return UI._getClampedInput("animSpeed", 0.1, 10, 1.0, "Animation speed"); },
+    getAnimDelay:     function() {
+      // Higher speed means shorter delay between animation updates.
+      return Math.max(1, Math.round(18 / UI.getAnimSpeed()));
+    },
+    getTailLength:     function() { return UI._getClampedInput("tailLength", 2, 80, 18, "Tail length", true); },
+    getScatterFlashes: function() { return document.getElementById("scatterFlashes").checked; },
+
+    // --- Plot control inputs ---
+    getBdfColorScaleMode: function() { return document.getElementById("bdfColorScale")?.value ?? "linear"; },
+    getAvgNearNadirBdf:   function() { return document.getElementById("avgNadirBdf")?.checked ?? true; },
+
+    // --- Outcome color map ---
+    // Maps a photon exit status string to a Three.js hex color.
+    getOutcomeColor: function(status) {
+      if (status === "reflected")   return 0x60a5fa;
+      if (status === "transmitted") return 0x86efac;
+      if (status === "side_escape") return 0xf97316;
+      return 0x94a3b8;
+    }
+  };
+
+  // ============================================================
+  // Scene — Three.js 3D scene construction and management
+  // Builds cloud geometry, axes, histograms, and visual guides.
+  // All Three.js geometry creation and group management lives here.
+  // Placed before RunControl.init() because RunControl.init() calls Scene.buildCloudBox().
+  // Uses property-function syntax so replace_all on "foo(" safely
+  // skips "foo:" keys and only hits external call sites.
+  // ============================================================
+  const Scene = {
+
+    // Dispose all Three.js objects in a group and empty it.
+    // Prevents GPU memory leaks when geometry is rebuilt.
+    clearGroup: function(group) {
+      while (group.children.length > 0) {
+        const obj = group.children.pop();
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+        group.remove(obj);
+      }
+    },
+
+    // Sync the world object with current UI inputs.
+    // Must be called before Scene.buildCloudBox() and at scene reset.
+    updateWorld: function() {
+      world.tauCloud = UI.getTauCloud();
+      world.slabH = 10;
+      world.zScale = world.slabH / world.tauCloud;
+      const L = UI.getHorizontalExtent();
+      world.slabW = L;
+      world.slabD = L;
+    },
+
+    // Reset camera to the default view position.
+    resetCamera: function() {
+      camera.position.set(-10, -72, 24);
+      camera.up.set(0, 0, 1);
+      controls.target.set(-10, 0, -4);
+      controls.update();
+    },
+
+    // Main scene builder: updates world state, clears cloudGroup, and
+    // assembles cloud slab, surface plane, axes, arrows, and histograms.
+    buildCloudBox: function() {
+      Scene.updateWorld();
+      Scene.clearGroup(cloudGroup);
+
+      const boxGeom = new THREE.BoxGeometry(world.slabW, world.slabD, world.slabH);
+      const boxMat = new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        transparent: true,
+        opacity: 0.18,
+        roughness: 0.8,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+
+      const box = new THREE.Mesh(boxGeom, boxMat);
+      cloudGroup.add(box);
+
+      const edges = new THREE.EdgesGeometry(boxGeom);
+      const edgeMat = new THREE.LineBasicMaterial({color: 0xe0f2fe, transparent: true, opacity: 0.9});
+      cloudGroup.add(new THREE.LineSegments(edges, edgeMat));
+
+      const planeGeom = new THREE.PlaneGeometry(world.slabW, world.slabD);
+
+      const topMat = new THREE.MeshBasicMaterial({
+        color: 0x60a5fa,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const topPlane = new THREE.Mesh(planeGeom, topMat);
+      topPlane.position.z = world.slabH / 2 + 0.004;
+      cloudGroup.add(topPlane);
+
+      const bottomMat = new THREE.MeshBasicMaterial({
+        color: 0x86efac,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const bottomPlane = new THREE.Mesh(planeGeom, bottomMat);
+      bottomPlane.position.z = -world.slabH / 2 - 0.004;
+      cloudGroup.add(bottomPlane);
+
+      // Lambertian surface plane — opacity scales with A_s so a black surface
+      // is subtle while brighter surfaces are visually obvious.
+      const surfaceAlbedo = UI.getSurfaceAlbedo();
+      const surfaceMat = new THREE.MeshBasicMaterial({
+        color: surfaceAlbedo > 0 ? 0xa855f7 : 0x1f2937,
+        transparent: true,
+        opacity: surfaceAlbedo > 0 ? 0.18 + 0.35 * surfaceAlbedo : 0.10,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const surfacePlane = new THREE.Mesh(planeGeom, surfaceMat);
+      surfacePlane.position.z = Coords.tauToZ(Coords.getSurfaceTau());
+      cloudGroup.add(surfacePlane);
+
+      const surfaceEdges = new THREE.EdgesGeometry(planeGeom);
+      const surfaceEdgeMat = new THREE.LineBasicMaterial({
+        color: surfaceAlbedo > 0 ? 0xc084fc : 0x64748b,
+        transparent: true,
+        opacity: surfaceAlbedo > 0 ? 0.9 : 0.45
+      });
+      const surfaceEdge = new THREE.LineSegments(surfaceEdges, surfaceEdgeMat);
+      surfaceEdge.position.z = Coords.tauToZ(Coords.getSurfaceTau()) + 0.005;
+      cloudGroup.add(surfaceEdge);
+
+      // Vertical guide line showing the clear cloud-to-surface gap.
+      const gapGuideMat = new THREE.LineBasicMaterial({
+        color: surfaceAlbedo > 0 ? 0xc084fc : 0x64748b,
+        transparent: true,
+        opacity: surfaceAlbedo > 0 ? 0.55 : 0.28
+      });
+      const guideGeom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(world.slabW / 2 + 1.2, world.slabD / 2 + 1.2, -world.slabH / 2),
+        new THREE.Vector3(world.slabW / 2 + 1.2, world.slabD / 2 + 1.2, Coords.tauToZ(Coords.getSurfaceTau()))
+      ]);
+      cloudGroup.add(new THREE.Line(guideGeom, gapGuideMat));
+
+      if (surfaceAlbedo > 0) {
+        const surfaceNote = Scene.makeTextSprite(
+          "Clear sub-cloud gap: geometric displacement only.\nNo extinction/scattering/absorption in the gap.",
+          {fontSize: 16, padding: 4, scale: 1.1}
+        );
+        surfaceNote.position.set(
+          0,
+          -world.slabD / 2 - 3.0,
+          Coords.tauToZ(Coords.getSurfaceTau()) - 0.9
+        );
+        cloudGroup.add(surfaceNote);
+      }
+
+      Scene.addAxes();
+      Scene.addIncidentArrow();
+      Scene.rebuildHistograms();
+    },
+
+    // Create a canvas-based text sprite for 3D annotation labels.
+    makeTextSprite: function(text, options={}) {
+      const fontSize = options.fontSize ?? 22;
+      const padding = options.padding ?? 6;
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      const lines = text.split("\\n");
+      const maxWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+
+      canvas.width = Math.ceil(maxWidth + 2 * padding);
+      canvas.height = Math.ceil(lines.length * fontSize * 1.35 + 2 * padding);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      ctx.fillStyle = "rgba(248, 250, 252, 0.92)";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+
+      lines.forEach((line, i) => {
+        ctx.fillText(line, canvas.width / 2, padding + i * fontSize * 1.35);
+      });
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false
+      });
+
+      const sprite = new THREE.Sprite(material);
+      const scale = options.scale ?? 2.2;
+      sprite.scale.set(scale * canvas.width / canvas.height, scale, 1);
+      return sprite;
+    },
+
+    // Create a Three.js Line from an array of Vector3 points.
+    makeLine: function(points, color, opacity=1) {
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({color, transparent: opacity < 1, opacity});
+      return new THREE.Line(geom, mat);
+    },
+
+    // Add X, Y, Z axis lines and τ tick marks along the cloud slab edges.
+    addAxes: function() {
+      const zBase = -world.slabH / 2;
+      cloudGroup.add(Scene.makeLine([
+        new THREE.Vector3(-world.slabW/2 - 2, -world.slabD/2 - 1, zBase),
+        new THREE.Vector3(world.slabW/2 + 2, -world.slabD/2 - 1, zBase)
+      ], 0xffffff, 0.8));
+
+      cloudGroup.add(Scene.makeLine([
+        new THREE.Vector3(-world.slabW/2 - 1, -world.slabD/2 - 2, zBase),
+        new THREE.Vector3(-world.slabW/2 - 1, world.slabD/2 + 2, zBase)
+      ], 0xffffff, 0.8));
+
+      cloudGroup.add(Scene.makeLine([
+        new THREE.Vector3(-world.slabW/2 - 1.3, -world.slabD/2 - 1.3, world.slabH/2),
+        new THREE.Vector3(-world.slabW/2 - 1.3, -world.slabD/2 - 1.3, -world.slabH/2)
+      ], 0xffffff, 0.8));
+
+      const nTicks = Math.min(10, Math.ceil(world.tauCloud));
+      for (let i = 0; i <= nTicks; i++) {
+        const tau = world.tauCloud * i / nTicks;
+        const z = Coords.tauToZ(tau);
+        cloudGroup.add(Scene.makeLine([
+          new THREE.Vector3(-world.slabW/2 - 1.7, -world.slabD/2 - 1.3, z),
+          new THREE.Vector3(-world.slabW/2 - 0.9, -world.slabD/2 - 1.3, z)
+        ], 0xffffff, 0.55));
+      }
+    },
+
+    // Add the red incident solar direction arrow above the cloud top.
+    addIncidentArrow: function() {
+      const theta = UI.getTheta0Rad();
+      const start = new THREE.Vector3(-Math.sin(theta) * 3, 0, world.slabH/2 + 4);
+      const end = new THREE.Vector3(0, 0, world.slabH/2 + 0.25);
+      const dir = new THREE.Vector3().subVectors(end, start);
+      const length = dir.length();
+      const arrow = new THREE.ArrowHelper(dir.clone().normalize(), start, length, 0xef4444, 0.7, 0.35);
+      cloudGroup.add(arrow);
+    },
+
+    // Rebuild all 3D histogram geometry (footprints, surface markers).
+    // Called after each run batch and when the scene is rebuilt.
+    rebuildHistograms: function() {
+      Scene.clearGroup(histogramGroup);
+      BottomPanel.drawBottomPanel();
+
+      Scene.addFootprintHeatmap(
+        SimStats.reflectedEndpoints,
+        world.slabH / 2 + 0.035,
+        0x60a5fa,
+        true
+      );
+
+      Scene.addFootprintHeatmap(
+        SimStats.transmittedEndpoints,
+        -world.slabH / 2 - 0.035,
+        0x86efac,
+        false
+      );
+
+      Scene.addSurfaceInteractionMarkers();
+    },
+
+    // Add sphere markers at the surface plane for reflected/absorbed events.
+    addSurfaceInteractionMarkers: function() {
+      if (!SimStats.surfaceInteractionEvents || SimStats.surfaceInteractionEvents.length === 0) return;
+
+      const cap = Math.min(1200, SimStats.surfaceInteractionEvents.length);
+      const start = Math.max(0, SimStats.surfaceInteractionEvents.length - cap);
+
+      for (let i = start; i < SimStats.surfaceInteractionEvents.length; i++) {
+        const ev = SimStats.surfaceInteractionEvents[i];
+        const color = ev.type === "surface_reflected" ? 0xa855f7 : 0x7c2d12;
+        const radius = ev.type === "surface_reflected" ? 0.13 : 0.16;
+
+        const geom = new THREE.SphereGeometry(radius, 10, 10);
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 1.1,
+          transparent: true,
+          opacity: 0.75,
+          roughness: 0.4
+        });
+
+        const s = new THREE.Mesh(geom, mat);
+        s.position.copy(Coords.simToWorldPoint({x: ev.x, y: ev.y, tau: ev.tau}));
+        s.position.z -= 0.18;
+        histogramGroup.add(s);
+      }
+    },
+
+    // Build a footprint heatmap on the cloud top or base plane.
+    addFootprintHeatmap: function(points, zPlane, color, isTop) {
+      const nBins = UI.getFootprintGrid();
+      const counts = Array.from({length: nBins}, () => Array(nBins).fill(0));
+      const halfW = world.slabW / 2;
+      const halfD = world.slabD / 2;
+
+      for (const p of points) {
+        const fx = (p.x + halfW) / world.slabW;
+        const fy = (p.y + halfD) / world.slabD;
+        const ix = Math.floor(fx * nBins);
+        const iy = Math.floor(fy * nBins);
+        if (ix >= 0 && ix < nBins && iy >= 0 && iy < nBins) counts[ix][iy]++;
+      }
+
+      let maxCount = 1;
+      for (let ix = 0; ix < nBins; ix++)
+        for (let iy = 0; iy < nBins; iy++)
+          maxCount = Math.max(maxCount, counts[ix][iy]);
+
+      const cellW = world.slabW / nBins;
+      const cellD = world.slabD / nBins;
+      const maxHeight = 2.8;
+      const baseColor = new THREE.Color(color);
+
+      for (let ix = 0; ix < nBins; ix++) {
+        for (let iy = 0; iy < nBins; iy++) {
+          const c = counts[ix][iy];
+          if (c === 0) continue;
+
+          const frac = c / maxCount;
+          const h = 0.045 + maxHeight * frac;
+
+          const geom = new THREE.BoxGeometry(
+            Math.max(0.02, cellW * 0.92),
+            Math.max(0.02, cellD * 0.92),
+            h
+          );
+          const cellColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.18 + 0.45 * frac);
+          const mat = new THREE.MeshStandardMaterial({
+            color: cellColor,
+            emissive: cellColor,
+            emissiveIntensity: 0.25 + 0.9 * frac,
+            transparent: true,
+            opacity: 0.42 + 0.48 * frac,
+            roughness: 0.45,
+            depthWrite: false
+          });
+
+          const mesh = new THREE.Mesh(geom, mat);
+          const x = -halfW + cellW * (ix + 0.5);
+          const y = -halfD + cellD * (iy + 0.5);
+          const z = isTop ? zPlane + h / 2 : zPlane - h / 2;
+          mesh.position.set(x, y, z);
+          histogramGroup.add(mesh);
+        }
+      }
+
+      // Outline frame so the heatmap domain boundary is visually clear.
+      const zFrame = isTop ? zPlane + 0.01 : zPlane - 0.01;
+      const framePts = [
+        new THREE.Vector3(-halfW, -halfD, zFrame),
+        new THREE.Vector3( halfW, -halfD, zFrame),
+        new THREE.Vector3( halfW,  halfD, zFrame),
+        new THREE.Vector3(-halfW,  halfD, zFrame),
+        new THREE.Vector3(-halfW, -halfD, zFrame)
+      ];
+      const frame = Scene.makeLine(framePts, color, 0.95);
+      histogramGroup.add(frame);
+    },
+
+    // Add a canvas-based text label at a given 3D position in histogramGroup.
+    addTextSprite: function(text, position, color=0xffffff) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 96;
+
+      const ctx2 = canvas.getContext("2d");
+      ctx2.clearRect(0, 0, canvas.width, canvas.height);
+      ctx2.font = "bold 34px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "middle";
+
+      const c = new THREE.Color(color);
+      const r = Math.round(c.r * 255);
+      const g = Math.round(c.g * 255);
+      const b = Math.round(c.b * 255);
+
+      ctx2.fillStyle = `rgb(${r},${g},${b})`;
+      ctx2.shadowColor = "rgba(0,0,0,0.85)";
+      ctx2.shadowBlur = 8;
+      ctx2.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({map: texture, transparent: true, depthTest: false});
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.copy(position);
+      sprite.scale.set(2.8, 1.05, 1);
+      sprite.renderOrder = 1001;
+      histogramGroup.add(sprite);
+    }
+  };
+
+
+  const Photons = {
+    clearLastScatterMarker: function() {
+      if (lastScatterMarker) {
+        pathGroup.remove(lastScatterMarker);
+        if (lastScatterMarker.geometry) lastScatterMarker.geometry.dispose();
+        if (lastScatterMarker.material) lastScatterMarker.material.dispose();
+        lastScatterMarker = null;
+      }
+    },
+
+    setLastScatterMarker: function(position) {
+      Photons.clearLastScatterMarker();
+
+      const color = 0xf97316;
+      const geom = new THREE.SphereGeometry(0.34, 20, 20);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 2.4,
+        roughness: 0.2
+      });
+
+      lastScatterMarker = new THREE.Mesh(geom, mat);
+      lastScatterMarker.position.copy(position);
+      pathGroup.add(lastScatterMarker);
+    },
+
+    addPhotonToScene: function(result, drawPath=true) {
+      if (drawPath && result.path && result.path.length > 1) {
+        Photons.addStaticPath(result);
+      }
+      Photons.addEndpoint(result);
+    },
+
+    addStaticPath: function(result) {
+      const pts = result.path.map(Coords.simToWorldPoint);
+      const geom = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({
+        color: UI.getOutcomeColor(result.status),
+        transparent: true,
+        opacity: 0.48
+      });
+      pathGroup.add(new THREE.Line(geom, mat));
+    },
+
+    makeTubeFromPoints: function(points, color, radius=0.11, opacity=1.0) {
+      if (!points || points.length < 2) return null;
+
+      const curve = new THREE.CatmullRomCurve3(points);
+      const tubularSegments = Math.max(8, Math.min(260, points.length * 3));
+      const geom = new THREE.TubeGeometry(curve, tubularSegments, radius, 10, false);
+
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 1.6,
+        transparent: false,
+        roughness: 0.25,
+        metalness: 0.05
+      });
+
+      return new THREE.Mesh(geom, mat);
+    },
+
+    makePhotonHead: function(color=0xfff700) {
+      const geom = new THREE.SphereGeometry(0.28, 20, 20);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 2.8,
+        roughness: 0.18,
+        metalness: 0.05
+      });
+      return new THREE.Mesh(geom, mat);
+    },
+
+    makeScatterFlash: function(position, color=0xfef08a) {
+      const haloGeom = new THREE.SphereGeometry(0.26, 22, 22);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        depthTest: false
+      });
+
+      const halo = new THREE.Mesh(haloGeom, haloMat);
+      halo.position.copy(position);
+      halo.renderOrder = 999;
+      pathGroup.add(halo);
+
+      const coreGeom = new THREE.SphereGeometry(0.11, 18, 18);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false,
+        depthTest: false
+      });
+
+      const core = new THREE.Mesh(coreGeom, coreMat);
+      core.position.copy(position);
+      core.renderOrder = 1000;
+      pathGroup.add(core);
+
+      let frames = 0;
+      let opacity = 1.0;
+
+      function fade() {
+        frames += 1;
+
+        // longer hold + slower fade
+        if (frames > 22) {
+          opacity *= 0.94;
+        }
+
+        halo.material.opacity = 0.9 * opacity;
+        core.material.opacity = opacity;
+
+        if (opacity > 0.05) {
+          requestAnimationFrame(fade);
+        } else {
+          pathGroup.remove(halo);
+          pathGroup.remove(core);
+          halo.geometry.dispose();
+          halo.material.dispose();
+          core.geometry.dispose();
+          core.material.dispose();
+        }
+      }
+
+      requestAnimationFrame(fade);
+    },
+
+    trimEndpointMarkers: function() {
+      const cap = UI.getEndpointCap();
+
+      while (endpointGroup.children.length > cap) {
+        const obj = endpointGroup.children.shift();
+
+        if (obj) {
+          endpointGroup.remove(obj);
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+            else obj.material.dispose();
+          }
+        }
+      }
+    },
+
+    applyEndpointFade: function() {
+      const fade = UI.getFadeEndpoints();
+      const n = endpointGroup.children.length;
+
+      for (let i = 0; i < n; i++) {
+        const obj = endpointGroup.children[i];
+        if (!obj || !obj.material) continue;
+
+        if (!fade || n <= 1) {
+          obj.material.transparent = true;
+          obj.material.opacity = 1.0;
+          obj.scale.set(1, 1, 1);
+          continue;
+        }
+
+        // Oldest markers are at low index; newest are brightest/largest.
+        const ageFrac = i / (n - 1);
+        const opacity = 0.18 + 0.82 * ageFrac;
+        const scale = 0.65 + 0.35 * ageFrac;
+
+        obj.material.transparent = true;
+        obj.material.opacity = opacity;
+        obj.scale.set(scale, scale, scale);
+      }
+    },
+
+    addEndpoint: function(result) {
+      const cap = UI.getEndpointCap();
+      if (cap <= 0) {
+        return;
+      }
+
+      Photons.trimEndpointMarkers();
+
+      while (endpointGroup.children.length >= cap) {
+        const obj = endpointGroup.children.shift();
+        if (obj) {
+          endpointGroup.remove(obj);
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+            else obj.material.dispose();
+          }
+        }
+      }
+
+      let color, radius;
+
+      if (result.status === "reflected") {
+        color = 0xfacc15;
+        radius = 0.16;
+      } else if (result.status === "transmitted") {
+        color = 0x22c55e;
+        radius = 0.16;
+      } else if (result.status === "side_escape") {
+        color = 0xf97316;
+        radius = 0.14;
+      } else if (result.status === "surface_absorbed") {
+        color = 0x7c2d12;
+        radius = 0.18;
+      } else {
+        color = 0x111827;
+        radius = 0.20;
+      }
+
+      const geom = new THREE.SphereGeometry(radius, 12, 12);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 1.2,
+        transparent: true,
+        opacity: 1.0,
+        roughness: 0.35
+      });
+      const sphere = new THREE.Mesh(geom, mat);
+      sphere.position.copy(Coords.simToWorldPoint({x: result.xExit, y: result.yExit, tau: result.tauExit}));
+      endpointGroup.add(sphere);
+      Photons.applyEndpointFade();
+    },
+
+    addAnimatedPath: function(result) {
+      return new Promise(resolve => {
+        if (!result.path || result.path.length < 2) {
+          Photons.addEndpoint(result);
+          resolve();
+          return;
+        }
+
+        const worldPts = result.path.map(Coords.simToWorldPoint);
+        const activeColor = 0xfff700; // bright yellow active photon tracer
+
+        activePhotonID = result.photonId ?? null;
+        activePhotonStep = 0;
+        activePhotonTotalSteps = worldPts.length - 1;
+        activePhotonStatus = result.status;
+        SimStats.updateDisplay();
+
+        let activeTube = null;
+        let photonHead = Photons.makePhotonHead(activeColor);
+        pathGroup.add(photonHead);
+
+        let finalThinLineAdded = false;
+        let i = 1;
+
+        function disposeActiveTube() {
+          if (activeTube) {
+            pathGroup.remove(activeTube);
+            if (activeTube.geometry) activeTube.geometry.dispose();
+            if (activeTube.material) activeTube.material.dispose();
+            activeTube = null;
+          }
+        }
+
+        function replaceActiveTail(points) {
+          disposeActiveTube();
+
+          // Fading-tail approximation: only show the most recent segment of the path.
+          const tailLength = UI.getTailLength();
+          const start = Math.max(0, points.length - tailLength);
+          const tailPts = points.slice(start);
+
+          activeTube = Photons.makeTubeFromPoints(tailPts, activeColor, 0.12, 1.0);
+          if (activeTube) pathGroup.add(activeTube);
+        }
+
+        function finish() {
+          disposeActiveTube();
+          Photons.clearLastScatterMarker();
+
+          if (photonHead) {
+            pathGroup.remove(photonHead);
+            if (photonHead.geometry) photonHead.geometry.dispose();
+            if (photonHead.material) photonHead.material.dispose();
+            photonHead = null;
+          }
+
+          if (!finalThinLineAdded) {
+            Photons.addStaticPath(result);
+            finalThinLineAdded = true;
+          }
+
+          Photons.addEndpoint(result);
+          activePhotonStep = activePhotonTotalSteps;
+          SimStats.updateDisplay();
+          resolve();
+        }
+
+        function scheduleNext() {
+          // If paused, wait until Resume or one Step request.
+          if (isPaused && !stepRequested) {
+            setTimeout(step, 50);
+          } else {
+            setTimeout(step, UI.getAnimDelay());
+          }
+        }
+
+        function step() {
+          if (isPaused && !stepRequested) {
+            setTimeout(step, 50);
+            return;
+          }
+
+          // Consume one requested single-step advance.
+          const steppingOnce = stepRequested;
+          stepRequested = false;
+
+          if (i < worldPts.length) {
+            const currentPts = worldPts.slice(0, i + 1);
+            const currentPos = worldPts[i];
+
+            if (photonHead) {
+              photonHead.position.copy(currentPos);
+            }
+
+            replaceActiveTail(currentPts);
+
+            activePhotonStep = i;
+            SimStats.updateDisplay();
+
+            // Each stored path vertex after the first corresponds to a boundary point
+            // or a scattering/absorption site. Flash interior interaction points.
+            const simPt = result.path[i];
+            const isInterior = simPt.tau > 0 && simPt.tau < world.tauCloud;
+            if (isInterior) {
+              if (UI.getScatterFlashes()) {
+                Photons.makeScatterFlash(currentPos);
+              }
+
+              // Persistent marker is especially useful when paused for discussion.
+              if (isPaused) {
+                Photons.setLastScatterMarker(currentPos);
+              }
+            }
+
+            i++;
+
+            // Stay paused after a single-step advance.
+            if (steppingOnce) {
+              setTimeout(step, 50);
+            } else {
+              scheduleNext();
+            }
+          } else {
+            finish();
+          }
+        }
+
+        step();
+      });
+    }
+  };
+
+
+  // Centralized BDF plot layout — standalone const (used inside BottomPanel methods).
+  const BDF_LAYOUT = {
+    reflectedX:  158,
+    transmittedX: 448,
+    y:           108,
+    radius:       70,
+    colorbarX:   594,
+    colorbarY:    44,
+    colorbarW:    14,
+    colorbarH:   125
+  };
+
+  const BottomPanel = {
+    getHiDpiPanelContext: function(canvas2) {
+      // Draw bottom-panel plots at higher internal resolution while preserving
+      // the same on-screen CSS size. This keeps text/labels sharper when zoomed
+      // and gives cleaner downloaded PNGs.
+      const logicalW = 700;
+      const logicalH = 245;
+      const dpr = Math.max(2, Math.min(4, window.devicePixelRatio || 1));
+
+      const targetW = Math.round(logicalW * dpr);
+      const targetH = Math.round(logicalH * dpr);
+
+      if (canvas2.width !== targetW || canvas2.height !== targetH) {
+        canvas2.width = targetW;
+        canvas2.height = targetH;
+        canvas2.style.width = logicalW + "px";
+        canvas2.style.height = logicalH + "px";
+      }
+
+      const ctx2 = canvas2.getContext("2d");
+      ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx2.imageSmoothingEnabled = true;
+      ctx2.imageSmoothingQuality = "high";
+
+      return { ctx2, w: logicalW, h: logicalH, dpr };
+    },
+
+    drawBottomPanel: function() {
+      const panel = document.getElementById("muPanel");
+      const title = document.getElementById("muPanelTitle");
+      const canvas2 = document.getElementById("muCanvas");
+      if (!panel || !canvas2 || !title) return;
+
+      const mode = document.getElementById("bottomPanelMode")?.value ?? "mu";
+
+      if (mode === "hidden") {
+        panel.style.display = "none";
+        return;
+      }
+
+      panel.style.display = "block";
+
+      if (mode === "bdf") {
+        title.textContent = "BDF polar plots: exit zenith angle Θ and azimuth φ";
+        BottomPanel.drawBdfOverlay();
+      } else if (mode === "path") {
+        title.textContent = "Optical path-length distributions";
+        BottomPanel.drawPathOverlay();
+      } else {
+        title.textContent = "Exit-angle histograms: |μ| = |cos(Θ)|";
+        BottomPanel.drawMuOverlay();
+      }
+    },
+
+    drawMuOverlay: function() {
+      const canvas2 = document.getElementById("muCanvas");
+      if (!canvas2) return;
+
+      const { ctx2, w, h } = BottomPanel.getHiDpiPanelContext(canvas2);
+
+      ctx2.clearRect(0, 0, w, h);
+
+      ctx2.fillStyle = "#000000";
+      ctx2.fillRect(0, 0, w, h);
+
+      const nNetTrans = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.reflectedMu, 70, 42, 260, 118, "#60a5fa", "Reflected");
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.transmittedMu, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
+
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "12px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.fillText("μ = 1: perpendicular / vertical exit", 200, 224);
+      ctx2.fillText("μ = 0: near-horizontal exit", 520, 224);
+    },
+
+    drawMuOverlayHistogram: function(ctx2, muArray, x0, y0, width, height, color, title, nOverride=null) {
+      const nBins = 20;
+      const counts = new Array(nBins).fill(0);
+
+      for (const m of muArray) {
+        const mu = Math.max(0, Math.min(1, m));
+        // Reverse x-axis: μ=1 on left, μ=0 on right.
+        const i = Math.min(nBins - 1, Math.floor((1 - mu) * nBins));
+        counts[i]++;
+      }
+
+      const maxC = Math.max(...counts, 1);
+      const binW = width / nBins;
+
+      // Frame
+      ctx2.strokeStyle = "rgba(226,232,240,0.85)";
+      ctx2.lineWidth = 1.2;
+      ctx2.strokeRect(x0, y0, width, height);
+
+      // Bars
+      ctx2.fillStyle = color;
+      for (let i = 0; i < nBins; i++) {
+        const bh = counts[i] / maxC * (height - 8);
+        ctx2.fillRect(x0 + i * binW + 1, y0 + height - bh, Math.max(1, binW - 2), bh);
+      }
+
+      // Title and sample count
+      ctx2.fillStyle = "#f8fafc";
+      ctx2.font = "bold 13px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.fillText(`${title}  N=${nOverride !== null ? nOverride : muArray.length}`, x0 + width / 2, y0 - 12);
+
+      // Axis tick marks and labels: μ = 1, 0.5, 0.
+      const yAxis = y0 + height;
+      const xMu1 = x0;
+      const xMu05 = x0 + width / 2;
+      const xMu0 = x0 + width;
+
+      ctx2.strokeStyle = "rgba(226,232,240,0.65)";
+      ctx2.lineWidth = 1.0;
+      ctx2.beginPath();
+      for (const xTick of [xMu1, xMu05, xMu0]) {
+        ctx2.moveTo(xTick, yAxis);
+        ctx2.lineTo(xTick, yAxis + 6);
+      }
+      ctx2.stroke();
+
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "12px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.fillText("1", xMu1, yAxis + 18);
+      ctx2.fillText("0.5", xMu05, yAxis + 18);
+      ctx2.fillText("0", xMu0, yAxis + 18);
+
+      // Lowered axis label to avoid overlap with the 0.5 tick label.
+      ctx2.fillText("μ = |cos(Θ)|", x0 + width / 2, yAxis + 36);
+    },
+
+    getBinNearDirection: function(grid, thetaDegTarget, phiDegTarget) {
+      const thetaBins = grid.thetaBins;
+      const phiBins = grid.phiBins;
+
+      const dThetaDeg = 90 / (thetaBins - 1);
+      const ir = Math.min(thetaBins - 1, Math.max(0, Math.round(thetaDegTarget / dThetaDeg)));
+
+      const dPhiDeg = 360 / phiBins;
+      let phi = phiDegTarget % 360;
+      if (phi < 0) phi += 360;
+      const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhiDeg / 2) % 360) / dPhiDeg));
+
+      return {
+        ir,
+        ip,
+        info: grid.binInfo[ir][ip]
+      };
+    },
+
+    getBinNearMuPhi: function(grid, muTarget, phiDegTarget) {
+      const mu = Math.max(0, Math.min(1, muTarget));
+      const thetaDeg = Math.acos(mu) * 180 / Math.PI;
+      return BottomPanel.getBinNearDirection(grid, thetaDeg, phiDegTarget);
+    },
+
+
+
+    getMaxBdfBin: function(grid) {
+      let best = null;
+
+      for (let ir = 0; ir < grid.thetaBins; ir++) {
+        for (let ip = 0; ip < grid.phiBins; ip++) {
+          const info = grid.binInfo[ir][ip];
+          if (!info) continue;
+          if (!best || info.bdf > best.bdf) best = info;
+        }
+      }
+
+      return best;
+    },
+
+
+    smoothNearNadirAzimuth: function(grid, maxThetaDeg=5.0) {
+      // At very small zenith angles, azimuth is physically ill-conditioned:
+      // many φ bins correspond to almost the same direction. Average across φ
+      // for near-nadir rings to suppress Monte Carlo bin noise.
+      if (!UI.getAvgNearNadirBdf()) return grid;
+
+      for (let ir = 0; ir < grid.thetaBins; ir++) {
+        let rowTheta = null;
+        for (let ip = 0; ip < grid.phiBins; ip++) {
+          const info = grid.binInfo[ir][ip];
+          if (info) {
+            rowTheta = info.thetaDeg;
+            break;
+          }
+        }
+
+        if (rowTheta === null || rowTheta > maxThetaDeg) continue;
+
+        let sum = 0;
+        for (let ip = 0; ip < grid.phiBins; ip++) sum += grid.bdf[ir][ip];
+        const avg = sum / grid.phiBins;
+
+        for (let ip = 0; ip < grid.phiBins; ip++) {
+          grid.bdf[ir][ip] = avg;
+          if (grid.binInfo[ir][ip]) {
+            grid.binInfo[ir][ip].bdf = avg;
+          }
+        }
+      }
+
+      // Recompute max after smoothing.
+      grid.maxValue = 0;
+      for (let ir = 0; ir < grid.thetaBins; ir++) {
+        for (let ip = 0; ip < grid.phiBins; ip++) {
+          if (grid.bdf[ir][ip] > grid.maxValue) grid.maxValue = grid.bdf[ir][ip];
+        }
+      }
+
+      return grid;
+    },
+
+    mapBdfToColorFraction: function(value, commonMax) {
+      if (value <= 0) return 0;
+
+      // Absolute BDF display:
+      // color scale is true BDF from 0 to 1, with values above 1 clipped.
+      let x = Math.max(0, Math.min(1, value));
+
+      if (UI.getBdfColorScaleMode() !== "log") {
+        return x;
+      }
+
+      // Log display from BDF = 0.01 to 1.
+      const floor = 0.01;
+      const clipped = Math.max(floor, x);
+      return Math.log10(clipped / floor) / Math.log10(1 / floor);
+    },
+
+    drawPathOverlay: function() {
+      const canvas2 = document.getElementById("muCanvas");
+      if (!canvas2) return;
+
+      const { ctx2, w, h } = BottomPanel.getHiDpiPanelContext(canvas2);
+
+      ctx2.clearRect(0, 0, w, h);
+      ctx2.fillStyle = "#000000";
+      ctx2.fillRect(0, 0, w, h);
+
+      function mean(arr) {
+        return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      }
+
+      const meanR = mean(SimStats.reflectedPathLengths);
+      const meanT = mean(SimStats.transmittedPathLengths);
+      const scaleMean = Math.max(meanR, meanT);
+
+      // Use a representative path-length scale rather than the rare-event maximum.
+      // This keeps the bulk of the reflected/transmitted distributions visible.
+      // Long-tail photons are clipped into the last bin.
+      const niceMax = Math.max(
+        10,
+        Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10
+      );
+
+      function drawPathHistogram(data, x0, y0, width, height, color, title, nOverride=null) {
+        const nBins = 24;
+        const counts = new Array(nBins).fill(0);
+
+        for (const vRaw of data) {
+          const v = Math.max(0, vRaw || 0);
+          const idx = Math.min(nBins - 1, Math.floor((v / niceMax) * nBins));
+          counts[idx] += 1; // current analog photons have W = 1
+        }
+
+        const maxC = Math.max(1, ...counts);
+        const binW = width / nBins;
+
+        // Frame
+        ctx2.strokeStyle = "rgba(226,232,240,0.85)";
+        ctx2.lineWidth = 1.2;
+        ctx2.strokeRect(x0, y0, width, height);
+
+        // Bars
+        ctx2.fillStyle = color;
+        for (let i = 0; i < nBins; i++) {
+          const bh = counts[i] / maxC * (height - 8);
+          ctx2.fillRect(x0 + i * binW + 1, y0 + height - bh, Math.max(1, binW - 2), bh);
+        }
+
+        // Title
+        ctx2.fillStyle = "#f8fafc";
+        ctx2.font = "bold 13px system-ui";
+        ctx2.textAlign = "center";
+        ctx2.textBaseline = "alphabetic";
+        ctx2.fillText(`${title}  N=${nOverride !== null ? nOverride : data.length}`, x0 + width / 2, y0 - 12);
+
+        // Axis ticks and labels
+        const yAxis = y0 + height;
+        ctx2.strokeStyle = "rgba(226,232,240,0.65)";
+        ctx2.lineWidth = 1.0;
+        ctx2.beginPath();
+        for (const frac of [0, 0.5, 1]) {
+          const xTick = x0 + frac * width;
+          ctx2.moveTo(xTick, yAxis);
+          ctx2.lineTo(xTick, yAxis + 6);
+        }
+        ctx2.stroke();
+
+        ctx2.fillStyle = "#e2e8f0";
+        ctx2.font = "11px system-ui";
+        ctx2.textAlign = "center";
+        ctx2.fillText("0", x0, yAxis + 18);
+        ctx2.fillText((niceMax / 2).toFixed(0), x0 + width / 2, yAxis + 18);
+        ctx2.fillText(">" + niceMax.toFixed(0), x0 + width, yAxis + 18);
+        ctx2.fillText("optical path length", x0 + width / 2, yAxis + 36);
+      }
+
+      const nNetTransPath = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
+      drawPathHistogram(SimStats.reflectedPathLengths, 70, 42, 260, 118, "#60a5fa", "Reflected");
+      drawPathHistogram(SimStats.transmittedPathLengths, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTransPath);
+
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "11px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.fillText(
+        `Mean reflected path=${mean(SimStats.reflectedPathLengths).toFixed(2)}   |   Mean base-crossing path=${mean(SimStats.transmittedPathLengths).toFixed(2)}   |   W=1 per exited photon`,
+        w / 2,
+        224
+      );
+    },
+
+    drawBdfOverlay: function() {
+      const canvas2 = document.getElementById("muCanvas");
+      if (!canvas2) return;
+
+      const { ctx2, w, h } = BottomPanel.getHiDpiPanelContext(canvas2);
+
+      ctx2.clearRect(0, 0, w, h);
+
+      ctx2.fillStyle = "#000000";
+      ctx2.fillRect(0, 0, w, h);
+
+      const thetaBins = 19; // centers at 0°, 5°, ..., 90°
+      const phiBins = 72;
+
+      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.reflectedDirs, thetaBins, phiBins));
+      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.netTransmittedDirs, thetaBins, phiBins));
+
+      const commonMax = Math.max(reflectedGrid.maxValue, transmittedGrid.maxValue, 1e-12);
+
+      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Reflected", commonMax);
+      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Net Transmitted", commonMax);
+      BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, "BDF", commonMax);
+
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "11px system-ui";
+      ctx2.textAlign = "center";
+      const scaleTxt = UI.getBdfColorScaleMode() === "log" ? "log BDF scale: 0.01–1" : "linear BDF scale: 0–1";
+      const avgTxt = (typeof getAvgNearNadirBdf === "function" && UI.getAvgNearNadirBdf()) ? "; near-nadir φ averaged" : "";
+      ctx2.fillText(`Absolute BDF=(Wᵢⱼ/N)π/(μᵢΔμᵢΔφⱼ); transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
+    },
+
+    computeBdfGrid: function(dirs, thetaBins, phiBins) {
+      const weights = Array.from({ length: thetaBins }, () => Array(phiBins).fill(0));
+      const bdf = Array.from({ length: thetaBins }, () => Array(phiBins).fill(0));
+      const binInfo = Array.from({ length: thetaBins }, () => Array(phiBins).fill(null));
+
+      // In the current analog absorption implementation, each exiting photon has unit
+      // weight. Absorbed photons do not enter the reflected/transmitted directional grids.
+      for (const d of dirs) {
+        const muAbs = Math.max(0, Math.min(1, Math.abs(d.z ?? 0)));
+        const theta = Math.acos(muAbs); // 0 to π/2
+
+        let phi = Math.atan2(d.y ?? 0, d.x ?? 0); // -π to π
+        if (phi < 0) phi += 2 * Math.PI;
+
+        // Center zenith-angle bins at 0°, 5°, ..., 90°.
+        const dTheta = (Math.PI / 2) / (thetaBins - 1);
+        const ir = Math.min(thetaBins - 1, Math.max(0, Math.round(theta / dTheta)));
+
+        // Center azimuth bin 0 on φ=0°.
+        const dPhi = 2 * Math.PI / phiBins;
+        const phiCentered = (phi + dPhi / 2) % (2 * Math.PI);
+        const ip = Math.min(phiBins - 1, Math.floor(phiCentered / dPhi));
+
+        weights[ir][ip] += (d.weight ?? 1);
+      }
+
+      const nIncident = Math.max(SimStats.stats.launched, 1);
+      const dPhi = 2 * Math.PI / phiBins;
+      const dTheta = (Math.PI / 2) / (thetaBins - 1);
+
+      let maxValue = 0;
+
+      for (let ir = 0; ir < thetaBins; ir++) {
+        const theta0 = Math.max(0, (ir - 0.5) * dTheta);
+        const theta1 = Math.min(Math.PI / 2, (ir + 0.5) * dTheta);
+
+        // μ decreases from cos(theta0) to cos(theta1).
+        const muUpper = Math.cos(theta0);
+        const muLower = Math.cos(theta1);
+        const deltaMu = Math.max(1e-12, muUpper - muLower);
+
+        // Use area-weighted mean μ for the bin, i.e. the midpoint in μ-space.
+        // This is better behaved than cos(theta_center), especially for wide θ bins.
+        const muCenter = Math.max(1e-6, 0.5 * (muUpper + muLower));
+
+        const thetaCenter = Math.acos(Math.max(0, Math.min(1, muCenter)));
+        const normFactor = Math.PI / (muCenter * deltaMu * dPhi);
+
+        for (let ip = 0; ip < phiBins; ip++) {
+          const value = (weights[ir][ip] / nIncident) * normFactor;
+          bdf[ir][ip] = value;
+          binInfo[ir][ip] = {
+            W: weights[ir][ip],
+            N: nIncident,
+            mu: muCenter,
+            deltaMu,
+            deltaPhi: dPhi,
+            thetaDeg: thetaCenter * 180 / Math.PI,
+            phiDeg: ip * 360 / phiBins,
+            bdf: value
+          };
+          if (value > maxValue) maxValue = value;
+        }
+      }
+
+      const signedWeightSum = dirs.reduce((acc, d) => acc + (d.weight ?? 1), 0);
+
+      return {
+        bdf,
+        weights,
+        binInfo,
+        maxValue,
+        sampleCount: dirs.length,
+        signedWeightSum,
+        thetaBins,
+        phiBins
+      };
+    },
+
+    drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title, commonMax) {
+      const thetaBins = grid.thetaBins;
+      const phiBins = grid.phiBins;
+      const dTheta = (Math.PI / 2) / (thetaBins - 1);
+
+      // Draw cells as polar annular sectors.
+      for (let ir = 0; ir < thetaBins; ir++) {
+        const theta0 = Math.max(0, (ir - 0.5) * dTheta);
+        const theta1 = Math.min(Math.PI / 2, (ir + 0.5) * dTheta);
+        const r0 = radius * theta0 / (Math.PI / 2);
+        const r1 = radius * theta1 / (Math.PI / 2);
+
+        for (let ip = 0; ip < phiBins; ip++) {
+          const value = grid.bdf[ir][ip];
+          if (value <= 0) continue;
+
+          const frac = BottomPanel.mapBdfToColorFraction(value, commonMax);
+
+          // Draw sector centered at φ = ip * Δφ.
+          const dPhi = 2 * Math.PI / phiBins;
+          const a0 = -Math.PI / 2 + (ip - 0.5) * dPhi;
+          const a1 = -Math.PI / 2 + (ip + 0.5) * dPhi;
+
+          ctx2.beginPath();
+          ctx2.arc(cx, cy, r1, a0, a1, false);
+          ctx2.arc(cx, cy, r0, a1, a0, true);
+          ctx2.closePath();
+
+          ctx2.fillStyle = BottomPanel.bdfColorMap(frac);
+          ctx2.fill();
+        }
+      }
+
+      // Grid rings and spokes
+      ctx2.strokeStyle = "rgba(226,232,240,0.62)";
+      ctx2.lineWidth = 1;
+
+      for (const deg of [30, 60, 90]) {
+        const r = radius * deg / 90;
+        ctx2.beginPath();
+        ctx2.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx2.stroke();
+      }
+
+      for (let deg = 0; deg < 360; deg += 45) {
+        const a = -Math.PI / 2 + deg * Math.PI / 180;
+        ctx2.beginPath();
+        ctx2.moveTo(cx, cy);
+        ctx2.lineTo(cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+        ctx2.stroke();
+      }
+
+      // Outer frame
+      ctx2.strokeStyle = "rgba(248,250,252,0.9)";
+      ctx2.lineWidth = 1.3;
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, radius, 0, 2 * Math.PI);
+      ctx2.stroke();
+
+      // Labels
+      ctx2.fillStyle = "#f8fafc";
+      ctx2.font = "bold 13px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "middle";
+      ctx2.fillText(`${title}  N=${Math.round(grid.signedWeightSum)}`, cx, cy - radius - 28);
+
+      // Angular labels: give them enough clearance from the polar-frame circle.
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "10px system-ui";
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "middle";
+      ctx2.fillText("0°", cx, cy - radius - 12);
+      ctx2.fillText("90°", cx + radius + 24, cy);
+      ctx2.fillText("180°", cx, cy + radius + 18);
+      ctx2.fillText("270°", cx - radius - 28, cy);
+
+      // Radial zenith-angle labels stay inside the plot, offset from the x-axis.
+      ctx2.font = "10px system-ui";
+      ctx2.fillText("30", cx + radius * 30 / 90 + 10, cy - 4);
+      ctx2.fillText("60", cx + radius * 60 / 90 + 12, cy - 4);
+
+      // Restore default baseline for any subsequent canvas text.
+      ctx2.textBaseline = "alphabetic";
+    },
+
+    drawColorBar: function(ctx2, x, y, w, h, label, maxValue=1) {
+      const steps = 120;
+      const isLog = UI.getBdfColorScaleMode() === "log";
+
+      for (let i = 0; i < steps; i++) {
+        const t = i / (steps - 1);
+        ctx2.fillStyle = BottomPanel.bdfColorMap(1 - t);
+        ctx2.fillRect(x, y + i * h / steps, w, h / steps + 1);
+      }
+
+      ctx2.strokeStyle = "#e2e8f0";
+      ctx2.lineWidth = 1.0;
+      ctx2.strokeRect(x, y, w, h);
+
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.font = "10px system-ui";
+      ctx2.textAlign = "left";
+      ctx2.textBaseline = "middle";
+
+      function drawTick(value, labelText) {
+        let yTick;
+
+        if (isLog) {
+          const floor = 0.01;
+          const v = Math.max(floor, Math.min(1, value));
+          const frac = Math.log10(v / floor) / Math.log10(1 / floor);
+          yTick = y + h * (1 - frac);
+        } else {
+          const frac = Math.max(0, Math.min(1, value));
+          yTick = y + h * (1 - frac);
+        }
+
+        ctx2.strokeStyle = "#e2e8f0";
+        ctx2.lineWidth = 1.0;
+        ctx2.beginPath();
+        ctx2.moveTo(x + w, yTick);
+        ctx2.lineTo(x + w + 4, yTick);
+        ctx2.stroke();
+
+        ctx2.fillStyle = "#e2e8f0";
+        ctx2.fillText(labelText, x + w + 7, yTick);
+      }
+
+      if (isLog) {
+        drawTick(1.0, "1.0");
+        drawTick(0.1, "0.1");
+        drawTick(0.01, "0.01");
+      } else {
+        drawTick(1.0, "1");
+        drawTick(0.75, "0.75");
+        drawTick(0.5, "0.5");
+        drawTick(0.25, "0.25");
+        drawTick(0.0, "0");
+      }
+
+      ctx2.save();
+      ctx2.translate(x - 28, y + h / 2);
+      ctx2.rotate(-Math.PI / 2);
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "middle";
+      ctx2.fillText(isLog ? "Log BDF" : "BDF", 0, 0);
+      ctx2.restore();
+    },
+
+
+    bdfColorMap: function(t) {
+      // Approximate turbo-like map; t in [0,1].
+      t = Math.max(0, Math.min(1, t));
+      const stops = [
+        [0.00, [37, 36, 128]],
+        [0.18, [49, 130, 246]],
+        [0.38, [34, 211, 238]],
+        [0.58, [163, 230, 53]],
+        [0.75, [250, 204, 21]],
+        [0.90, [249, 115, 22]],
+        [1.00, [153, 27, 27]]
+      ];
+
+      for (let i = 0; i < stops.length - 1; i++) {
+        const [t0, c0] = stops[i];
+        const [t1, c1] = stops[i + 1];
+
+        if (t >= t0 && t <= t1) {
+          const f = (t - t0) / (t1 - t0);
+          const r = Math.round(c0[0] + f * (c1[0] - c0[0]));
+          const g = Math.round(c0[1] + f * (c1[1] - c0[1]));
+          const b = Math.round(c0[2] + f * (c1[2] - c0[2]));
+          return `rgb(${r},${g},${b})`;
+        }
+      }
+
+      return "rgb(153,27,27)";
+    }
+  };
+
+
+  const Export = {
+    downloadDataURL: function(dataURL, filename) {
+      const link = document.createElement("a");
+      link.href = dataURL;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+
+    timestampForFilename: function() {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    },
+
+    getOutcomeStatisticLines: function() {
+      const launched = Math.max(SimStats.stats.launched, 1);
+
+      // Match the left-hand diagnostic panel exactly:
+      // Net surface transmittance is downward surface energy minus upward
+      // surface-reflected energy, not simply surface absorption.
+      const E_down_sfc_count = SimStats.stats.transmitted;
+      const E_up_sfc_count = SimStats.stats.surfaceReflected;
+      const Tnet_count = E_down_sfc_count - E_up_sfc_count;
+
+      const R = SimStats.stats.reflected / launched;
+      const T = Tnet_count / launched;
+      const A = SimStats.stats.absorbed / launched;
+      const S = SimStats.stats.side / launched;
+      const A_surface = SimStats.stats.surfaceAbsorbed / launched;
+      const T_base = SimStats.stats.transmitted / launched;
+      const surfaceRefl = SimStats.stats.surfaceReflected / launched;
+
+      return [
+        `R=${R.toFixed(3)} (${SimStats.stats.reflected})`,
+        `T=${T.toFixed(3)} (${Tnet_count})`,
+        `A=${A.toFixed(3)} (${SimStats.stats.absorbed})`,
+        `S=${S.toFixed(3)} (${SimStats.stats.side})`,
+        `A_sfc=${A_surface.toFixed(3)} (${SimStats.stats.surfaceAbsorbed})`,
+        `R+T+A+S=${(R + T + A + S).toFixed(3)}`,
+        `T_base_down=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
+        `surface refl/photon=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`
+      ];
+    },
+
+    getExportParameterLines: function() {
+      return [
+        `Photons: ${SimStats.stats.launched}`,
+        `COT τ: ${UI.getTauCloud().toFixed(2)}`,
+        `Horizontal extent: ${UI.getHorizontalExtent().toFixed(1)}`,
+        `Θ₀: ${(UI.getTheta0Rad() * 180 / Math.PI).toFixed(1)}°`,
+        `HG g: ${UI.getG().toFixed(2)}`,
+        `SSA ω₀: ${UI.getOmega0().toFixed(2)}`,
+        `Surface A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
+        `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
+        `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
+        `RNG seed: ${RNG.DEFAULT_SEED}`
+      ];
+    },
+
+    drawExportParameterBox: function(ctx, x, y, options={}) {
+      const lines = Export.getExportParameterLines();
+      const fontSize = options.fontSize ?? 26;
+      const lineH = Math.round(fontSize * 1.38);
+      const pad = options.pad ?? 10;
+      const title = options.title ?? "Simulation inputs";
+
+      ctx.save();
+      ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      const titleW = ctx.measureText(title).width;
+      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      const maxLineW = Math.max(titleW, ...lines.map(s => ctx.measureText(s).width));
+      const boxW = maxLineW + 2 * pad;
+      const boxH = (lines.length + 1) * lineH + 2 * pad;
+
+      ctx.fillStyle = options.bg ?? "rgba(15, 23, 42, 0.82)";
+      ctx.strokeStyle = options.stroke ?? "rgba(226, 232, 240, 0.75)";
+      ctx.lineWidth = 1;
+      ctx.fillRect(x, y, boxW, boxH);
+      ctx.strokeRect(x, y, boxW, boxH);
+
+      ctx.fillStyle = options.color ?? "#f8fafc";
+      ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      ctx.fillText(title, x + pad, y + pad + fontSize);
+
+      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+      lines.forEach((line, i) => {
+        ctx.fillText(line, x + pad, y + pad + lineH * (i + 2));
+      });
+
+      ctx.restore();
+
+      return {width: boxW, height: boxH};
+    },
+
+    drawLegendDot: function(ctx, x, y, color, label, kind="dot") {
+      ctx.save();
+      if (kind === "line") {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 3);
+        ctx.lineTo(x + 20, y - 3);
+        ctx.stroke();
+      } else if (kind === "square") {
+        ctx.fillStyle = color;
+        ctx.fillRect(x + 4, y - 10, 11, 11);
+      } else if (kind === "star") {
+        ctx.fillStyle = color;
+        ctx.font = "16px system-ui";
+        ctx.fillText("✦", x + 4, y - 2);
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x + 14, y - 8, 9, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "20px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(label, x + 28, y - 2);
+      ctx.restore();
+    },
+
+    drawExportLegend: function(ctx, x, y) {
+      const entries = [
+        ["#60a5fa", "Reflected paths", "line"],
+        ["#86efac", "Transmitted paths", "line"],
+        ["#94a3b8", "Absorbed paths", "line"],
+        ["#f7ee0a", "Top reflected endpoints", "dot"],
+        ["#22c55e", "Bottom transmitted endpoints", "dot"],
+        ["#111827", "Absorption locations", "dot"],
+        ["#f97316", "Side boundary escape", "dot"],
+        ["#60a5fa", "Reflected 2-D footprint", "square"],
+        ["#86efac", "Transmitted 2-D footprint", "square"],
+        ["#fff700", "Photon tracer", "line"],
+        ["#fef08a", "Scattering flash", "star"]
+      ];
+
+      const colW = 340;
+      const rowH = 32;
+      const rows = Math.ceil(entries.length / 2);
+      const pad = 10;
+      const boxW = colW * 2 + 2 * pad;
+      const boxH = rows * rowH + 2 * pad;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(71, 85, 105, 0.88)";
+      ctx.strokeStyle = "rgba(203, 213, 225, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.fillRect(x, y, boxW, boxH);
+      ctx.strokeRect(x, y, boxW, boxH);
+
+      entries.forEach((e, idx) => {
+        const col = idx < rows ? 0 : 1;
+        const row = idx < rows ? idx : idx - rows;
+        Export.drawLegendDot(ctx, x + pad + col * colW, y + pad + row * rowH + 14, e[0], e[1], e[2]);
+      });
+      ctx.restore();
+
+      return {width: boxW, height: boxH};
+    },
+
+    autoCropCanvas: function(canvas, options={}) {
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+      const img = ctx.getImageData(0, 0, w, h);
+      const data = img.data;
+
+      // Background is the dark scene color (#0f172a ~= 15,23,42).
+      // Treat pixels sufficiently different from that as content.
+      const bg = options.bg ?? [15, 23, 42];
+      const threshold = options.threshold ?? 18;
+      const pad = options.pad ?? 55;
+
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          const k = (y * w + x) * 4;
+          const r = data[k], g = data[k + 1], b = data[k + 2], a = data[k + 3];
+
+          if (a < 10) continue;
+
+          const diff = Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]);
+
+          if (diff > threshold) {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      if (maxX < minX || maxY < minY) {
+        return canvas;
+      }
+
+      minX = Math.max(0, minX - pad);
+      minY = Math.max(0, minY - pad);
+      maxX = Math.min(w - 1, maxX + pad);
+      maxY = Math.min(h - 1, maxY + pad);
+
+      const cropW = maxX - minX + 1;
+      const cropH = maxY - minY + 1;
+
+      const out = document.createElement("canvas");
+      out.width = cropW;
+      out.height = cropH;
+      const outCtx = out.getContext("2d");
+      outCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+
+      return out;
+    },
+
+    download3DView: function() {
+      try {
+        renderer.render(scene, camera);
+
+        const source = renderer.domElement;
+        const canvasOut = document.createElement("canvas");
+        canvasOut.width = source.width;
+        canvasOut.height = source.height;
+        const ctx = canvasOut.getContext("2d");
+
+        ctx.drawImage(source, 0, 0);
+
+        // Add context overlays: legend and key run inputs.
+        Export.drawExportLegend(ctx, canvasOut.width - 760, 30);
+        Export.drawExportParameterBox(ctx, 180, 55, {fontSize: 26});
+
+        const cropped = Export.autoCropCanvas(canvasOut, {pad: 70});
+        const dataURL = cropped.toDataURL("image/png");
+        Export.downloadDataURL(dataURL, `mc_cloud_rt_3d_view_${Export.timestampForFilename()}.png`);
+      } catch (err) {
+        RunControl.showLimitWarning("Unable to export 3D view. Browser may be blocking canvas export.");
+        console.error(err);
+      }
+    },
+
+    downloadBottomPanel: function() {
+      try {
+        BottomPanel.drawBottomPanel();
+        const canvas2 = document.getElementById("muCanvas");
+        if (!canvas2) {
+          RunControl.showLimitWarning("Bottom panel canvas was not found.");
+          return;
+        }
+
+        const mode = document.getElementById("bottomPanelMode")?.value ?? "panel";
+
+        // Export at the panel's high-DPI native resolution.
+        // Header is large enough for key settings plus outcome diagnostics.
+        const scale = canvas2.width / 700;
+        const headerH = Math.round(210 * scale);
+        const canvasOut = document.createElement("canvas");
+        canvasOut.width = canvas2.width;
+        canvasOut.height = canvas2.height + headerH;
+        const ctx = canvasOut.getContext("2d");
+
+        // Black export background.
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, canvasOut.width, canvasOut.height);
+
+        // Header with key run inputs.
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = `bold ${Math.round(16 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        const title = mode === "bdf" ? "BDF polar plots" : (mode === "path" ? "Optical path-length distributions" : "μ histograms");
+        ctx.fillText(title, 14 * scale, 30 * scale);
+
+        ctx.font = `${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        const lines = Export.getExportParameterLines();
+        const outcome = Export.getOutcomeStatisticLines();
+
+        // Settings rows
+        ctx.fillText(lines.slice(0, 3).join("   |   "), 14 * scale, 62 * scale);
+        ctx.fillText(lines.slice(3, 6).join("   |   "), 14 * scale, 88 * scale);
+        ctx.fillText(lines.slice(6, 8).join("   |   "), 14 * scale, 114 * scale);
+        ctx.fillText(lines.slice(8, 10).join("   |   "), 14 * scale, 140 * scale);
+
+        // Outcome statistics rows
+        ctx.fillStyle = "#bfdbfe";
+        ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        ctx.fillText(outcome.slice(0, 4).join("   |   "), 14 * scale, 168 * scale);
+        ctx.fillText(outcome.slice(4, 8).join("   |   "), 14 * scale, 194 * scale);
+
+        ctx.drawImage(canvas2, 0, headerH);
+
+        const dataURL = canvasOut.toDataURL("image/png");
+        Export.downloadDataURL(dataURL, `mc_cloud_rt_${mode}_panel_${Export.timestampForFilename()}.png`);
+      } catch (err) {
+        RunControl.showLimitWarning("Unable to export bottom panel.");
+        console.error(err);
+      }
+    }
+  };
+
+
+  const RunControl = {
+    init: function() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+
+      camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+      camera.position.set(-10, -72, 24);
+
+      renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      document.body.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      camera.up.set(0, 0, 1);
+      controls.target.set(-10, 0, -4);
+
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 1.8);
+      scene.add(hemi);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+      dirLight.position.set(20, 30, 15);
+      scene.add(dirLight);
+
+      cloudGroup = new THREE.Group();
+      pathGroup = new THREE.Group();
+      endpointGroup = new THREE.Group();
+      histogramGroup = new THREE.Group();
+
+      scene.add(cloudGroup);
+      scene.add(pathGroup);
+      scene.add(endpointGroup);
+      scene.add(histogramGroup);
+
+      Scene.buildCloudBox();
+      RunControl.refreshEndpointDisplay();
+      SimStats.updateDisplay();
+
+      window.addEventListener("resize", RunControl.onWindowResize);
+    },
+
+    onWindowResize: function() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    },
+
+    showLimitWarning: function(message) {
+      const box = document.getElementById("limitWarning");
+      if (!box) return;
+
+      box.textContent = message;
+      box.style.display = "block";
+
+      clearTimeout(showLimitWarning.timeoutID);
+      showLimitWarning.timeoutID = setTimeout(() => {
+        box.style.display = "none";
+      }, 3600);
+    },
+
+
+    refreshEndpointDisplay: function() {
+      const valueEl = document.getElementById("endpointCapValue");
+      if (valueEl) valueEl.textContent = String(UI.getEndpointCap());
+
+      Photons.trimEndpointMarkers();
+      Photons.applyEndpointFade();
+      SimStats.updateDisplay();
+    },
+
+    togglePause: function() {
+      isPaused = !isPaused;
+      const btn = document.getElementById("pauseBtn");
+      if (btn) btn.textContent = isPaused ? "Resume" : "Pause";
+      SimStats.updateDisplay();
+    },
+
+    stepPhoton: function() {
+      // Step mode is most useful while paused. If not paused, pause first.
+      if (!isPaused) {
+        isPaused = true;
+        const btn = document.getElementById("pauseBtn");
+        if (btn) btn.textContent = "Resume";
+      }
+      stepRequested = true;
+    },
+
+    getSimParams: function() {
+      return {
+        tauCloud:          world.tauCloud,
+        slabW:             world.slabW,
+        slabD:             world.slabD,
+        theta0:            UI.getTheta0Rad(),
+        g:                 UI.getG(),
+        omega0:            UI.getOmega0(),
+        surfaceAlbedo:     UI.getSurfaceAlbedo(),
+        betaExt:           UI.getCloudBetaExt(),
+        surfaceDistanceKm: UI.getSurfaceDistanceKm()
+      };
+    },
+
+    runOne: async function() {
+      // Reproducible single-photon mode:
+      // each Launch One starts from the same seed and a clean state.
+      RunControl.resetScene();
+      RNG.reset();
+
+      Scene.updateWorld();
+      Scene.buildCloudBox();
+
+      const result = Physics.simulatePhoton(RunControl.getSimParams(), true);
+      result.photonId = nextPhotonId++;
+      SimStats.record(result);
+
+      if (UI.getAnimatePaths()) {
+        isAnimating = true;
+        await Photons.addAnimatedPath(result);
+        isAnimating = false;
+      } else {
+        Photons.addPhotonToScene(result, true);
+      }
+
+      Scene.rebuildHistograms();
+      SimStats.updateDisplay();
+    },
+
+    runEnsemble: async function() {
+      if (isAnimating) return;
+
+      // Reproducible ensemble mode:
+      // each Launch Ensemble starts from the same seed and a clean state.
+      RunControl.resetScene();
+      RNG.reset();
+
+      Scene.updateWorld();
+      Scene.buildCloudBox();
+
+      const n = UI.getPhotonCount();
+      const maxPaths = UI.getMaxPaths();
+
+      if (UI.getAnimatePaths()) {
+        isAnimating = true;
+
+        // Animate a manageable number of visible paths sequentially.
+        // Additional photons, if requested, are simulated statistically after the visible sequence.
+        const nAnimated = Math.min(n, maxPaths, 80);
+
+        for (let i = 0; i < nAnimated; i++) {
+          const result = Physics.simulatePhoton(RunControl.getSimParams(), true);
+          result.photonId = nextPhotonId++;
+          SimStats.record(result);
+          await Photons.addAnimatedPath(result);
+          Scene.rebuildHistograms();
+          SimStats.updateDisplay();
+        }
+
+        const remaining = n - nAnimated;
+        if (remaining > 0) {
+          RunControl.runInstantBatch(remaining, false);
+        }
+
+        isAnimating = false;
+        Scene.rebuildHistograms();
+        SimStats.updateDisplay();
+        return;
+      }
+
+      RunControl.runInstantBatch(n, true);
+    },
+
+    runInstantBatch: function(n, allowPaths) {
+      let remaining = n;
+      const chunkSize = 1000;
+
+      function chunk() {
+        const m = Math.min(chunkSize, remaining);
+
+        for (let i = 0; i < m; i++) {
+          const drawPath = allowPaths && pathGroup.children.length < UI.getMaxPaths();
+          const result = Physics.simulatePhoton(RunControl.getSimParams(), drawPath);
+          result.photonId = nextPhotonId++;
+          SimStats.record(result);
+          Photons.addPhotonToScene(result, drawPath);
+        }
+
+        remaining -= m;
+        Scene.rebuildHistograms();
+        SimStats.updateDisplay();
+
+        if (remaining > 0) {
+          setTimeout(chunk, 0);
+        }
+      }
+
+      chunk();
+    },
+
+    resetScene: function() {
+      RNG.reset();
+      Scene.updateWorld();
+
+      SimStats.reset();
+      nextPhotonId = 1;
+      activePhotonID = null;
+      activePhotonStep = 0;
+      activePhotonTotalSteps = 0;
+      activePhotonStatus = "none";
+      isPaused = false;
+      stepRequested = false;
+      const pauseBtn = document.getElementById("pauseBtn");
+      if (pauseBtn) pauseBtn.textContent = "Pause";
+      Photons.clearLastScatterMarker();
+
+      Scene.clearGroup(pathGroup);
+      Scene.clearGroup(endpointGroup);
+      Scene.clearGroup(histogramGroup);
+      BottomPanel.drawBottomPanel();
+      Scene.buildCloudBox();
+      RunControl.refreshEndpointDisplay();
+      SimStats.updateDisplay();
+    },
+
+    animate: function() {
+      requestAnimationFrame(RunControl.animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  };
+
+  RunControl.init();
+  RunControl.animate();
+
+  window.UI = UI;
+  window.Scene = Scene;
+  window.Photons = Photons;
+  window.BottomPanel = BottomPanel;
+  window.Export = Export;
+  window.RunControl = RunControl;
+  window.runOne = RunControl.runOne;
+  window.runEnsemble = RunControl.runEnsemble;
+  window.resetScene = RunControl.resetScene;
+  window.resetCamera = Scene.resetCamera;
+  window.togglePause = RunControl.togglePause;
+  window.stepPhoton = RunControl.stepPhoton;
+  window.refreshEndpointDisplay = RunControl.refreshEndpointDisplay;
+  window.drawBottomPanel = BottomPanel.drawBottomPanel;
+  window.download3DView = Export.download3DView;
+  window.downloadBottomPanel = Export.downloadBottomPanel;
+
+} catch (err) {
+  const box = document.getElementById("errorBox");
+  box.style.display = "block";
+  box.innerHTML =
+    "<b>Three.js failed to load.</b><br><br>" +
+    "This version needs internet access to load Three.js from jsDelivr. " +
+    "For offline use later, download Three.js locally or run from a local server with cached modules.<br><br>" +
+    "<code>python3 -m http.server 8000</code><br><br>" +
+    "Then open this file from <code>http://localhost:8000/</code>.<br><br>" +
+    "<small>Error: " + String(err).replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s])) + "</small>";
+
+  document.getElementById("stats").textContent = "3-D renderer failed to load.";
+}
+</script>
+</body>
+</html>
