@@ -228,16 +228,50 @@ export const Export = {
         state.renderer.render(state.scene, state.camera);
 
         const source = state.renderer.domElement;
+        const dpr = state.renderer.getPixelRatio();
+        const panelPx = Math.round(418 * dpr); // UI panel width in physical pixels
+        const viewW = source.width - panelPx;
+
         const canvasOut = document.createElement("canvas");
-        canvasOut.width = source.width;
+        canvasOut.width = viewW;
         canvasOut.height = source.height;
         const ctx = canvasOut.getContext("2d");
 
-        ctx.drawImage(source, 0, 0);
+        // Draw only the visible 3D viewport (right of the UI panel).
+        ctx.drawImage(source, panelPx, 0, viewW, source.height, 0, 0, viewW, source.height);
 
-        // Add context overlays: legend and key run inputs.
+        // Add context overlays: legend, key run inputs, and outcome statistics.
         Export.drawExportLegend(ctx, canvasOut.width - 760, 30);
-        Export.drawExportParameterBox(ctx, 180, 55, {fontSize: 26});
+        const paramBox = Export.drawExportParameterBox(ctx, 180, 55, {fontSize: 26});
+
+        // Outcome statistics below the parameter box.
+        const outcome = Export.getOutcomeStatisticLines();
+        const statFontSize = 24;
+        const statLineH = Math.round(statFontSize * 1.38);
+        const statX = 180 + paramBox.width + 12;
+        const statY = 55;
+        ctx.save();
+        ctx.font = `700 ${statFontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        const statColor = "#bfdbfe";
+        ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+        ctx.strokeStyle = "rgba(226, 232, 240, 0.75)";
+        ctx.lineWidth = 1;
+        // Measure width from the longest of the 3 rows
+        const row1 = outcome.slice(0, 4).join("   |   ");
+        const row2 = outcome.slice(4, 6).join("   |   ");
+        const row3 = outcome.slice(6, 8).join("   |   ");
+        const statPad = 10;
+        const statW = Math.max(ctx.measureText(row1).width,
+                               ctx.measureText(row2).width,
+                               ctx.measureText(row3).width) + 2 * statPad;
+        const statH = 3 * statLineH + 2 * statPad;
+        ctx.fillRect(statX, statY, statW, statH);
+        ctx.strokeRect(statX, statY, statW, statH);
+        ctx.fillStyle = statColor;
+        ctx.fillText(row1, statX + statPad, statY + statPad + statFontSize);
+        ctx.fillText(row2, statX + statPad, statY + statPad + statFontSize + statLineH);
+        ctx.fillText(row3, statX + statPad, statY + statPad + statFontSize + 2 * statLineH);
+        ctx.restore();
 
         const cropped = Export.autoCropCanvas(canvasOut, {pad: 70});
         const dataURL = cropped.toDataURL("image/png");
@@ -262,7 +296,7 @@ export const Export = {
         // Export at the panel's high-DPI native resolution.
         // Header is large enough for key settings plus outcome diagnostics.
         const scale = canvas2.width / 700;
-        const headerH = Math.round(210 * scale);
+        const headerH = Math.round(236 * scale);
         const canvasOut = document.createElement("canvas");
         canvasOut.width = canvas2.width;
         canvasOut.height = canvas2.height + headerH;
@@ -288,11 +322,12 @@ export const Export = {
         ctx.fillText(lines.slice(6, 8).join("   |   "), 14 * scale, 114 * scale);
         ctx.fillText(lines.slice(8, 10).join("   |   "), 14 * scale, 140 * scale);
 
-        // Outcome statistics rows
+        // Outcome statistics rows (3 lines to prevent truncation)
         ctx.fillStyle = "#bfdbfe";
         ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
         ctx.fillText(outcome.slice(0, 4).join("   |   "), 14 * scale, 168 * scale);
-        ctx.fillText(outcome.slice(4, 8).join("   |   "), 14 * scale, 194 * scale);
+        ctx.fillText(outcome.slice(4, 6).join("   |   "), 14 * scale, 194 * scale);
+        ctx.fillText(outcome.slice(6, 8).join("   |   "), 14 * scale, 220 * scale);
 
         ctx.drawImage(canvas2, 0, headerH);
 

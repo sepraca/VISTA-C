@@ -35,9 +35,9 @@ export const Scene = {
 
     // Reset state.camera to the default view position.
     resetCamera: function() {
-      state.camera.position.set(-10, -72, 24);
+      state.camera.position.set(0, -90, 18);
       state.camera.up.set(0, 0, 1);
-      state.controls.target.set(-10, 0, -4);
+      state.controls.target.set(0, 0, -15);
       state.controls.update();
     },
 

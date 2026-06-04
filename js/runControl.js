@@ -18,18 +18,22 @@ export const RunControl = {
       state.scene = new THREE.Scene();
       state.scene.background = new THREE.Color(0x0f172a);
 
-      state.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
-      state.camera.position.set(-10, -72, 24);
+      const UI_PANEL_WIDTH = 418; // px — must match #ui width in index.html CSS
+      const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
+
+      state.camera = new THREE.PerspectiveCamera(50, view3dWidth / window.innerHeight, 0.1, 2000);
+      state.camera.position.set(0, -90, 18);
 
       state.renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
       state.renderer.setSize(window.innerWidth, window.innerHeight);
       state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      state.renderer.setViewport(UI_PANEL_WIDTH, 0, view3dWidth, window.innerHeight);
       document.body.appendChild(state.renderer.domElement);
 
       state.controls = new OrbitControls(state.camera, state.renderer.domElement);
       state.controls.enableDamping = true;
       state.camera.up.set(0, 0, 1);
-      state.controls.target.set(-10, 0, -4);
+      state.controls.target.set(0, 0, -15);
 
       const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 1.8);
       state.scene.add(hemi);
@@ -56,9 +60,12 @@ export const RunControl = {
     },
 
     onWindowResize: function() {
-      state.camera.aspect = window.innerWidth / window.innerHeight;
+      const UI_PANEL_WIDTH = 418;
+      const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
+      state.camera.aspect = view3dWidth / window.innerHeight;
       state.camera.updateProjectionMatrix();
       state.renderer.setSize(window.innerWidth, window.innerHeight);
+      state.renderer.setViewport(UI_PANEL_WIDTH, 0, view3dWidth, window.innerHeight);
     },
 
 
