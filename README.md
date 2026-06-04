@@ -9,7 +9,7 @@ Designed as an educational tool for students and scientists working in cloud rem
 ## Live Demo
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
-A hosted version is available at: _[add GitHub Pages URL after enabling Pages]_
+A hosted version is available at: https://sepraca.github.io/mc_cloud_rt_visualization/
 
 ---
 
