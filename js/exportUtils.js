@@ -55,12 +55,12 @@ export const Export = {
     getExportParameterLines: function() {
       return [
         `Photons: ${SimStats.stats.launched}`,
-        `COT τ: ${UI.getTauCloud().toFixed(2)}`,
+        `COT (τ): ${UI.getTauCloud().toFixed(2)}`,
         `Horizontal extent: ${UI.getHorizontalExtent().toFixed(1)}`,
         `Θ₀: ${(UI.getTheta0Rad() * 180 / Math.PI).toFixed(1)}°`,
         `HG g: ${UI.getG().toFixed(2)}`,
-        `SSA ω₀: ${UI.getOmega0().toFixed(2)}`,
-        `Surface A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
+        `SSA (ω₀): ${UI.getOmega0().toFixed(2)}`,
+        `Surface Albedo A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
         `RNG seed: ${RNG.DEFAULT_SEED}`
@@ -241,7 +241,7 @@ export const Export = {
         ctx.drawImage(source, panelPx, 0, viewW, source.height, 0, 0, viewW, source.height);
 
         // Add context overlays: legend, key run inputs, and outcome statistics.
-        Export.drawExportLegend(ctx, canvasOut.width - 760, 30);
+        Export.drawExportLegend(ctx, canvasOut.width - 760, 55);
         const paramBox = Export.drawExportParameterBox(ctx, 180, 55, {fontSize: 26});
 
         // Outcome statistics below the parameter box.
@@ -257,9 +257,9 @@ export const Export = {
         ctx.strokeStyle = "rgba(226, 232, 240, 0.75)";
         ctx.lineWidth = 1;
         // Measure width from the longest of the 3 rows
-        const row1 = outcome.slice(0, 4).join("   |   ");
-        const row2 = outcome.slice(4, 6).join("   |   ");
-        const row3 = outcome.slice(6, 8).join("   |   ");
+        const row1 = outcome.slice(0, 4).join(" ,   ");
+        const row2 = outcome.slice(4, 6).join(" ,   ");
+        const row3 = outcome.slice(6, 8).join(" ,   ");
         const statPad = 10;
         const statW = Math.max(ctx.measureText(row1).width,
                                ctx.measureText(row2).width,
@@ -317,17 +317,17 @@ export const Export = {
         const outcome = Export.getOutcomeStatisticLines();
 
         // Settings rows
-        ctx.fillText(lines.slice(0, 3).join("   |   "), 14 * scale, 62 * scale);
-        ctx.fillText(lines.slice(3, 6).join("   |   "), 14 * scale, 88 * scale);
-        ctx.fillText(lines.slice(6, 8).join("   |   "), 14 * scale, 114 * scale);
-        ctx.fillText(lines.slice(8, 10).join("   |   "), 14 * scale, 140 * scale);
+        ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
+        ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
+        ctx.fillText(lines.slice(6, 8).join(" ,   "), 14 * scale, 114 * scale);
+        ctx.fillText(lines.slice(8, 10).join(" ,   "), 14 * scale, 140 * scale);
 
         // Outcome statistics rows (3 lines to prevent truncation)
         ctx.fillStyle = "#bfdbfe";
         ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
-        ctx.fillText(outcome.slice(0, 4).join("   |   "), 14 * scale, 168 * scale);
-        ctx.fillText(outcome.slice(4, 6).join("   |   "), 14 * scale, 194 * scale);
-        ctx.fillText(outcome.slice(6, 8).join("   |   "), 14 * scale, 220 * scale);
+        ctx.fillText(outcome.slice(0, 4).join(" ,   "), 14 * scale, 168 * scale);
+        ctx.fillText(outcome.slice(4, 6).join(" ,   "), 14 * scale, 194 * scale);
+        ctx.fillText(outcome.slice(6, 8).join(" ,   "), 14 * scale, 220 * scale);
 
         ctx.drawImage(canvas2, 0, headerH);
 
