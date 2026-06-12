@@ -150,7 +150,7 @@ export const Scene = {
       const ctx = canvas.getContext("2d");
 
       ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
-      const lines = text.split("\\n");
+      const lines = text.split("\n");
       const maxWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
 
       canvas.width = Math.ceil(maxWidth + 2 * padding);

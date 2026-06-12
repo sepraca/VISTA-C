@@ -36,6 +36,7 @@ export const Export = {
       const T = Tnet_count / launched;
       const A = SimStats.stats.absorbed / launched;
       const S = SimStats.stats.side / launched;
+      const Term = SimStats.stats.terminated / launched;
       const A_surface = SimStats.stats.surfaceAbsorbed / launched;
       const T_base = SimStats.stats.transmitted / launched;
       const surfaceRefl = SimStats.stats.surfaceReflected / launched;
@@ -46,9 +47,10 @@ export const Export = {
         `A=${A.toFixed(3)} (${SimStats.stats.absorbed})`,
         `S=${S.toFixed(3)} (${SimStats.stats.side})`,
         `A_sfc=${A_surface.toFixed(3)} (${SimStats.stats.surfaceAbsorbed})`,
-        `R+T+A+S=${(R + T + A + S).toFixed(3)}`,
-        `T_base_down=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
-        `surface refl/photon=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`
+        `R+T+A+S+Term=${(R + T + A + S + Term).toFixed(3)}`,
+        `T_down_sfc=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
+        `surface refl/photon=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`,
+        `Term (event cap)=${Term.toFixed(3)} (${SimStats.stats.terminated})`
       ];
     },
 
@@ -63,7 +65,7 @@ export const Export = {
         `Surface Albedo A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
-        `RNG seed: ${RNG.DEFAULT_SEED}`
+        `RNG seed: ${RNG.currentSeed()}`
       ];
     },
 
@@ -135,7 +137,7 @@ export const Export = {
         ["#60a5fa", "Reflected paths", "line"],
         ["#86efac", "Transmitted paths", "line"],
         ["#94a3b8", "Absorbed paths", "line"],
-        ["#f7ee0a", "Top reflected endpoints", "dot"],
+        ["#facc15", "Top reflected endpoints", "dot"],
         ["#22c55e", "Bottom transmitted endpoints", "dot"],
         ["#111827", "Absorption locations", "dot"],
         ["#f97316", "Side boundary escape", "dot"],
@@ -259,7 +261,7 @@ export const Export = {
         // Measure width from the longest of the 3 rows
         const row1 = outcome.slice(0, 4).join(" ,   ");
         const row2 = outcome.slice(4, 6).join(" ,   ");
-        const row3 = outcome.slice(6, 8).join(" ,   ");
+        const row3 = outcome.slice(6, 9).join(" ,   ");
         const statPad = 10;
         const statW = Math.max(ctx.measureText(row1).width,
                                ctx.measureText(row2).width,
@@ -327,7 +329,7 @@ export const Export = {
         ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
         ctx.fillText(outcome.slice(0, 4).join(" ,   "), 14 * scale, 168 * scale);
         ctx.fillText(outcome.slice(4, 6).join(" ,   "), 14 * scale, 194 * scale);
-        ctx.fillText(outcome.slice(6, 8).join(" ,   "), 14 * scale, 220 * scale);
+        ctx.fillText(outcome.slice(6, 9).join(" ,   "), 14 * scale, 220 * scale);
 
         ctx.drawImage(canvas2, 0, headerH);
 

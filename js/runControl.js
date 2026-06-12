@@ -110,11 +110,11 @@ export const RunControl = {
     },
 
     runOne: async function() {
-      // Reproducible single-photon mode:
-      // each Launch One starts from the same seed and a clean state.
-      RunControl.resetScene();
-      RNG.reset();
+      if (state.isAnimating) return;
 
+      // Successive Launch One clicks draw new, distinct photons from the
+      // advancing RNG stream and accumulate into the statistics.
+      // Use the Reset button to start over from the base seed.
       Scene.updateWorld();
       Scene.buildCloudBox();
 
@@ -154,9 +154,9 @@ export const RunControl = {
       if (UI.getAnimatePaths()) {
         state.isAnimating = true;
 
-        // Animate a manageable number of visible paths sequentially.
+        // Animate up to "Max paths drawn" visible paths sequentially.
         // Additional photons, if requested, are simulated statistically after the visible sequence.
-        const nAnimated = Math.min(n, maxPaths, 80);
+        const nAnimated = Math.min(n, maxPaths);
 
         for (let i = 0; i < nAnimated; i++) {
           const result = Physics.simulatePhoton(RunControl.getSimParams(), true);
@@ -189,7 +189,16 @@ export const RunControl = {
       const chunkSize = 1000;
 
       function chunk() {
-        const m = Math.min(chunkSize, remaining);
+        // Honor Pause/Step in instant mode: while paused, idle until Resume
+        // or a single Step request (Step advances exactly one photon).
+        if (state.isPaused && !state.stepRequested) {
+          setTimeout(chunk, 100);
+          return;
+        }
+        const steppingOnce = state.stepRequested;
+        state.stepRequested = false;
+
+        const m = steppingOnce ? Math.min(1, remaining) : Math.min(chunkSize, remaining);
 
         for (let i = 0; i < m; i++) {
           const drawPath = allowPaths && state.pathGroup.children.length < UI.getMaxPaths();

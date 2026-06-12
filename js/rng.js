@@ -13,10 +13,17 @@ export const RNG = (() => {
       };
     }
 
+    let _seed = DEFAULT_SEED;
     let _rng = mulberry32(DEFAULT_SEED);
 
     function reset(seed = DEFAULT_SEED) {
+      _seed = seed;
       _rng = mulberry32(seed);
+    }
+
+    // Seed of the current RNG stream (for diagnostics/export headers).
+    function currentSeed() {
+      return _seed;
     }
 
     function rand() {
@@ -28,5 +35,5 @@ export const RNG = (() => {
       return Math.max(1e-12, rand());
     }
 
-    return { DEFAULT_SEED, reset, rand, randOpen01 };
+    return { DEFAULT_SEED, reset, rand, randOpen01, currentSeed };
   })();

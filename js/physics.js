@@ -63,6 +63,39 @@ export const Physics = {
       });
     },
 
+    // First intersection of a ray with the cloud box
+    // [-halfW, halfW] x [-halfD, halfD] x [0, tauCloud] (slab method).
+    // Used for surface-reflected photons ascending from the infinite surface
+    // (p.tau > tauCloud, dir.z < 0): the entry face is the cloud base or a
+    // side wall, never the top. Returns the entry point {x, y, tau} clamped
+    // onto the box, or null if the ray misses the box.
+    rayBoxEntry(p, dir, halfW, halfD, tauCloud) {
+      let tEnter = -Infinity, tExit = Infinity;
+      const axes = [
+        [p.x,   dir.x, -halfW, halfW],
+        [p.y,   dir.y, -halfD, halfD],
+        [p.tau, dir.z, 0,      tauCloud]
+      ];
+      for (const [o, d, lo, hi] of axes) {
+        if (Math.abs(d) < 1e-15) {
+          if (o < lo || o > hi) return null;
+        } else {
+          let t0 = (lo - o) / d;
+          let t1 = (hi - o) / d;
+          if (t0 > t1) { const tmp = t0; t0 = t1; t1 = tmp; }
+          if (t0 > tEnter) tEnter = t0;
+          if (t1 < tExit)  tExit  = t1;
+          if (tEnter > tExit) return null;
+        }
+      }
+      if (!(tEnter > 1e-12) || !isFinite(tEnter)) return null;
+      return {
+        x:   Math.max(-halfW, Math.min(halfW, p.x + tEnter * dir.x)),
+        y:   Math.max(-halfD, Math.min(halfD, p.y + tEnter * dir.y)),
+        tau: Math.max(0, Math.min(tauCloud, p.tau + tEnter * dir.z))
+      };
+    },
+
     // Sample a cosine-weighted upward direction for Lambertian surface reflection.
     // Upward means dir.z < 0 in cloud optical-depth coordinates.
     sampleLambertianUpwardDirection() {
@@ -102,6 +135,58 @@ export const Physics = {
       let scatterings = 0;
       let surfaceBounceCount = 0;
 
+      const halfW = slabW / 2;
+      const halfD = slabD / 2;
+
+      // --- Clear-air transport over the INFINITE Lambertian surface ---
+      // Model (A_s > 0): the cloud box is finite but the surface below it is
+      // infinite. The clear gap has geometric displacement only (zero optical
+      // path). A photon leaving the cloud heading downward — through the base
+      // OR through a side wall — descends in a straight line to the surface
+      // plane (possibly outside the slab footprint), takes the albedo coin
+      // flip there, and if Lambertian-reflected may re-enter the cloud through
+      // the base or a side wall (ray-box test) or escape upward to space
+      // (terminal side_escape, reported where it passes cloud-base altitude).
+      // countDownArrival: side-wall exits did not cross the cloud base, so
+      // their downward arrival at the surface plane is registered here to keep
+      // the identity T_net = E_down - E_up = A_sfc exact.
+      // For A_s = 0 this handler is not used and behavior is unchanged
+      // (photons terminate at the cloud base / side walls).
+      const surfaceInteraction = (cx, cy, ctau, countDownArrival) => {
+        const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
+        const tDown = (tauSurface - ctau) / Math.max(dir.z, 1e-12);
+        const xs = cx + tDown * dir.x;
+        const ys = cy + tDown * dir.y;
+        if (storePath && path.length < 3500) path.push({x: xs, y: ys, tau: tauSurface});
+
+        if (countDownArrival) {
+          cloudBaseTransmissions.push({xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
+        }
+
+        if (RNG.rand() < surfaceAlbedo) {
+          localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_reflected"});
+          dir = Physics.sampleLambertianUpwardDirection();
+          surfaceReflectionDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1});
+          surfaceBounceCount++;
+
+          const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
+          if (entry) {
+            if (storePath && path.length < 3500) path.push({x: entry.x, y: entry.y, tau: entry.tau});
+            return {reenter: entry};
+          }
+
+          // Escapes upward to space without re-entering the cloud.
+          const tUp = (tauCloud - tauSurface) / Math.min(dir.z, -1e-12);
+          const xe = xs + tUp * dir.x;
+          const ye = ys + tUp * dir.y;
+          if (storePath && path.length < 3500) path.push({x: xe, y: ye, tau: tauCloud});
+          return {result: {status: "side_escape", xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
+        }
+
+        localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_absorbed"});
+        return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
+      };
+
       const maxEvents = 25000;
 
       for (let event = 0; event < maxEvents; event++) {
@@ -111,26 +196,25 @@ export const Physics = {
         const yNew = y + s * dir.y;
         const tauNew = tau + s * dir.z;
 
-        const halfW = slabW / 2;
-        const halfD = slabD / 2;
-
-        // Side boundary escape.
+        // First-crossing boundary test. The straight segment endpoint may lie
+        // beyond several boundary planes at once (corner regions outside the
+        // box). The photon exits through whichever violated plane it pierces
+        // FIRST along the segment, i.e. the smallest fractional distance f.
+        // Note tau is monotonic along a straight segment, so at most one of
+        // the top/base planes can be crossed.
+        let fSide = Infinity;
         if (Math.abs(xNew) > halfW || Math.abs(yNew) > halfD) {
           let fx = Infinity, fy = Infinity;
-          if (dir.x !== 0) { const boundX = dir.x > 0 ? halfW : -halfW; fx = (boundX - x) / (xNew - x); }
-          if (dir.y !== 0) { const boundY = dir.y > 0 ? halfD : -halfD; fy = (boundY - y) / (yNew - y); }
-          const f = Math.min(fx, fy);
-          const xb = x + f * (xNew - x);
-          const yb = y + f * (yNew - y);
-          const taub = tau + f * (tauNew - tau);
-          totalPath += s * f;
-          if (storePath) path.push({x: xb, y: yb, tau: taub});
-          return {status: "side_escape", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};
+          if (Math.abs(xNew) > halfW) { const boundX = dir.x > 0 ? halfW : -halfW; fx = (boundX - x) / (xNew - x); }
+          if (Math.abs(yNew) > halfD) { const boundY = dir.y > 0 ? halfD : -halfD; fy = (boundY - y) / (yNew - y); }
+          fSide = Math.min(fx, fy);
         }
+        const fTop  = tauNew < 0        ? (0 - tau) / (tauNew - tau)        : Infinity;
+        const fBase = tauNew > tauCloud ? (tauCloud - tau) / (tauNew - tau) : Infinity;
 
-        // Top boundary escape (reflected).
-        if (tauNew < 0) {
-          const f = (0 - tau) / (tauNew - tau);
+        // Top boundary escape (reflected): crossed at or before any side plane.
+        if (fTop !== Infinity && fTop <= fSide) {
+          const f = fTop;
           const xb = x + f * (xNew - x);
           const yb = y + f * (yNew - y);
           totalPath += s * f;
@@ -138,9 +222,31 @@ export const Physics = {
           return {status: "reflected", xExit: xb, yExit: yb, tauExit: 0, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};
         }
 
+        // Side boundary escape: crossed strictly before the top/base planes.
+        if (fSide !== Infinity && fSide < fBase) {
+          const f = fSide;
+          const xb = x + f * (xNew - x);
+          const yb = y + f * (yNew - y);
+          const taub = tau + f * (tauNew - tau);
+          totalPath += s * f;
+          if (storePath) path.push({x: xb, y: yb, tau: taub});
+
+          // Over a reflective surface, a DOWNWARD side-escaper continues
+          // through the clear air beside the cloud to the infinite surface
+          // and may be reflected back into the cloud.
+          if (surfaceAlbedo > 0 && dir.z > 0) {
+            const out = surfaceInteraction(xb, yb, taub, true);
+            if (out.result) return out.result;
+            x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+            continue;
+          }
+
+          return {status: "side_escape", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};
+        }
+
         // Cloud-base crossing.
-        if (tauNew > tauCloud) {
-          const f = (tauCloud - tau) / (tauNew - tau);
+        if (fBase !== Infinity) {
+          const f = fBase;
           const xb = x + f * (xNew - x);
           const yb = y + f * (yNew - y);
           totalPath += s * f;
@@ -149,42 +255,12 @@ export const Physics = {
           cloudBaseTransmissions.push({xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
 
           if (surfaceAlbedo > 0) {
-            // Surface tau computed directly from params (avoids Coords dependency).
-            const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
-
-            // Geometric lateral displacement through the clear sub-cloud gap.
-            const muDown = Math.max(dir.z, 1e-9);
-            const horizontalFactorDown = surfaceDistanceKm * betaExt / muDown;
-            const xs = xb + horizontalFactorDown * dir.x;
-            const ys = yb + horizontalFactorDown * dir.y;
-            if (storePath && path.length < 3500) path.push({x: xs, y: ys, tau: tauSurface});
-
-            // Analog Lambertian surface decision.
-            if (RNG.rand() < surfaceAlbedo) {
-              localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_reflected"});
-              dir = Physics.sampleLambertianUpwardDirection();
-
-              surfaceReflectionDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1});
-              surfaceBounceCount++; // increment before side-escape check so stats.surfaceReflected
-                                    // correctly counts ALL surface reflections, including those
-                                    // followed by a lateral side escape from the cloud.
-
-              const muUp = Math.max(-dir.z, 1e-9);
-              const horizontalFactorUp = surfaceDistanceKm * betaExt / muUp;
-              const xEnter = xs + horizontalFactorUp * dir.x;
-              const yEnter = ys + horizontalFactorUp * dir.y;
-              if (storePath && path.length < 3500) path.push({x: xEnter, y: yEnter, tau: tauCloud});
-
-              if (Math.abs(xEnter) > halfW || Math.abs(yEnter) > halfD) {
-                return {status: "side_escape", xExit: xEnter, yExit: yEnter, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};
-              }
-
-              x = xEnter; y = yEnter; tau = tauCloud;
-              continue;
-            }
-
-            localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_absorbed"});
-            return {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};
+            // Descend the clear gap to the infinite surface; the base crossing
+            // was already registered above, so countDownArrival = false.
+            const out = surfaceInteraction(xb, yb, tauCloud, false);
+            if (out.result) return out.result;
+            x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+            continue;
           }
 
           // A_s = 0: photon terminates at cloud base.

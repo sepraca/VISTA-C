@@ -17,6 +17,7 @@ export const SimStats = {
       finalTransmitted: 0,  // terminal bottom exit when A_s = 0
       absorbed: 0,
       side: 0,
+      terminated: 0,        // hit the maxEvents safety cap (should be ~0)
       surfaceReflected: 0,
       surfaceAbsorbed: 0,
       totalScatterings: 0,
@@ -31,7 +32,11 @@ export const SimStats = {
     transmittedDirs: [],            // write-only in current code; reserved for future use
     netTransmittedDirs: [],
     reflectedPathLengths: [],
-    transmittedPathLengths: [],
+    // Optical paths of photons that delivered energy to the surface:
+    // terminal "transmitted" (A_s = 0) or "surface_absorbed" (A_s > 0).
+    // Count identically equals the net-transmittance count
+    // (transmitted - surfaceReflected), photon for photon.
+    netTransmittedPathLengths: [],
     transmittedEndpoints: [],
     surfaceInteractionEvents: [],
 
@@ -39,19 +44,20 @@ export const SimStats = {
     reset() {
       const s = SimStats.stats;
       s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
-      s.absorbed = 0; s.side = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
+      s.absorbed = 0; s.side = 0; s.terminated = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
       s.totalScatterings = 0; s.totalPath = 0;
       SimStats.reflectedEndpoints = [];    SimStats.transmittedEndpoints = [];
       SimStats.surfaceInteractionEvents = [];
       SimStats.reflectedMu = [];           SimStats.transmittedMu = [];
       SimStats.reflectedDirs = [];         SimStats.transmittedDirs = [];
       SimStats.netTransmittedDirs = [];
-      SimStats.reflectedPathLengths = [];  SimStats.transmittedPathLengths = [];
+      SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
     },
 
-    // Record a cloud-base boundary crossing (independent of surface outcome).
-    // Called once each time a photon crosses τ_cloud downward, even if it
-    // is subsequently reflected back up by the surface.
+    // Record a downward arrival at the surface plane (independent of surface
+    // outcome): a downward cloud-base crossing, or (A_s > 0) a downward
+    // side-wall exit that proceeds through clear air to the infinite surface.
+    // Called once per arrival, even if the photon is reflected back up.
     registerCloudBaseTransmission(result) {
       SimStats.stats.transmitted++;
       SimStats.transmittedEndpoints.push({x: result.xExit, y: result.yExit});
@@ -68,7 +74,6 @@ export const SimStats = {
         z: result.dirZ ?? 0,
         weight: 1
       });
-      SimStats.transmittedPathLengths.push(result.totalPath ?? 0);
     },
 
     // Record the final outcome of a completed photon trajectory.
@@ -86,10 +91,16 @@ export const SimStats = {
         SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "transmitted") {
         SimStats.stats.finalTransmitted++;
+        SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "side_escape") {
         SimStats.stats.side++;
       } else if (result.status === "surface_absorbed") {
         SimStats.stats.surfaceAbsorbed++;
+        SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+      } else if (result.status === "terminated") {
+        // Photon hit the maxEvents safety cap in physics.js. Counted
+        // separately so it can never masquerade as cloud absorption.
+        SimStats.stats.terminated++;
       } else {
         SimStats.stats.absorbed++;
       }
@@ -108,12 +119,15 @@ export const SimStats = {
       const EdownSfc = s.transmitted / launched;
       const EupSfc   = s.surfaceReflected / launched;
       const Rfinal   = s.reflected / launched;
-      const Tnet     = Math.max(0, EdownSfc - EupSfc);
+      // No clamp: T_net = A_sfc holds exactly, so a negative value would
+      // indicate a bookkeeping bug and should be visible, not masked.
+      const Tnet     = EdownSfc - EupSfc;
       const Acloud   = s.absorbed / launched;
       const Asurface = s.surfaceAbsorbed / launched;
       const Sfinal   = s.side / launched;
+      const Tterm    = s.terminated / launched;
 
-      const finalSumRTAS = Rfinal + Tnet + Acloud + Sfinal;
+      const finalSumRTAS = Rfinal + Tnet + Acloud + Sfinal + Tterm;
       const meanScat = s.totalScatterings / launched;
       const meanPath = s.totalPath / launched;
 
@@ -133,7 +147,8 @@ Top reflected R: ${Rfinal.toFixed(3)} (${s.reflected})
 Net surface transmittance T: ${Tnet.toFixed(3)} (${(s.transmitted - s.surfaceReflected)})
 Cloud absorbed A: ${Acloud.toFixed(3)} (${s.absorbed})
 Side escape S: ${Sfinal.toFixed(3)} (${s.side})
-R + T + A + S: ${finalSumRTAS.toFixed(3)}
+Terminated (event cap): ${Tterm.toFixed(3)} (${s.terminated})
+R + T + A + S + Term: ${finalSumRTAS.toFixed(3)}
 
 SURFACE ENERGY DIAGNOSTICS
 E_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
@@ -142,7 +157,7 @@ E_down_sfc - E_up_sfc: ${Tnet.toFixed(3)}
 Surface absorbed A_sfc: ${Asurface.toFixed(3)} (${s.surfaceAbsorbed})
 
 BOUNDARY / MULTI-PASS DIAGNOSTICS
-Cloud-base crossings: ${EdownSfc.toFixed(3)} (${s.transmitted})
+Down at sfc plane: ${EdownSfc.toFixed(3)} (${s.transmitted})
 Surface reflections / photon: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
 
 Mean scatterings / photon: ${meanScat.toFixed(2)}

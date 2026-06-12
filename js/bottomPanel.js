@@ -80,9 +80,15 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
+      // Net transmitted µ histogram: bin with signed weights, mirroring the BDF
+      // panel — downward base crossings carry +1, surface reflections −1, so the
+      // bars show net (down − up) energy per µ bin. Identical to the old gross
+      // histogram when A_s = 0.
+      const netTransEntries = SimStats.netTransmittedDirs.map(
+        d => ({mu: Math.abs(d.z ?? 0), w: d.weight ?? 1}));
       const nNetTrans = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
       BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.reflectedMu, 70, 42, 260, 118, "#60a5fa", "Reflected");
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.transmittedMu, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
+      BottomPanel.drawMuOverlayHistogram(ctx2, netTransEntries, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "12px system-ui";
@@ -91,16 +97,23 @@ export const BottomPanel = {
       ctx2.fillText("μ = 0: near-horizontal exit", 520, 224);
     },
 
+    // muArray entries: plain numbers (weight 1) or {mu, w} for signed weights.
     drawMuOverlayHistogram: function(ctx2, muArray, x0, y0, width, height, color, title, nOverride=null) {
       const nBins = 20;
       const counts = new Array(nBins).fill(0);
 
       for (const m of muArray) {
-        const mu = Math.max(0, Math.min(1, m));
+        const muRaw = typeof m === "number" ? m : m.mu;
+        const w = typeof m === "number" ? 1 : (m.w ?? 1);
+        const mu = Math.max(0, Math.min(1, muRaw));
         // Reverse x-axis: μ=1 on left, μ=0 on right.
         const i = Math.min(nBins - 1, Math.floor((1 - mu) * nBins));
-        counts[i]++;
+        counts[i] += w;
       }
+
+      // Negative net bins (more upwelling than downwelling) display as zero,
+      // consistent with the BDF panel's treatment.
+      for (let i = 0; i < nBins; i++) counts[i] = Math.max(0, counts[i]);
 
       const maxC = Math.max(...counts, 1);
       const binW = width / nBins;
@@ -264,7 +277,7 @@ export const BottomPanel = {
       }
 
       const meanR = mean(SimStats.reflectedPathLengths);
-      const meanT = mean(SimStats.transmittedPathLengths);
+      const meanT = mean(SimStats.netTransmittedPathLengths);
       const scaleMean = Math.max(meanR, meanT);
 
       // Use a representative path-length scale rather than the rare-event maximum.
@@ -328,15 +341,17 @@ export const BottomPanel = {
         ctx2.fillText("optical path length", x0 + width / 2, yAxis + 36);
       }
 
-      const nNetTransPath = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
+      // Per-photon paths of energy delivered to the surface: photons whose
+      // terminal status is "transmitted" (A_s = 0) or "surface_absorbed"
+      // (A_s > 0). Count equals the net-transmittance count exactly.
       drawPathHistogram(SimStats.reflectedPathLengths, 70, 42, 260, 118, "#60a5fa", "Reflected");
-      drawPathHistogram(SimStats.transmittedPathLengths, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTransPath);
+      drawPathHistogram(SimStats.netTransmittedPathLengths, 390, 42, 260, 118, "#86efac", "Net transmitted (surface-deposited)");
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
       ctx2.fillText(
-        `Mean reflected path=${mean(SimStats.reflectedPathLengths).toFixed(2)}   |   Mean base-crossing path=${mean(SimStats.transmittedPathLengths).toFixed(2)}   |   W=1 per exited photon`,
+        `Mean reflected path=${mean(SimStats.reflectedPathLengths).toFixed(2)}   |   Mean surface-deposited path=${mean(SimStats.netTransmittedPathLengths).toFixed(2)}   |   W=1 per photon`,
         w / 2,
         224
       );
@@ -369,7 +384,7 @@ export const BottomPanel = {
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
       const scaleTxt = UI.getBdfColorScaleMode() === "log" ? "log BDF scale: 0.01–1" : "linear BDF scale: 0–1";
-      const avgTxt = (typeof getAvgNearNadirBdf === "function" && UI.getAvgNearNadirBdf()) ? "; near-nadir φ averaged" : "";
+      const avgTxt = UI.getAvgNearNadirBdf() ? "; near-nadir φ averaged" : "";
       ctx2.fillText(`Absolute BDF=(Wᵢⱼ/N)π/(μᵢΔμᵢΔφⱼ); transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
     },
 
