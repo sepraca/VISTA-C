@@ -2,7 +2,7 @@
 
 An interactive 3D Monte Carlo (MC) simulation of photon transport through a finite plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time Three.js visualization.
 
-Designed as an educational tool for students and scientists working in cloud remote sensing and atmospheric radiative transfer.
+Designed primarily as an educational tool for students and scientists working in cloud remote sensing and atmospheric radiative transfer, but numerically verified for scientific use.
 
 ---
 
