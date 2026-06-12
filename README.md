@@ -1,6 +1,6 @@
 # 3D Monte Carlo Cloud Radiative Transfer Simulator
 
-An interactive 3D Monte Carlo (MC) simulation of photon transport through a plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time Three.js visualization.
+An interactive 3D Monte Carlo (MC) simulation of photon transport through a finite plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time Three.js visualization.
 
 Designed as an educational tool for students and scientists working in cloud remote sensing and atmospheric radiative transfer.
 
@@ -121,6 +121,8 @@ Two reference test cases confirm reproducibility. With RNG seed = 42:
 
 ¹ Conservative (ω₀=1), black surface: T = direct cloud transmittance  
 ² Absorbing cloud, reflecting surface: T = net downward energy at surface
+
+A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, Joss) are detailed in the tests folder.
 
 ---
 
