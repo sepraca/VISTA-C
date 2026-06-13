@@ -1,6 +1,6 @@
 // exportUtils.js — PNG download and diagnostic header generation.
 
-import { state } from './state.js';
+import { state, UI_PANEL_WIDTH } from './state.js';
 import { SimStats } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
@@ -231,7 +231,7 @@ export const Export = {
 
         const source = state.renderer.domElement;
         const dpr = state.renderer.getPixelRatio();
-        const panelPx = Math.round(418 * dpr); // UI panel width in physical pixels
+        const panelPx = Math.round(UI_PANEL_WIDTH * dpr); // UI panel width in physical pixels
         const viewW = source.width - panelPx;
 
         const canvasOut = document.createElement("canvas");

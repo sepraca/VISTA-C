@@ -140,67 +140,91 @@ export const Photons = {
       requestAnimationFrame(fade);
     },
 
+    // --- Instanced endpoint markers ---
+    // Endpoint spheres were previously individual Mesh objects (one geometry,
+    // material, and GPU draw call each); at the default 6000-marker cap they
+    // dominated both run time and render time. They are now plain records in
+    // state.endpointData, rendered by a single InstancedMesh (one draw call).
+    // Age fading is expressed as per-instance scale and color dimming.
+    _endpointCapacity: 0,
+
+    _ensureEndpointMesh: function(capacity) {
+      if (state.endpointInstanced && Photons._endpointCapacity >= capacity) {
+        return state.endpointInstanced;
+      }
+      if (state.endpointInstanced) {
+        state.endpointGroup.remove(state.endpointInstanced);
+        state.endpointInstanced.geometry.dispose();
+        state.endpointInstanced.material.dispose();
+      }
+      const geom = new THREE.SphereGeometry(1, 10, 10);
+      const mat = new THREE.MeshBasicMaterial({transparent: true, opacity: 0.95});
+      const mesh = new THREE.InstancedMesh(geom, mat, capacity);
+      mesh.count = 0;
+      state.endpointInstanced = mesh;
+      Photons._endpointCapacity = capacity;
+      state.endpointGroup.add(mesh);
+      return mesh;
+    },
+
+    // Reset endpoint records and instanced-mesh bookkeeping (the mesh itself
+    // is disposed by Scene.clearGroup on the endpoint group).
+    clearEndpoints: function() {
+      state.endpointData.length = 0;
+      state.endpointInstanced = null;
+      Photons._endpointCapacity = 0;
+    },
+
     trimEndpointMarkers: function() {
       const cap = UI.getEndpointCap();
-
-      while (state.endpointGroup.children.length > cap) {
-        const obj = state.endpointGroup.children.shift();
-
-        if (obj) {
-          state.endpointGroup.remove(obj);
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) {
-            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-            else obj.material.dispose();
-          }
-        }
-      }
+      const excess = state.endpointData.length - cap;
+      if (excess > 0) state.endpointData.splice(0, excess);
     },
 
+    // Batched endpoint maintenance: trim to the cap and rewrite the instanced
+    // mesh ONCE per display update (per chunk / per animated photon), instead
+    // of once per added endpoint, which was O(n^2) over a run.
+    finalizeEndpoints: function() {
+      Photons.trimEndpointMarkers();
+      Photons.syncEndpointMesh();
+    },
+
+    // Kept as an alias: callers that re-apply fading after UI changes.
     applyEndpointFade: function() {
+      Photons.syncEndpointMesh();
+    },
+
+    syncEndpointMesh: function() {
+      const data = state.endpointData;
+      const cap = Math.max(UI.getEndpointCap(), 1);
+      const mesh = Photons._ensureEndpointMesh(Math.max(cap, data.length));
       const fade = UI.getFadeEndpoints();
-      const n = state.endpointGroup.children.length;
+      const n = data.length;
+      const m4 = new THREE.Matrix4();
+      const col = new THREE.Color();
 
       for (let i = 0; i < n; i++) {
-        const obj = state.endpointGroup.children[i];
-        if (!obj || !obj.material) continue;
-
-        if (!fade || n <= 1) {
-          obj.material.transparent = true;
-          obj.material.opacity = 1.0;
-          obj.scale.set(1, 1, 1);
-          continue;
-        }
-
+        const d = data[i];
         // Oldest markers are at low index; newest are brightest/largest.
-        const ageFrac = i / (n - 1);
-        const opacity = 0.18 + 0.82 * ageFrac;
-        const scale = 0.65 + 0.35 * ageFrac;
-
-        obj.material.transparent = true;
-        obj.material.opacity = opacity;
-        obj.scale.set(scale, scale, scale);
+        const ageFrac = (!fade || n <= 1) ? 1 : i / (n - 1);
+        const s = d.radius * (0.65 + 0.35 * ageFrac);
+        m4.makeScale(s, s, s).setPosition(d.x, d.y, d.z);
+        mesh.setMatrixAt(i, m4);
+        col.setHex(d.color).multiplyScalar(0.35 + 0.65 * ageFrac);
+        mesh.setColorAt(i, col);
       }
+
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     },
 
+    // Adds a marker only; cap-trimming and fading are deferred to
+    // finalizeEndpoints() so per-photon cost stays O(1).
     addEndpoint: function(result) {
       const cap = UI.getEndpointCap();
       if (cap <= 0) {
         return;
-      }
-
-      Photons.trimEndpointMarkers();
-
-      while (state.endpointGroup.children.length >= cap) {
-        const obj = state.endpointGroup.children.shift();
-        if (obj) {
-          state.endpointGroup.remove(obj);
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) {
-            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-            else obj.material.dispose();
-          }
-        }
       }
 
       let color, radius;
@@ -222,19 +246,8 @@ export const Photons = {
         radius = 0.20;
       }
 
-      const geom = new THREE.SphereGeometry(radius, 12, 12);
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 1.2,
-        transparent: true,
-        opacity: 1.0,
-        roughness: 0.35
-      });
-      const sphere = new THREE.Mesh(geom, mat);
-      sphere.position.copy(Coords.simToWorldPoint({x: result.xExit, y: result.yExit, tau: result.tauExit}));
-      state.endpointGroup.add(sphere);
-      Photons.applyEndpointFade();
+      const p = Coords.simToWorldPoint({x: result.xExit, y: result.yExit, tau: result.tauExit});
+      state.endpointData.push({x: p.x, y: p.y, z: p.z, color, radius});
     },
 
     addAnimatedPath: function(result) {

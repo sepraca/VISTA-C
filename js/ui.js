@@ -33,7 +33,7 @@ export const UI = {
     },
 
     // --- Physics / geometry inputs ---
-    getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 1000000, 400, "Photons", true); },
+    getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 10000000, 400, "Photons", true); },
     getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.1, 100, 10, "Cloud optical thickness τ"); },
     getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 200, 40, "Horizontal extent"); },
     getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },

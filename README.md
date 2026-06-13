@@ -110,6 +110,32 @@ state, ui, coords, physics, simstats, scene, photons, bottomPanel, exportUtils â
 
 ---
 
+## Display updates during large runs
+
+In the instant (non-animated) mode, photons are simulated in chunks of 1,000.
+To keep large runs fast, the displays refresh on two schedules:
+
+- **Endpoint markers** (3D exit-point spheres): updated every chunk
+  (1,000 photons).
+- **Footprint heatmaps, bottom-panel plots, and statistics text**: updated
+  every 10 chunks (10,000 photons) and once at run completion.
+
+The 3D view itself renders continuously â€” you can orbit, pan, and zoom at
+any time during a run. Only the displayed data advances in chunk-sized
+increments; for a 1M-photon run this means ~100 progress refreshes.
+
+Endpoint markers are drawn as a single instanced mesh (one GPU draw call),
+so large marker counts (up to the endpoint cap) do not slow down rendering
+or simulation. 
+
+Final results are identical regardless of update cadence:
+all photons are tallied in the statistics as they are simulated; the
+refresh schedule affects only when the displays redraw.
+
+Note: Changing the user-specified Footprint grid size between runs clears the 2D exit-location histograms at cloud-top and cloud-base; re-run (e.g., "Launch Ensemble") to begin populating the 2D histogram bins at the new resolution.
+
+---
+
 ## Verification
 
 Two reference test cases confirm reproducibility. With RNG seed = 42:

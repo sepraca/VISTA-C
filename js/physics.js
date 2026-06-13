@@ -3,6 +3,14 @@
 
 import { RNG } from './rng.js';
 
+// Safety cap on transport events per photon; photons hitting it return
+// status "terminated" and are tallied separately by SimStats.
+const MAX_EVENTS = 25000;
+
+// Cap on stored path vertices per photon (visualization only; the physics
+// continues past this — later vertices are simply not recorded).
+const MAX_PATH_POINTS = 3500;
+
 export const Physics = {
 
     // Normalize a direction vector {x, y, z} to unit length.
@@ -157,7 +165,7 @@ export const Physics = {
         const tDown = (tauSurface - ctau) / Math.max(dir.z, 1e-12);
         const xs = cx + tDown * dir.x;
         const ys = cy + tDown * dir.y;
-        if (storePath && path.length < 3500) path.push({x: xs, y: ys, tau: tauSurface});
+        if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xs, y: ys, tau: tauSurface});
 
         if (countDownArrival) {
           cloudBaseTransmissions.push({xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
@@ -171,7 +179,7 @@ export const Physics = {
 
           const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
           if (entry) {
-            if (storePath && path.length < 3500) path.push({x: entry.x, y: entry.y, tau: entry.tau});
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: entry.x, y: entry.y, tau: entry.tau});
             return {reenter: entry};
           }
 
@@ -179,7 +187,7 @@ export const Physics = {
           const tUp = (tauCloud - tauSurface) / Math.min(dir.z, -1e-12);
           const xe = xs + tUp * dir.x;
           const ye = ys + tUp * dir.y;
-          if (storePath && path.length < 3500) path.push({x: xe, y: ye, tau: tauCloud});
+          if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xe, y: ye, tau: tauCloud});
           return {result: {status: "side_escape", xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
         }
 
@@ -187,9 +195,9 @@ export const Physics = {
         return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
       };
 
-      const maxEvents = 25000;
+      
 
-      for (let event = 0; event < maxEvents; event++) {
+      for (let event = 0; event < MAX_EVENTS; event++) {
         const s = Physics.sampleFreePath();
 
         const xNew = x + s * dir.x;
@@ -270,7 +278,7 @@ export const Physics = {
         // Interior scattering event.
         x = xNew; y = yNew; tau = tauNew;
         totalPath += s;
-        if (storePath && path.length < 3500) path.push({x, y, tau});
+        if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
 
         if (RNG.rand() > omega0) {
           return {status: "absorbed", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs};

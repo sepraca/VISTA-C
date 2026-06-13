@@ -1,11 +1,55 @@
 // simstats.js — Photon outcome statistics accumulation.
 // BottomPanel is wired via setDrawPanelCallback() in main.js
 // to avoid a circular import.
+//
+// INCREMENTAL BINNING: angular and spatial distributions are accumulated
+// directly into fixed-size bin arrays as each photon completes, instead of
+// storing per-photon records and re-binning the full history on every
+// display refresh. This makes memory O(1) in photon count and display
+// refreshes O(bins), enabling runs up to 10^7 photons. Consequence: changing
+// the footprint grid resolution applies to subsequently accumulated photons
+// only (re-run for a clean histogram at the new resolution).
 
-import { state } from './state.js';
+import { state, world } from './state.js';
+import { UI } from './ui.js';
 
 let _drawPanelCallback = () => {};
 export function setDrawPanelCallback(fn) { _drawPanelCallback = fn; }
+
+// Bin-layout constants (shared with bottomPanel.js).
+export const MU_BINS = 20;          // exit-angle histograms
+export const BDF_THETA_BINS = 19;   // zenith bins centered at 0,5,...,90 deg
+export const BDF_PHI_BINS = 72;     // azimuth bins centered at 0,5,...,355 deg
+
+// µ histogram bin index. Reversed axis: µ=1 in bin 0, µ=0 in the last bin.
+// Must match the historical binning in drawMuOverlayHistogram exactly.
+function muBinIndex(mu) {
+  const m = Math.max(0, Math.min(1, mu));
+  return Math.min(MU_BINS - 1, Math.floor((1 - m) * MU_BINS));
+}
+
+// BDF grid bin indices for an exit direction {x, y, z}.
+// Must match the historical binning in computeBdfGrid exactly.
+function bdfBinIndex(dx, dy, dz) {
+  const muAbs = Math.max(0, Math.min(1, Math.abs(dz ?? 0)));
+  const theta = Math.acos(muAbs);
+
+  let phi = Math.atan2(dy ?? 0, dx ?? 0);
+  if (phi < 0) phi += 2 * Math.PI;
+
+  const dTheta = (Math.PI / 2) / (BDF_THETA_BINS - 1);
+  const ir = Math.min(BDF_THETA_BINS - 1, Math.max(0, Math.round(theta / dTheta)));
+
+  const dPhi = 2 * Math.PI / BDF_PHI_BINS;
+  const phiCentered = (phi + dPhi / 2) % (2 * Math.PI);
+  const ip = Math.min(BDF_PHI_BINS - 1, Math.floor(phiCentered / dPhi));
+
+  return ir * BDF_PHI_BINS + ip;
+}
+
+// Cap on stored surface-interaction events (3D markers show at most the
+// most recent 1200; storing more is wasted memory at large photon counts).
+const SURFACE_EVENT_CAP = 1200;
 
 export const SimStats = {
 
@@ -24,33 +68,61 @@ export const SimStats = {
       totalPath: 0
     },
 
-    // Per-photon accumulation arrays
-    reflectedEndpoints: [],
-    reflectedMu: [],
-    transmittedMu: [],
-    reflectedDirs: [],
-    transmittedDirs: [],            // write-only in current code; reserved for future use
-    netTransmittedDirs: [],
+    // --- Incremental bin accumulators ---
+    muReflBins:     new Float64Array(MU_BINS),
+    muNetTransBins: new Float64Array(MU_BINS),          // signed (+down, -up)
+    bdfReflWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfNetWeights:  new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    // Footprint count grids at the current "Footprint grid" resolution.
+    footRefl:  {nBins: 0, counts: null},
+    footTrans: {nBins: 0, counts: null},
+
+    // Per-photon arrays retained only where the display needs raw values
+    // (path-length axis range adapts to the run); these store plain numbers
+    // (compact in JS engines), not objects.
     reflectedPathLengths: [],
     // Optical paths of photons that delivered energy to the surface:
     // terminal "transmitted" (A_s = 0) or "surface_absorbed" (A_s > 0).
     // Count identically equals the net-transmittance count
     // (transmitted - surfaceReflected), photon for photon.
     netTransmittedPathLengths: [],
-    transmittedEndpoints: [],
-    surfaceInteractionEvents: [],
+    surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
-    // Reset all counters and arrays to their initial empty state.
+    // (Re)create footprint grids at the current UI resolution. Called on
+    // reset and on display rebuilds — NOT per photon (avoids DOM reads in
+    // the hot loop). A resolution change clears accumulated footprints.
+    ensureFootprintGrids() {
+      const nBins = UI.getFootprintGrid();
+      for (const f of [SimStats.footRefl, SimStats.footTrans]) {
+        if (f.nBins !== nBins || !f.counts) {
+          f.nBins = nBins;
+          f.counts = new Float64Array(nBins * nBins);
+        }
+      }
+    },
+
+    _addFootprint(f, x, y) {
+      if (!f.counts) return;
+      const n = f.nBins;
+      const ix = Math.floor(((x + world.slabW / 2) / world.slabW) * n);
+      const iy = Math.floor(((y + world.slabD / 2) / world.slabD) * n);
+      if (ix >= 0 && ix < n && iy >= 0 && iy < n) f.counts[ix * n + iy]++;
+    },
+
+    // Reset all counters and accumulators to their initial empty state.
     reset() {
       const s = SimStats.stats;
       s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
       s.absorbed = 0; s.side = 0; s.terminated = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
       s.totalScatterings = 0; s.totalPath = 0;
-      SimStats.reflectedEndpoints = [];    SimStats.transmittedEndpoints = [];
+      SimStats.muReflBins.fill(0);
+      SimStats.muNetTransBins.fill(0);
+      SimStats.bdfReflWeights.fill(0);
+      SimStats.bdfNetWeights.fill(0);
+      SimStats.footRefl  = {nBins: 0, counts: null};
+      SimStats.footTrans = {nBins: 0, counts: null};
+      SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
-      SimStats.reflectedMu = [];           SimStats.transmittedMu = [];
-      SimStats.reflectedDirs = [];         SimStats.transmittedDirs = [];
-      SimStats.netTransmittedDirs = [];
       SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
     },
 
@@ -58,22 +130,27 @@ export const SimStats = {
     // outcome): a downward cloud-base crossing, or (A_s > 0) a downward
     // side-wall exit that proceeds through clear air to the infinite surface.
     // Called once per arrival, even if the photon is reflected back up.
+    // Contributes weight +1 to the net-transmitted µ and BDF accumulators.
     registerCloudBaseTransmission(result) {
       SimStats.stats.transmitted++;
-      SimStats.transmittedEndpoints.push({x: result.xExit, y: result.yExit});
-      SimStats.transmittedMu.push(Math.abs(result.dirZ ?? 0));
-      SimStats.transmittedDirs.push({
-        x: result.dirX ?? 0,
-        y: result.dirY ?? 0,
-        z: result.dirZ ?? 0
-      });
-      // Downward cloud-base crossings contribute weight +1 to the net BDF.
-      SimStats.netTransmittedDirs.push({
-        x: result.dirX ?? 0,
-        y: result.dirY ?? 0,
-        z: result.dirZ ?? 0,
-        weight: 1
-      });
+      SimStats._addFootprint(SimStats.footTrans, result.xExit, result.yExit);
+      SimStats.muNetTransBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
+      SimStats.bdfNetWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
+    },
+
+    // Record a Lambertian surface reflection direction: weight -1 in the
+    // net-transmitted µ and BDF accumulators (net = down - up).
+    registerSurfaceReflection(d) {
+      SimStats.muNetTransBins[muBinIndex(Math.abs(d.z ?? 0))] -= 1;
+      SimStats.bdfNetWeights[bdfBinIndex(d.x, d.y, d.z)] -= 1;
+    },
+
+    // Store a surface interaction event for the 3D markers, keeping only
+    // the most recent SURFACE_EVENT_CAP entries.
+    registerSurfaceEvent(e) {
+      const arr = SimStats.surfaceInteractionEvents;
+      arr.push(e);
+      if (arr.length > 2 * SURFACE_EVENT_CAP) arr.splice(0, arr.length - SURFACE_EVENT_CAP);
     },
 
     // Record the final outcome of a completed photon trajectory.
@@ -85,9 +162,9 @@ export const SimStats = {
 
       if (result.status === "reflected") {
         SimStats.stats.reflected++;
-        SimStats.reflectedEndpoints.push({x: result.xExit, y: result.yExit});
-        SimStats.reflectedMu.push(Math.abs(result.dirZ ?? 0));
-        SimStats.reflectedDirs.push({x: result.dirX ?? 0, y: result.dirY ?? 0, z: result.dirZ ?? 0});
+        SimStats._addFootprint(SimStats.footRefl, result.xExit, result.yExit);
+        SimStats.muReflBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
+        SimStats.bdfReflWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
         SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "transmitted") {
         SimStats.stats.finalTransmitted++;
@@ -136,7 +213,7 @@ export const SimStats = {
         : "Active photon: none";
 
       const endpointCap  = UI.getEndpointCap();
-      const endpointShown = state.endpointGroup ? state.endpointGroup.children.length : 0;
+      const endpointShown = state.endpointData ? state.endpointData.length : 0;
       const bottomMode   = document.getElementById("bottomPanelMode")?.value ?? "mu";
 
       document.getElementById("stats").textContent =

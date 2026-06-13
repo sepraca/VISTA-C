@@ -1,6 +1,6 @@
 // bottomPanel.js — Canvas-based plot drawing: μ histograms, BDF, path-length.
 
-import { SimStats } from './simstats.js';
+import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI } from './ui.js';
 import { state } from './state.js';
 
@@ -80,15 +80,13 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      // Net transmitted µ histogram: bin with signed weights, mirroring the BDF
-      // panel — downward base crossings carry +1, surface reflections −1, so the
-      // bars show net (down − up) energy per µ bin. Identical to the old gross
-      // histogram when A_s = 0.
-      const netTransEntries = SimStats.netTransmittedDirs.map(
-        d => ({mu: Math.abs(d.z ?? 0), w: d.weight ?? 1}));
+      // Bins are accumulated incrementally in SimStats. The net-transmitted
+      // bins carry signed weights (+1 per downward base/surface arrival,
+      // -1 per surface reflection), so the bars show net (down − up) energy
+      // per µ bin; identical to a gross histogram when A_s = 0.
       const nNetTrans = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.reflectedMu, 70, 42, 260, 118, "#60a5fa", "Reflected");
-      BottomPanel.drawMuOverlayHistogram(ctx2, netTransEntries, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.muReflBins, 70, 42, 260, 118, "#60a5fa", "Reflected", SimStats.stats.reflected);
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.muNetTransBins, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "12px system-ui";
@@ -97,23 +95,14 @@ export const BottomPanel = {
       ctx2.fillText("μ = 0: near-horizontal exit", 520, 224);
     },
 
-    // muArray entries: plain numbers (weight 1) or {mu, w} for signed weights.
-    drawMuOverlayHistogram: function(ctx2, muArray, x0, y0, width, height, color, title, nOverride=null) {
-      const nBins = 20;
-      const counts = new Array(nBins).fill(0);
-
-      for (const m of muArray) {
-        const muRaw = typeof m === "number" ? m : m.mu;
-        const w = typeof m === "number" ? 1 : (m.w ?? 1);
-        const mu = Math.max(0, Math.min(1, muRaw));
-        // Reverse x-axis: μ=1 on left, μ=0 on right.
-        const i = Math.min(nBins - 1, Math.floor((1 - mu) * nBins));
-        counts[i] += w;
-      }
+    // binCounts: pre-accumulated bin array (length MU_BINS), bin 0 = µ near 1
+    // (reversed x-axis). nLabel: the photon/weight count to display as N.
+    drawMuOverlayHistogram: function(ctx2, binCounts, x0, y0, width, height, color, title, nLabel) {
+      const nBins = MU_BINS;
 
       // Negative net bins (more upwelling than downwelling) display as zero,
       // consistent with the BDF panel's treatment.
-      for (let i = 0; i < nBins; i++) counts[i] = Math.max(0, counts[i]);
+      const counts = Array.from(binCounts, c => Math.max(0, c));
 
       const maxC = Math.max(...counts, 1);
       const binW = width / nBins;
@@ -134,7 +123,7 @@ export const BottomPanel = {
       ctx2.fillStyle = "#f8fafc";
       ctx2.font = "bold 13px system-ui";
       ctx2.textAlign = "center";
-      ctx2.fillText(`${title}  N=${nOverride !== null ? nOverride : muArray.length}`, x0 + width / 2, y0 - 12);
+      ctx2.fillText(`${title}  N=${nLabel}`, x0 + width / 2, y0 - 12);
 
       // Axis tick marks and labels: μ = 1, 0.5, 0.
       const yAxis = y0 + height;
@@ -161,48 +150,6 @@ export const BottomPanel = {
       // Lowered axis label to avoid overlap with the 0.5 tick label.
       ctx2.fillText("μ = |cos(Θ)|", x0 + width / 2, yAxis + 36);
     },
-
-    getBinNearDirection: function(grid, thetaDegTarget, phiDegTarget) {
-      const thetaBins = grid.thetaBins;
-      const phiBins = grid.phiBins;
-
-      const dThetaDeg = 90 / (thetaBins - 1);
-      const ir = Math.min(thetaBins - 1, Math.max(0, Math.round(thetaDegTarget / dThetaDeg)));
-
-      const dPhiDeg = 360 / phiBins;
-      let phi = phiDegTarget % 360;
-      if (phi < 0) phi += 360;
-      const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhiDeg / 2) % 360) / dPhiDeg));
-
-      return {
-        ir,
-        ip,
-        info: grid.binInfo[ir][ip]
-      };
-    },
-
-    getBinNearMuPhi: function(grid, muTarget, phiDegTarget) {
-      const mu = Math.max(0, Math.min(1, muTarget));
-      const thetaDeg = Math.acos(mu) * 180 / Math.PI;
-      return BottomPanel.getBinNearDirection(grid, thetaDeg, phiDegTarget);
-    },
-
-
-
-    getMaxBdfBin: function(grid) {
-      let best = null;
-
-      for (let ir = 0; ir < grid.thetaBins; ir++) {
-        for (let ip = 0; ip < grid.phiBins; ip++) {
-          const info = grid.binInfo[ir][ip];
-          if (!info) continue;
-          if (!best || info.bdf > best.bdf) best = info;
-        }
-      }
-
-      return best;
-    },
-
 
     smoothNearNadirAzimuth: function(grid, maxThetaDeg=5.0) {
       // At very small zenith angles, azimuth is physically ill-conditioned:
@@ -245,7 +192,7 @@ export const BottomPanel = {
       return grid;
     },
 
-    mapBdfToColorFraction: function(value, commonMax) {
+    mapBdfToColorFraction: function(value) {
       if (value <= 0) return 0;
 
       // Absolute BDF display:
@@ -368,17 +315,12 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      const thetaBins = 19; // centers at 0°, 5°, ..., 90°
-      const phiBins = 72;
+      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.bdfReflWeights));
+      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.bdfNetWeights));
 
-      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.reflectedDirs, thetaBins, phiBins));
-      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.netTransmittedDirs, thetaBins, phiBins));
-
-      const commonMax = Math.max(reflectedGrid.maxValue, transmittedGrid.maxValue, 1e-12);
-
-      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Reflected", commonMax);
-      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Net Transmitted", commonMax);
-      BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, "BDF", commonMax);
+      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Reflected");
+      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Net Transmitted");
+      BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, "BDF");
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
@@ -388,31 +330,15 @@ export const BottomPanel = {
       ctx2.fillText(`Absolute BDF=(Wᵢⱼ/N)π/(μᵢΔμᵢΔφⱼ); transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
     },
 
-    computeBdfGrid: function(dirs, thetaBins, phiBins) {
-      const weights = Array.from({ length: thetaBins }, () => Array(phiBins).fill(0));
+    // Build the displayable BDF grid from a flat incremental weight array
+    // (length BDF_THETA_BINS * BDF_PHI_BINS, accumulated in SimStats).
+    computeBdfGrid: function(weightsFlat) {
+      const thetaBins = BDF_THETA_BINS;
+      const phiBins = BDF_PHI_BINS;
+      const weights = Array.from({ length: thetaBins }, (_, ir) =>
+        Array.from({ length: phiBins }, (_, ip) => weightsFlat[ir * phiBins + ip]));
       const bdf = Array.from({ length: thetaBins }, () => Array(phiBins).fill(0));
       const binInfo = Array.from({ length: thetaBins }, () => Array(phiBins).fill(null));
-
-      // In the current analog absorption implementation, each exiting photon has unit
-      // weight. Absorbed photons do not enter the reflected/transmitted directional grids.
-      for (const d of dirs) {
-        const muAbs = Math.max(0, Math.min(1, Math.abs(d.z ?? 0)));
-        const theta = Math.acos(muAbs); // 0 to π/2
-
-        let phi = Math.atan2(d.y ?? 0, d.x ?? 0); // -π to π
-        if (phi < 0) phi += 2 * Math.PI;
-
-        // Center zenith-angle bins at 0°, 5°, ..., 90°.
-        const dTheta = (Math.PI / 2) / (thetaBins - 1);
-        const ir = Math.min(thetaBins - 1, Math.max(0, Math.round(theta / dTheta)));
-
-        // Center azimuth bin 0 on φ=0°.
-        const dPhi = 2 * Math.PI / phiBins;
-        const phiCentered = (phi + dPhi / 2) % (2 * Math.PI);
-        const ip = Math.min(phiBins - 1, Math.floor(phiCentered / dPhi));
-
-        weights[ir][ip] += (d.weight ?? 1);
-      }
 
       const nIncident = Math.max(SimStats.stats.launched, 1);
       const dPhi = 2 * Math.PI / phiBins;
@@ -453,21 +379,21 @@ export const BottomPanel = {
         }
       }
 
-      const signedWeightSum = dirs.reduce((acc, d) => acc + (d.weight ?? 1), 0);
+      let signedWeightSum = 0;
+      for (let i = 0; i < weightsFlat.length; i++) signedWeightSum += weightsFlat[i];
 
       return {
         bdf,
         weights,
         binInfo,
         maxValue,
-        sampleCount: dirs.length,
         signedWeightSum,
         thetaBins,
         phiBins
       };
     },
 
-    drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title, commonMax) {
+    drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title) {
       const thetaBins = grid.thetaBins;
       const phiBins = grid.phiBins;
       const dTheta = (Math.PI / 2) / (thetaBins - 1);
@@ -483,7 +409,7 @@ export const BottomPanel = {
           const value = grid.bdf[ir][ip];
           if (value <= 0) continue;
 
-          const frac = BottomPanel.mapBdfToColorFraction(value, commonMax);
+          const frac = BottomPanel.mapBdfToColorFraction(value);
 
           // Draw sector centered at φ = ip * Δφ.
           const dPhi = 2 * Math.PI / phiBins;
@@ -552,7 +478,7 @@ export const BottomPanel = {
       ctx2.textBaseline = "alphabetic";
     },
 
-    drawColorBar: function(ctx2, x, y, w, h, label, maxValue=1) {
+    drawColorBar: function(ctx2, x, y, w, h, label) {
       const steps = 120;
       const isLog = UI.getBdfColorScaleMode() === "log";
 

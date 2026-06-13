@@ -1,10 +1,11 @@
 // scene.js — Three.js scene geometry builders and camera helpers.
 
 import * as THREE from 'three';
-import { state, world } from './state.js';
+import { state, world, SLAB_RENDER_HEIGHT } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
+import { BottomPanel } from './bottomPanel.js';
 
 export const Scene = {
 
@@ -26,7 +27,7 @@ export const Scene = {
     // Must be called before Scene.buildCloudBox() and at state.scene reset.
     updateWorld: function() {
       world.tauCloud = UI.getTauCloud();
-      world.slabH = 10;
+      world.slabH = SLAB_RENDER_HEIGHT;
       world.zScale = world.slabH / world.tauCloud;
       const L = UI.getHorizontalExtent();
       world.slabW = L;
@@ -235,15 +236,19 @@ export const Scene = {
       Scene.clearGroup(state.histogramGroup);
       BottomPanel.drawBottomPanel();
 
+      // Reinitializes the footprint accumulators if the UI grid resolution
+      // changed (accumulated footprint data restarts at the new resolution).
+      SimStats.ensureFootprintGrids();
+
       Scene.addFootprintHeatmap(
-        SimStats.reflectedEndpoints,
+        SimStats.footRefl,
         world.slabH / 2 + 0.035,
         0x60a5fa,
         true
       );
 
       Scene.addFootprintHeatmap(
-        SimStats.transmittedEndpoints,
+        SimStats.footTrans,
         -world.slabH / 2 - 0.035,
         0x86efac,
         false
@@ -281,25 +286,19 @@ export const Scene = {
       }
     },
 
-    // Build a footprint heatmap on the cloud top or base plane.
-    addFootprintHeatmap: function(points, zPlane, color, isTop) {
-      const nBins = UI.getFootprintGrid();
-      const counts = Array.from({length: nBins}, () => Array(nBins).fill(0));
+    // Build a footprint heatmap on the cloud top or base plane from an
+    // incremental count grid ({nBins, counts: Float64Array(nBins*nBins)},
+    // accumulated in SimStats).
+    addFootprintHeatmap: function(foot, zPlane, color, isTop) {
+      if (!foot || !foot.counts) return;
+      const nBins = foot.nBins;
+      const counts = foot.counts;
       const halfW = world.slabW / 2;
       const halfD = world.slabD / 2;
 
-      for (const p of points) {
-        const fx = (p.x + halfW) / world.slabW;
-        const fy = (p.y + halfD) / world.slabD;
-        const ix = Math.floor(fx * nBins);
-        const iy = Math.floor(fy * nBins);
-        if (ix >= 0 && ix < nBins && iy >= 0 && iy < nBins) counts[ix][iy]++;
-      }
-
       let maxCount = 1;
-      for (let ix = 0; ix < nBins; ix++)
-        for (let iy = 0; iy < nBins; iy++)
-          maxCount = Math.max(maxCount, counts[ix][iy]);
+      for (let i = 0; i < counts.length; i++)
+        if (counts[i] > maxCount) maxCount = counts[i];
 
       const cellW = world.slabW / nBins;
       const cellD = world.slabD / nBins;
@@ -308,7 +307,7 @@ export const Scene = {
 
       for (let ix = 0; ix < nBins; ix++) {
         for (let iy = 0; iy < nBins; iy++) {
-          const c = counts[ix][iy];
+          const c = counts[ix * nBins + iy];
           if (c === 0) continue;
 
           const frac = c / maxCount;
@@ -350,36 +349,5 @@ export const Scene = {
       ];
       const frame = Scene.makeLine(framePts, color, 0.95);
       state.histogramGroup.add(frame);
-    },
-
-    // Add a canvas-based text label at a given 3D position in state.histogramGroup.
-    addTextSprite: function(text, position, color=0xffffff) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 256;
-      canvas.height = 96;
-
-      const ctx2 = canvas.getContext("2d");
-      ctx2.clearRect(0, 0, canvas.width, canvas.height);
-      ctx2.font = "bold 34px system-ui";
-      ctx2.textAlign = "center";
-      ctx2.textBaseline = "middle";
-
-      const c = new THREE.Color(color);
-      const r = Math.round(c.r * 255);
-      const g = Math.round(c.g * 255);
-      const b = Math.round(c.b * 255);
-
-      ctx2.fillStyle = `rgb(${r},${g},${b})`;
-      ctx2.shadowColor = "rgba(0,0,0,0.85)";
-      ctx2.shadowBlur = 8;
-      ctx2.fillText(text, canvas.width / 2, canvas.height / 2);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      const mat = new THREE.SpriteMaterial({map: texture, transparent: true, depthTest: false});
-      const sprite = new THREE.Sprite(mat);
-      sprite.position.copy(position);
-      sprite.scale.set(2.8, 1.05, 1);
-      sprite.renderOrder = 1001;
-      state.histogramGroup.add(sprite);
     }
   };

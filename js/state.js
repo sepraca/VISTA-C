@@ -15,6 +15,11 @@ export const state = {
   endpointGroup:  null,
   histogramGroup: null,
 
+  // Endpoint markers: plain data records {x, y, z, color, radius} (oldest
+  // first), rendered as a single InstancedMesh by Photons.syncEndpointMesh().
+  endpointData:       [],
+  endpointInstanced:  null,
+
   // Photon animation tracking
   lastScatterMarker:     null,
   nextPhotonId:          1,
@@ -32,3 +37,11 @@ export const world = { tauCloud: 10, slabW: 40, slabD: 40, slabH: 10, zScale: 1 
 
 // Maximum endpoint sphere markers shown in the 3D view.
 export const DEFAULT_ENDPOINT_MARKERS = 6000;
+
+// Width of the left UI panel in CSS pixels.
+// MUST match the #ui width rule in index.html.
+export const UI_PANEL_WIDTH = 418;
+
+// Rendered height of the cloud slab in Three.js world units
+// (the tau axis is rescaled to this height regardless of COT).
+export const SLAB_RENDER_HEIGHT = 10;

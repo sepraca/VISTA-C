@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { state, world } from './state.js';
+import { state, world, UI_PANEL_WIDTH } from './state.js';
 import { RNG } from './rng.js';
 import { Coords } from './coords.js';
 import { Physics } from './physics.js';
@@ -13,12 +13,16 @@ import { Photons } from './photons.js';
 import { BottomPanel } from './bottomPanel.js';
 import { Export } from './exportUtils.js';
 
+// Instant-mode batching: photons simulated per setTimeout slice, and how many
+// chunks pass between heavy display rebuilds (3D histograms, bottom panel).
+const CHUNK_SIZE = 1000;
+const DISPLAY_EVERY_CHUNKS = 10;
+
 export const RunControl = {
     init: function() {
       state.scene = new THREE.Scene();
       state.scene.background = new THREE.Color(0x0f172a);
 
-      const UI_PANEL_WIDTH = 418; // px — must match #ui width in index.html CSS
       const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
 
       state.camera = new THREE.PerspectiveCamera(50, view3dWidth / window.innerHeight, 0.1, 2000);
@@ -60,7 +64,6 @@ export const RunControl = {
     },
 
     onWindowResize: function() {
-      const UI_PANEL_WIDTH = 418;
       const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
       state.camera.aspect = view3dWidth / window.innerHeight;
       state.camera.updateProjectionMatrix();
@@ -122,8 +125,8 @@ export const RunControl = {
       result.photonId = state.nextPhotonId++;
       SimStats.record(result);
       for (const t of result.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);
-      for (const e of result.surfaceEvents)          SimStats.surfaceInteractionEvents.push(e);
-      for (const d of result.surfaceReflectionDirs)  SimStats.netTransmittedDirs.push(d);
+      for (const e of result.surfaceEvents)          SimStats.registerSurfaceEvent(e);
+      for (const d of result.surfaceReflectionDirs)  SimStats.registerSurfaceReflection(d);
 
       if (UI.getAnimatePaths()) {
         state.isAnimating = true;
@@ -133,6 +136,7 @@ export const RunControl = {
         Photons.addPhotonToScene(result, true);
       }
 
+      Photons.finalizeEndpoints();
       Scene.rebuildHistograms();
       SimStats.updateDisplay();
     },
@@ -163,9 +167,10 @@ export const RunControl = {
           result.photonId = state.nextPhotonId++;
           SimStats.record(result);
           for (const t of result.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);
-          for (const e of result.surfaceEvents)          SimStats.surfaceInteractionEvents.push(e);
-          for (const d of result.surfaceReflectionDirs)  SimStats.netTransmittedDirs.push(d);
+          for (const e of result.surfaceEvents)          SimStats.registerSurfaceEvent(e);
+          for (const d of result.surfaceReflectionDirs)  SimStats.registerSurfaceReflection(d);
           await Photons.addAnimatedPath(result);
+          Photons.finalizeEndpoints();
           Scene.rebuildHistograms();
           SimStats.updateDisplay();
         }
@@ -186,7 +191,12 @@ export const RunControl = {
 
     runInstantBatch: function(n, allowPaths) {
       let remaining = n;
-      const chunkSize = 1000;
+      // Heavy display work (3D histogram rebuild, bottom-panel redraw, stats
+      // text) runs every DISPLAY_EVERY_CHUNKS chunks and at completion, not
+      // per chunk: those rebuilds re-bin the full accumulated history and were
+      // the dominant cost of large runs. Endpoint trim/fade is cheap and runs
+      // per chunk so the marker pool never grows far past the cap.
+      let chunksDone = 0;
 
       function chunk() {
         // Honor Pause/Step in instant mode: while paused, idle until Resume
@@ -198,7 +208,7 @@ export const RunControl = {
         const steppingOnce = state.stepRequested;
         state.stepRequested = false;
 
-        const m = steppingOnce ? Math.min(1, remaining) : Math.min(chunkSize, remaining);
+        const m = steppingOnce ? Math.min(1, remaining) : Math.min(CHUNK_SIZE, remaining);
 
         for (let i = 0; i < m; i++) {
           const drawPath = allowPaths && state.pathGroup.children.length < UI.getMaxPaths();
@@ -206,16 +216,22 @@ export const RunControl = {
           result.photonId = state.nextPhotonId++;
           SimStats.record(result);
           for (const t of result.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);
-          for (const e of result.surfaceEvents)          SimStats.surfaceInteractionEvents.push(e);
-          for (const d of result.surfaceReflectionDirs)  SimStats.netTransmittedDirs.push(d);
+          for (const e of result.surfaceEvents)          SimStats.registerSurfaceEvent(e);
+          for (const d of result.surfaceReflectionDirs)  SimStats.registerSurfaceReflection(d);
           Photons.addPhotonToScene(result, drawPath);
         }
 
         remaining -= m;
-        Scene.rebuildHistograms();
-        SimStats.updateDisplay();
+        chunksDone++;
+        Photons.finalizeEndpoints();
 
-        if (remaining > 0) {
+        const finished = remaining <= 0;
+        if (finished || steppingOnce || chunksDone % DISPLAY_EVERY_CHUNKS === 0) {
+          Scene.rebuildHistograms();
+          SimStats.updateDisplay();
+        }
+
+        if (!finished) {
           setTimeout(chunk, 0);
         }
       }
@@ -241,6 +257,7 @@ export const RunControl = {
 
       Scene.clearGroup(state.pathGroup);
       Scene.clearGroup(state.endpointGroup);
+      Photons.clearEndpoints();
       Scene.clearGroup(state.histogramGroup);
       BottomPanel.drawBottomPanel();
       Scene.buildCloudBox();
