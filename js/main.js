@@ -33,6 +33,7 @@ try {
   window.drawBottomPanel       = BottomPanel.drawBottomPanel;
   window.download3DView        = Export.download3DView;
   window.downloadBottomPanel   = Export.downloadBottomPanel;
+  window.downloadDataFile      = Export.downloadDataFile;
 
   RunControl.init();
   RunControl.animate();

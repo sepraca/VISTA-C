@@ -22,6 +22,7 @@ A hosted version is available at: https://sepraca.github.io/mc_cloud_rt_visualiz
 - **Net transmittance** — correctly accounts for multiple surface bounces: T = E↓ − E↑ at surface
 - **Bottom panel plots** — μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
 - **PNG export** — 3D view and bottom panel with diagnostic parameter headers
+- **Quantitative data export (JSON)** — full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts to NetCDF
 - **Fully modular ES module architecture** — 12 focused JavaScript files, no bundler required
 
 ---
@@ -97,7 +98,8 @@ mc_cloud_rt_visualization/
 │   ├── bottomPanel.js  # Canvas plot drawing: μ histograms, BDF, path-length
 │   ├── exportUtils.js  # PNG download and diagnostic header generation
 │   └── runControl.js   # Simulation loop, init, run/ensemble/batch, scene reset
-└── README.md
+├── README.md
+└── mc_export_reader.py  # Reads JSON exports → NumPy/xarray, optional NetCDF
 ```
 
 **Module dependency order (leaf → root):**
@@ -133,6 +135,60 @@ all photons are tallied in the statistics as they are simulated; the
 refresh schedule affects only when the displays redraw.
 
 Note: Changing the user-specified Footprint grid size between runs clears the 2D exit-location histograms at cloud-top and cloud-base; re-run (e.g., "Launch Ensemble") to begin populating the 2D histogram bins at the new resolution.
+
+---
+
+## Data export and analysis
+
+In addition to the two PNG buttons, **Download Data (JSON)** writes a single
+self-describing file (`mc_cloud_rt_data_<timestamp>.json`) carrying the same
+diagnostic content in machine-readable, full double precision (not the rounded
+values shown in the PNG headers):
+
+- **Run inputs** — τ, horizontal extent, Θ₀ (and μ₀), g, ω₀, Aₛ, β_ext,
+  sub-cloud gap, and the RNG seed.
+- **Outputs** — all outcome counts and normalized fluxes (R, T_net, A, S, Aₛ_fc),
+  with the R + T + A + S energy-closure sum.
+- **µ histograms** — reflected and net-transmitted (signed, down − up) exit-angle
+  vectors with explicit bin edges and centers.
+- **BDF** — raw signed bin weights *and* the normalized
+  BDF = (W/N)·π/(µ·Δµ·Δφ) on a 19 (zenith) × 72 (azimuth) grid, with θ, φ, and
+  µ coordinates. Exported **unsmoothed** (the display's near-nadir azimuthal
+  averaging is a cosmetic only), so it is the ground truth for DISORT comparison.
+- **Path-length histograms** — reflected and net-transmitted binned counts plus
+  true means, reproducing the on-screen panel (24 bins, long tail in the
+  overflow bin).
+
+Every vector ships with its own coordinates, so the file is readable with no
+knowledge of the simulator's internals.
+
+### Python reader
+
+`mc_export_reader.py` loads the JSON into NumPy arrays, prints a summary
+(inputs, energy closure, peak/nadir BDF, consistency checks), and optionally
+converts to a CF-style NetCDF for analysis:
+
+```bash
+python mc_export_reader.py mc_cloud_rt_data_<timestamp>.json
+python mc_export_reader.py mc_cloud_rt_data_<timestamp>.json --netcdf run.nc
+```
+
+NetCDF output requires `xarray` and `netCDF4` (`pip install xarray netCDF4`);
+without them the reader still prints the summary and skips the NetCDF step.
+Programmatic use:
+
+```python
+from mc_export_reader import MCExport
+exp = MCExport.load("run.json")
+ds  = exp.to_xarray()          # labeled (theta, phi, mu, path) coordinates
+print(exp.fluxes["R_top_reflected"])
+```
+
+Because the Mulberry32 RNG is deterministic, two runs at the same seed, photon
+count, and horizontal extent reproduce these exports exactly — all photon
+tallies are bit-identical across browsers and platforms (only the derived BDF
+floats may differ at the ~10⁻¹⁵ machine-epsilon level from cross-engine
+rounding in `acos`/`cos`).
 
 ---
 

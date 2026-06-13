@@ -1,7 +1,7 @@
 // exportUtils.js — PNG download and diagnostic header generation.
 
 import { state, UI_PANEL_WIDTH } from './state.js';
-import { SimStats } from './simstats.js';
+import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
 import { BottomPanel } from './bottomPanel.js';
@@ -337,6 +337,214 @@ export const Export = {
         Export.downloadDataURL(dataURL, `mc_cloud_rt_${mode}_panel_${Export.timestampForFilename()}.png`);
       } catch (err) {
         showLimitWarning("Unable to export bottom panel.");
+        console.error(err);
+      }
+    },
+
+    // ---------------------------------------------------------------------
+    // Quantitative data export (JSON).
+    //
+    // Companion to the two PNG exporters: writes the same diagnostic content
+    // in a machine-readable, full-precision form for quantitative comparison
+    // against other codes (e.g. DISORT). The schema is self-describing — every
+    // vector ships with its own bin coordinates/edges so it can be read with
+    // no knowledge of the simulator's internals. A Python reader
+    // (mc_export_reader.py) loads this file and can convert it to xarray/NetCDF.
+    //
+    // Design notes:
+    //   * Values are exported at full double precision (NOT the toFixed(3)
+    //     used in the PNG headers), since quantitative comparison is the point.
+    //   * BDF is exported as BOTH the raw signed bin weights and the normalized
+    //     BDF = (W/N)·π/(µ·Δµ·Δφ). The normalized grid is the UNSMOOTHED
+    //     quantity (near-nadir azimuthal averaging is a display-only cosmetic),
+    //     so it is the ground truth for DISORT comparison.
+    //   * Path-length distributions are exported as fixed-bin histograms that
+    //     reproduce the on-screen panel exactly (24 bins, same adaptive max,
+    //     long tail clipped into the final overflow bin) plus the true means.
+    SCHEMA_VERSION: "1.0",
+
+    getExportDataObject: function() {
+      const s = SimStats.stats;
+      const launched = Math.max(s.launched, 1);
+
+      // --- Inputs (full precision; mirrors getExportParameterLines) ---
+      const theta0Rad = UI.getTheta0Rad();
+      const inputs = {
+        photons: s.launched,
+        tau_cloud: UI.getTauCloud(),
+        horizontal_extent: UI.getHorizontalExtent(),
+        theta0_deg: theta0Rad * 180 / Math.PI,
+        mu0: Math.cos(theta0Rad),
+        hg_g: UI.getG(),
+        ssa_omega0: UI.getOmega0(),
+        surface_albedo: UI.getSurfaceAlbedo(),
+        beta_ext_km: UI.getCloudBetaExt(),
+        surface_distance_km: UI.getSurfaceDistanceKm(),
+        rng_seed: RNG.currentSeed(),
+        units: {
+          tau_cloud: "optical depth (dimensionless)",
+          horizontal_extent: "optical depth (slab width in τ-units)",
+          theta0_deg: "degrees", mu0: "cos(zenith)",
+          beta_ext_km: "km^-1", surface_distance_km: "km"
+        }
+      };
+
+      // --- Outputs (counts + normalized fluxes; mirrors the stats panel) ---
+      const netTransCount = s.transmitted - s.surfaceReflected;
+      const R = s.reflected / launched;
+      const Tnet = netTransCount / launched;
+      const A = s.absorbed / launched;
+      const S = s.side / launched;
+      const Term = s.terminated / launched;
+      const outputs = {
+        counts: {
+          launched: s.launched,
+          reflected: s.reflected,
+          transmitted_down_at_surface: s.transmitted,
+          final_transmitted_black_surface: s.finalTransmitted,
+          cloud_absorbed: s.absorbed,
+          side_escape: s.side,
+          terminated_event_cap: s.terminated,
+          surface_reflected: s.surfaceReflected,
+          surface_absorbed: s.surfaceAbsorbed,
+          net_transmitted: netTransCount
+        },
+        fluxes: {
+          R_top_reflected: R,
+          T_net_surface: Tnet,
+          A_cloud_absorbed: A,
+          S_side_escape: S,
+          Term_event_cap: Term,
+          closure_R_T_A_S_Term: R + Tnet + A + S + Term,
+          A_surface_absorbed: s.surfaceAbsorbed / launched,
+          T_down_at_surface: s.transmitted / launched,
+          surface_reflections_per_photon: s.surfaceReflected / launched
+        },
+        mean_scatterings_per_photon: s.totalScatterings / launched,
+        mean_optical_path_per_photon: s.totalPath / launched,
+        notes: "Fluxes are per launched photon (analog MC, weight 1). " +
+               "T_net = (downward at surface − upward surface reflection) and " +
+               "equals A_surface for a non-absorbing surface by energy closure."
+      };
+
+      // --- µ exit-angle histograms ---
+      // Binning (must match simstats.muBinIndex): bin i covers
+      //   µ ∈ ( 1 − (i+1)/MU_BINS , 1 − i/MU_BINS ];  bin 0 is µ near 1.
+      const muEdges = [];
+      for (let i = 0; i <= MU_BINS; i++) muEdges.push(1 - i / MU_BINS);
+      const muCenters = [];
+      for (let i = 0; i < MU_BINS; i++) muCenters.push(1 - (i + 0.5) / MU_BINS);
+      const mu_histograms = {
+        description: "Exit-angle histograms in |µ| = |cos Θ|. Reversed axis: " +
+                     "bin 0 is near-vertical (µ→1), last bin near-horizontal (µ→0). " +
+                     "net_transmitted_counts are signed (+1 downward arrival at " +
+                     "surface, −1 surface reflection); identical to gross when A_s=0.",
+        n_bins: MU_BINS,
+        mu_bin_edges: muEdges,           // length n_bins+1, descending 1→0
+        mu_bin_centers: muCenters,       // length n_bins
+        reflected_counts: Array.from(SimStats.muReflBins),
+        net_transmitted_counts: Array.from(SimStats.muNetTransBins),
+        reflected_N: s.reflected,
+        net_transmitted_N: netTransCount
+      };
+
+      // --- BDF (bidirectional distribution function) ---
+      // Reuse the display grid builder to guarantee identical normalization,
+      // but take the UNSMOOTHED grids (no near-nadir averaging) as ground truth.
+      const reflGrid = BottomPanel.computeBdfGrid(SimStats.bdfReflWeights);
+      const netGrid  = BottomPanel.computeBdfGrid(SimStats.bdfNetWeights);
+
+      const thetaCentersDeg = [], muCentersBdf = [], deltaMu = [];
+      for (let ir = 0; ir < BDF_THETA_BINS; ir++) {
+        const info = reflGrid.binInfo[ir][0];
+        thetaCentersDeg.push(info.thetaDeg);
+        muCentersBdf.push(info.mu);
+        deltaMu.push(info.deltaMu);
+      }
+      const phiCentersDeg = [];
+      for (let ip = 0; ip < BDF_PHI_BINS; ip++) phiCentersDeg.push(netGrid.binInfo[0][ip].phiDeg);
+
+      const bdf = {
+        description: "Bidirectional distribution function BDF = (W/N)·π/(µ·Δµ·Δφ). " +
+                     "Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ " +
+                     "bins (0,5,…,355°). 'weights' are raw signed bin tallies W; " +
+                     "'bdf' is the normalized function. Transmitted panels are net " +
+                     "(down−up) at the surface. Unsmoothed (display near-nadir " +
+                     "averaging not applied).",
+        n_theta_bins: BDF_THETA_BINS,
+        n_phi_bins: BDF_PHI_BINS,
+        theta_centers_deg: thetaCentersDeg,   // length n_theta_bins
+        mu_centers: muCentersBdf,             // length n_theta_bins
+        delta_mu: deltaMu,                    // length n_theta_bins
+        phi_centers_deg: phiCentersDeg,       // length n_phi_bins
+        delta_phi_rad: netGrid.binInfo[0][0].deltaPhi,
+        N_incident: reflGrid.binInfo[0][0].N,
+        reflected_weights: reflGrid.weights,          // [n_theta][n_phi]
+        net_transmitted_weights: netGrid.weights,     // [n_theta][n_phi]
+        reflected_bdf: reflGrid.bdf,                  // [n_theta][n_phi]
+        net_transmitted_bdf: netGrid.bdf              // [n_theta][n_phi]
+      };
+
+      // --- Optical path-length histograms (binned + true means) ---
+      // Reproduce the bottom-panel computation exactly so the file matches the
+      // figure: 24 bins on [0, niceMax], values ≥ niceMax clipped into bin 23.
+      const reflPaths = SimStats.reflectedPathLengths;
+      const netPaths  = SimStats.netTransmittedPathLengths;
+      const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      const meanR = mean(reflPaths), meanT = mean(netPaths);
+      const scaleMean = Math.max(meanR, meanT);
+      const niceMax = Math.max(10, Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10);
+      const PATH_BINS = 24;
+      function pathHist(arr) {
+        const counts = new Array(PATH_BINS).fill(0);
+        for (const vRaw of arr) {
+          const v = Math.max(0, vRaw || 0);
+          counts[Math.min(PATH_BINS - 1, Math.floor((v / niceMax) * PATH_BINS))] += 1;
+        }
+        return counts;
+      }
+      const pathEdges = [];
+      for (let i = 0; i <= PATH_BINS; i++) pathEdges.push(i * niceMax / PATH_BINS);
+      const path_length_histograms = {
+        description: "Optical path-length distributions (units of optical depth). " +
+                     "Photons with path ≥ bin_max are accumulated in the final " +
+                     "(overflow) bin, matching the on-screen panel. *_mean are the " +
+                     "true means over all photons (not affected by clipping).",
+        n_bins: PATH_BINS,
+        bin_max: niceMax,
+        bin_edges: pathEdges,            // length n_bins+1; last bin is overflow
+        overflow_in_last_bin: true,
+        reflected_counts: pathHist(reflPaths),
+        reflected_N: reflPaths.length,
+        reflected_mean: meanR,
+        net_transmitted_counts: pathHist(netPaths),
+        net_transmitted_N: netPaths.length,
+        net_transmitted_mean: meanT
+      };
+
+      return {
+        format: "mc_cloud_rt_export",
+        schema_version: Export.SCHEMA_VERSION,
+        generated: new Date().toISOString(),
+        generator: "mc_cloud_rt_v4 — browser Monte Carlo cloud radiative transfer",
+        inputs,
+        outputs,
+        mu_histograms,
+        bdf,
+        path_length_histograms
+      };
+    },
+
+    downloadDataFile: function() {
+      try {
+        const data = Export.getExportDataObject();
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        Export.downloadDataURL(url, `mc_cloud_rt_data_${Export.timestampForFilename()}.json`);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showLimitWarning("Unable to export data file.");
         console.error(err);
       }
     }
