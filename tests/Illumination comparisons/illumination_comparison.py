@@ -20,9 +20,15 @@ ABSOLUTE (a normalized radiometric quantity). BDF is the UNSMOOTHED export grid.
 At oblique Theta0 the phi-average (row 3) collapses real azimuthal structure;
 the polar heatmap (row 4) preserves it.
 
-Requires: numpy, matplotlib, and mc_export_reader.py (same folder).
+Requires: numpy, matplotlib, and mc_export_reader.py (repo root, located
+automatically via the sys.path insert below — no copy needed).
 Edit the CONFIG block, then:  python illumination_comparison.py
 """
+import sys, pathlib
+# Make the canonical mc_export_reader.py (repo root, two levels up from this
+# tests/<...>/ script) importable regardless of the working directory.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+
 import numpy as np, matplotlib
 matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.patches import Patch

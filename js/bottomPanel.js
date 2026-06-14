@@ -327,7 +327,7 @@ export const BottomPanel = {
       ctx2.textAlign = "center";
       const scaleTxt = UI.getBdfColorScaleMode() === "log" ? "log BDF scale: 0.01–1" : "linear BDF scale: 0–1";
       const avgTxt = UI.getAvgNearNadirBdf() ? "; near-nadir φ averaged" : "";
-      ctx2.fillText(`Absolute BDF=(Wᵢⱼ/N)π/(μᵢΔμᵢΔφⱼ); transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
+      ctx2.fillText(`Transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
     },
 
     // Build the displayable BDF grid from a flat incremental weight array

@@ -1,7 +1,7 @@
 // scene.js — Three.js scene geometry builders and camera helpers.
 
 import * as THREE from 'three';
-import { state, world, SLAB_RENDER_HEIGHT } from './state.js';
+import { state, world } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
@@ -27,8 +27,12 @@ export const Scene = {
     // Must be called before Scene.buildCloudBox() and at state.scene reset.
     updateWorld: function() {
       world.tauCloud = UI.getTauCloud();
-      world.slabH = SLAB_RENDER_HEIGHT;
-      world.zScale = world.slabH / world.tauCloud;
+      // Render height = cloud optical depth, so 1 τ maps to 1 world unit on the
+      // vertical axis exactly as the horizontal extent does. The box then shows
+      // the cloud's true optical aspect ratio (COT = extent renders as a cube),
+      // instead of squeezing every COT into a fixed render height.
+      world.slabH = world.tauCloud;
+      world.zScale = world.slabH / world.tauCloud;   // = 1
       const L = UI.getHorizontalExtent();
       world.slabW = L;
       world.slabD = L;

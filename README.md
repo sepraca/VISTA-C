@@ -152,7 +152,12 @@ mc_cloud_rt_visualization/
 │   └── runControl.js   # Simulation loop, init, run/ensemble/batch, scene reset
 ├── README.md
 ├── mc_export_reader.py    # Reads JSON exports → NumPy/xarray, optional NetCDF
-└── plot_mc_comparison.py  # 4×2 comparison figure (µ / path / BDF / BDF-polar) from two exports
+└── tests/
+    ├── DISORT comparisons/        # PythonicDISORT reference cases + MC-vs-DISORT scripts
+    └── Illumination comparisons/  # pencil-vs-uniform illumination study
+        ├── illumination_comparison.py            # 4×2 comparison figure (µ / path / BDF / BDF-polar)
+        ├── *_illumination_test_theta0=*.json     # example MC exports (centered & uniform, Θ₀ = 0°/60°)
+        └── illumination_comparison_test_theta0=*.png   # generated figures
 ```
 
 **Module dependency order (leaf → root):**
@@ -245,14 +250,16 @@ rounding in `acos`/`cos`).
 
 ### Comparison plots
 
-`plot_mc_comparison.py` builds a 4×2 figure comparing **two** JSON exports — rows
-for the µ histogram, optical path-length distribution, BDF vs. zenith, and BDF
-polar heatmap; columns for reflected and net-transmitted. The µ and path rows are
-area-normalized (flux/shape comparison) while the BDF rows are absolute (radiance);
-see *Diagnostic plots: flux vs. radiance* above. Edit the CONFIG block at the top of
-the script to point `FILE_A`/`FILE_B` at any two exports (e.g. centered vs. uniform
-illumination, or two solar zenith angles), then run `python plot_mc_comparison.py`.
-Requires NumPy + matplotlib and `mc_export_reader.py`.
+`tests/Illumination comparisons/illumination_comparison.py` builds a 4×2 figure
+comparing **two** JSON exports — rows for the µ histogram, optical path-length
+distribution, BDF vs. zenith, and BDF polar heatmap; columns for reflected and
+net-transmitted. The µ and path rows are area-normalized (flux/shape comparison)
+while the BDF rows are absolute (radiance); see *Diagnostic plots: flux vs. radiance*
+above. Edit the CONFIG block at the top of the script to point `FILE_A`/`FILE_B` at
+any two exports (e.g. centered vs. uniform illumination, or two solar zenith angles),
+then run it from that folder (`python illumination_comparison.py`). Requires NumPy +
+matplotlib and `mc_export_reader.py` (repo root). The folder also holds the example
+exports and the resulting Θ₀ = 0° / 60° figures.
 
 ---
 
@@ -268,7 +275,7 @@ Two reference test cases confirm reproducibility. With RNG seed = 42:
 ¹ Conservative (ω₀=1), black surface: T = direct cloud transmittance  
 ² Absorbing cloud, reflecting surface: T = net downward energy at surface
 
-A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, Joss) are detailed in the tests folder.
+A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, Joss) are detailed in the `tests/DISORT comparisons/` folder.
 
 ---
 

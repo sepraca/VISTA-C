@@ -41,7 +41,3 @@ export const DEFAULT_ENDPOINT_MARKERS = 6000;
 // Width of the left UI panel in CSS pixels.
 // MUST match the #ui width rule in index.html.
 export const UI_PANEL_WIDTH = 418;
-
-// Rendered height of the cloud slab in Three.js world units
-// (the tau axis is rescaled to this height regardless of COT).
-export const SLAB_RENDER_HEIGHT = 10;
