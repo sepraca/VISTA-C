@@ -12,6 +12,7 @@
 
 # Python server
 __pycache__/
+*.py[cod]
 
 # Node (if bundler added later)
 node_modules/

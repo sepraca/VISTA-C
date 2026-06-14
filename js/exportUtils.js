@@ -54,6 +54,13 @@ export const Export = {
       ];
     },
 
+    // Human-readable label for the cloud-top photon-entry mode.
+    photonEntryLabel: function(mode) {
+      return mode === "top"      ? "uniform top"
+           : mode === "top_side" ? "uniform top+side"
+           : "centered";
+    },
+
     getExportParameterLines: function() {
       return [
         `Photons: ${SimStats.stats.launched}`,
@@ -65,7 +72,8 @@ export const Export = {
         `Surface Albedo A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
-        `RNG seed: ${RNG.currentSeed()}`
+        `RNG seed: ${RNG.currentSeed()}`,
+        `Photon entry: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`
       ];
     },
 
@@ -318,11 +326,11 @@ export const Export = {
         const lines = Export.getExportParameterLines();
         const outcome = Export.getOutcomeStatisticLines();
 
-        // Settings rows
+        // Settings rows (11 lines incl. Photon entry: 3 / 3 / 3 / 2 across four rows)
         ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
         ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
-        ctx.fillText(lines.slice(6, 8).join(" ,   "), 14 * scale, 114 * scale);
-        ctx.fillText(lines.slice(8, 10).join(" ,   "), 14 * scale, 140 * scale);
+        ctx.fillText(lines.slice(6, 9).join(" ,   "), 14 * scale, 114 * scale);
+        ctx.fillText(lines.slice(9, 11).join(" ,   "), 14 * scale, 140 * scale);
 
         // Outcome statistics rows (3 lines to prevent truncation)
         ctx.fillStyle = "#bfdbfe";
@@ -380,6 +388,7 @@ export const Export = {
         surface_albedo: UI.getSurfaceAlbedo(),
         beta_ext_km: UI.getCloudBetaExt(),
         surface_distance_km: UI.getSurfaceDistanceKm(),
+        photon_entry: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side"
         rng_seed: RNG.currentSeed(),
         units: {
           tau_cloud: "optical depth (dimensionless)",

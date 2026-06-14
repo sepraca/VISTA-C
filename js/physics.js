@@ -117,6 +117,47 @@ export const Physics = {
       };
     },
 
+    // Sample a photon's cloud-top (or side-wall) entry point.
+    //   entryMode "center"   : (0, 0, 0) — no RNG draws, so the deterministic
+    //                          stream is unchanged from the legacy point launch.
+    //   entryMode "top"      : uniform over the cloud-top face (τ = 0).
+    //   entryMode "top_side" : uniform over the top face OR the sunward side
+    //                          wall (x = −W/2), chosen with probability equal to
+    //                          each face's beam-projected area. For a collimated
+    //                          beam d = (sinΘ₀, 0, cosΘ₀) the projected areas are
+    //                          top ∝ W·cosΘ₀ and side ∝ τ_cloud·sinΘ₀ (the common
+    //                          depth D cancels), so
+    //                              p_side = τ_cloud·sinΘ₀
+    //                                       ─────────────────────────────
+    //                                       W·cosΘ₀ + τ_cloud·sinΘ₀ .
+    //   Within the chosen face the point is uniform in true area, and the entry
+    //   direction is unchanged. At Θ₀ = 0, p_side = 0 and "top_side" reduces to
+    //   "top". The entry point is the photon's origin; optical path is measured
+    //   from there (the clear-air travel before the cloud is not counted, exactly
+    //   as for top-face photons).
+    sampleEntryPoint(params) {
+      const { entryMode, slabW, slabD, tauCloud, theta0 } = params;
+      const halfW = slabW / 2, halfD = slabD / 2;
+
+      if (entryMode === "top" || entryMode === "top_side") {
+        if (entryMode === "top_side") {
+          const wTop  = slabW   * Math.cos(theta0);   // ∝ W·cosΘ₀
+          const wSide = tauCloud * Math.sin(theta0);  // ∝ τ·sinΘ₀
+          const denom = wTop + wSide;
+          const pSide = denom > 0 ? wSide / denom : 0;
+          if (RNG.rand() < pSide) {
+            // Sunward vertical wall at x = −W/2; uniform in (y, τ).
+            return { x: -halfW, y: (RNG.rand() - 0.5) * slabD, tau: RNG.rand() * tauCloud };
+          }
+        }
+        // Cloud-top face at τ = 0; uniform in (x, y).
+        return { x: (RNG.rand() - 0.5) * slabW, y: (RNG.rand() - 0.5) * slabD, tau: 0 };
+      }
+
+      // "center" (default): legacy single-point launch.
+      return { x: 0, y: 0, tau: 0 };
+    },
+
     // Full Monte Carlo photon transport through the cloud slab.
     // params: { tauCloud, slabW, slabD, theta0, g, omega0,
     //           surfaceAlbedo, betaExt, surfaceDistanceKm }
@@ -131,7 +172,8 @@ export const Physics = {
       const { tauCloud, slabW, slabD, theta0, g, omega0,
               surfaceAlbedo, betaExt, surfaceDistanceKm } = params;
 
-      let x = 0, y = 0, tau = 0;
+      const entry = Physics.sampleEntryPoint(params);
+      let x = entry.x, y = entry.y, tau = entry.tau;
       let dir = {
         x: Math.sin(theta0),
         y: 0,

@@ -19,6 +19,7 @@ A hosted version is available at: https://sepraca.github.io/mc_cloud_rt_visualiz
 - **3D photon path visualization** — animated and static path rendering with colored endpoints by outcome
 - **Henyey-Greenstein phase function** — exact inverse-CDF sampling for the scattering angle
 - **Lambertian surface reflection** — configurable surface albedo Aₛ with geometric sub-cloud gap propagation
+- **Finite-cloud illumination modes** — pencil-beam (centered) entry, or uniform illumination of the cloud top, optionally including the sunward side wall, to study 3D edge effects
 - **Net transmittance** — correctly accounts for multiple surface bounces: T = E↓ − E↑ at surface
 - **Bottom panel plots** — μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
 - **PNG export** — 3D view and bottom panel with diagnostic parameter headers
@@ -43,6 +44,56 @@ Photon outcomes: **Reflected** (exits cloud top) | **Net transmitted** (absorbed
 
 Conservation check: R + T + A + S = 1.0
 
+### Photon entry: pencil vs. finite-cloud illumination
+
+The **Photon entry** control sets where photons enter the cloud top:
+
+- **Centered (point source)** *(default)* — every photon enters at (x, y) = (0, 0),
+  the classic plane-parallel pencil-beam launch. This is the only mode guaranteed
+  bit-reproducible against the seed-42 reference cases.
+- **Uniform — cloud top** — entry points are drawn uniformly over the cloud-top
+  face, simulating full illumination of a finite cloud. For a large horizontal
+  extent this converges to the plane-parallel result; at finite extent it reveals
+  3D edge leakage (photons launched near the edges escape out the sides), which
+  the centered launch does not capture.
+- **Uniform — cloud top + sunward side** — additionally illuminates the sunward
+  vertical wall at oblique sun. The two lit faces are weighted by their
+  beam-projected areas, so the fraction of photons entering through the side is
+
+$$p_{\text{side}} = \frac{\tau_{\text{cloud}}\sin\Theta_0}{W\cos\Theta_0 + \tau_{\text{cloud}}\sin\Theta_0}$$
+
+where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-only mode.
+
+The centered launch draws no extra random numbers, so it leaves the RNG stream
+unchanged; the uniform modes consume entry draws. Note that at Θ₀ = 0 the *top* and
+*top + side* modes are statistically identical but **not** bit-identical — *top +
+side* consumes one extra face-selection draw per photon, offsetting the stream, so
+their integer counts differ at the ~1σ Monte Carlo level. The horizontal extent may
+be set up to 500 optical depths to push the uniform modes toward the plane-parallel
+limit.
+
+### Diagnostic plots: flux vs. radiance
+
+The bottom-panel diagnostics are two physically distinct quantities, so their
+y-axes are not interchangeable:
+
+- The **μ = |cos Θ| exit-angle histograms** and the **optical path-length
+  distributions** are **flux (energy) distributions** — their y-values are
+  photon counts (∝ energy) per bin, i.e. the number of photons exiting in each
+  μ or path-length interval.
+- The **BDF** is a **radiance** quantity: BDF = (W/N)·π/(μ·Δμ·Δφ), normalized
+  per unit projected solid angle, which introduces an explicit 1/μ factor
+  relative to the photon count.
+
+As a result the two are *consistent but not identical* representations of the
+same exit-direction data. Azimuthally averaging the BDF and converting back to
+the flux (count) density recovers the μ histogram exactly:
+
+$$\frac{1}{N}\frac{dN}{d\mu} = 2\mu\,\overline{\text{BDF}}(\theta), \qquad \mu=\cos\theta$$
+
+so the cos Θ enters as a multiplicative weighting of the y-axis (flux ↔ radiance),
+not merely as an x-axis change of variable.
+
 ---
 
 ## Running Locally
@@ -65,8 +116,9 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 |---|---|---|
 | Photons | Number of photons to simulate | 400 |
 | Cloud optical thickness τ | Total cloud optical depth | 10 |
-| Horizontal extent | Slab half-width in optical path units | 40 |
+| Horizontal extent | Slab width in optical path units (range 2–500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
+| Photon entry | Cloud-top entry: Centered (point source) / Uniform — cloud top / Uniform — cloud top + sunward side | Centered |
 | HG asymmetry g | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
 | Single-scattering albedo ω₀ | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
 | Surface albedo Aₛ | Lambertian surface reflectance (0 = black, 1 = mirror) | 0.0 |
@@ -99,7 +151,8 @@ mc_cloud_rt_visualization/
 │   ├── exportUtils.js  # PNG download and diagnostic header generation
 │   └── runControl.js   # Simulation loop, init, run/ensemble/batch, scene reset
 ├── README.md
-└── mc_export_reader.py  # Reads JSON exports → NumPy/xarray, optional NetCDF
+├── mc_export_reader.py    # Reads JSON exports → NumPy/xarray, optional NetCDF
+└── plot_mc_comparison.py  # 4×2 comparison figure (µ / path / BDF / BDF-polar) from two exports
 ```
 
 **Module dependency order (leaf → root):**
@@ -146,7 +199,7 @@ diagnostic content in machine-readable, full double precision (not the rounded
 values shown in the PNG headers):
 
 - **Run inputs** — τ, horizontal extent, Θ₀ (and μ₀), g, ω₀, Aₛ, β_ext,
-  sub-cloud gap, and the RNG seed.
+  sub-cloud gap, the photon-entry mode (`center` / `top` / `top_side`), and the RNG seed.
 - **Outputs** — all outcome counts and normalized fluxes (R, T_net, A, S, Aₛ_fc),
   with the R + T + A + S energy-closure sum.
 - **µ histograms** — reflected and net-transmitted (signed, down − up) exit-angle
@@ -189,6 +242,17 @@ count, and horizontal extent reproduce these exports exactly — all photon
 tallies are bit-identical across browsers and platforms (only the derived BDF
 floats may differ at the ~10⁻¹⁵ machine-epsilon level from cross-engine
 rounding in `acos`/`cos`).
+
+### Comparison plots
+
+`plot_mc_comparison.py` builds a 4×2 figure comparing **two** JSON exports — rows
+for the µ histogram, optical path-length distribution, BDF vs. zenith, and BDF
+polar heatmap; columns for reflected and net-transmitted. The µ and path rows are
+area-normalized (flux/shape comparison) while the BDF rows are absolute (radiance);
+see *Diagnostic plots: flux vs. radiance* above. Edit the CONFIG block at the top of
+the script to point `FILE_A`/`FILE_B` at any two exports (e.g. centered vs. uniform
+illumination, or two solar zenith angles), then run `python plot_mc_comparison.py`.
+Requires NumPy + matplotlib and `mc_export_reader.py`.
 
 ---
 

@@ -108,7 +108,8 @@ export const RunControl = {
         omega0:            UI.getOmega0(),
         surfaceAlbedo:     UI.getSurfaceAlbedo(),
         betaExt:           UI.getCloudBetaExt(),
-        surfaceDistanceKm: UI.getSurfaceDistanceKm()
+        surfaceDistanceKm: UI.getSurfaceDistanceKm(),
+        entryMode:         UI.getPhotonEntryMode()
       };
     },
 

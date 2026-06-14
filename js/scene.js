@@ -302,6 +302,9 @@ export const Scene = {
 
       const cellW = world.slabW / nBins;
       const cellD = world.slabD / nBins;
+      // AESTHETIC: max relief height. Original 2.8; tried 1.2 to keep boxes
+      // from burying the co-planar endpoint dots. Currently 2.8 for an
+      // opacity-only A/B comparison (opacity lowered separately below).
       const maxHeight = 2.8;
       const baseColor = new THREE.Color(color);
 
@@ -324,7 +327,10 @@ export const Scene = {
             emissive: cellColor,
             emissiveIntensity: 0.25 + 0.9 * frac,
             transparent: true,
-            opacity: 0.42 + 0.48 * frac,
+            // AESTHETIC: lowered max opacity from (0.42 + 0.48*frac, peak 0.90)
+            // so the heatmap is more translucent and the endpoint dots show
+            // through. To REVERT, set back to 0.42 + 0.48 * frac.
+            opacity: 0.22 + 0.30 * frac,
             roughness: 0.45,
             depthWrite: false
           });

@@ -225,6 +225,7 @@ def print_summary(exp: MCExport) -> None:
     print(f"  HG asymmetry g     : {inp['hg_g']:.4g}")
     print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")
     print(f"  surface albedo A_s : {inp['surface_albedo']:.4g}")
+    print(f"  photon entry       : {inp.get('photon_entry', 'center')}")
     print(f"  RNG seed           : {inp['rng_seed']}")
     print("-" * 64)
     print("ENERGY BUDGET (per launched photon)")

@@ -35,13 +35,19 @@ export const UI = {
     // --- Physics / geometry inputs ---
     getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 10000000, 400, "Photons", true); },
     getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.1, 100, 10, "Cloud optical thickness τ"); },
-    getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 200, 40, "Horizontal extent"); },
+    getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 500, 40, "Horizontal extent"); },
     getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },
     getG:                 function() { return UI._getClampedInput("gValue", -0.99, 0.99, 0.85, "HG asymmetry g"); },
     getOmega0:            function() { return UI._getClampedInput("omega0", 0, 1, 1, "Single-scattering albedo ω₀"); },
     getSurfaceAlbedo:     function() { return UI._getClampedInput("surfaceAlbedo", 0, 1, 0, "Surface albedo A_s"); },
     getCloudBetaExt:      function() { return UI._getClampedInput("cloudBetaExt", 0.001, 1000, 10.0, "Cloud extinction β_ext"); },
     getSurfaceDistanceKm: function() { return UI._getClampedInput("surfaceDistanceKm", 0, 20, 0.5, "Cloud-base to surface distance"); },
+
+    // Cloud-top incident entry mode:
+    //   "center"   — all photons enter at (x,y)=(0,0)  [default; reproducible]
+    //   "top"      — uniform over the cloud-top face
+    //   "top_side" — uniform over top + sunward side wall, projected-area weighted
+    getPhotonEntryMode:   function() { return document.getElementById("photonEntry")?.value ?? "center"; },
 
     // --- Display / visualization inputs ---
     getMaxPaths:      function() { return UI._getClampedInput("maxPaths", 0, 1000, 250, "Max paths drawn", true); },
