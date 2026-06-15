@@ -199,7 +199,7 @@ export const Physics = {
       // (terminal side_escape, reported where it passes cloud-base altitude).
       // countDownArrival: side-wall exits did not cross the cloud base, so
       // their downward arrival at the surface plane is registered here to keep
-      // the identity T_net = E_down - E_up = A_sfc exact.
+      // the identity T_net = F_down - F_up = surface absorption, exact.
       // For A_s = 0 this handler is not used and behavior is unchanged
       // (photons terminate at the cloud base / side walls).
       const surfaceInteraction = (cx, cy, ctau, countDownArrival) => {
@@ -209,14 +209,20 @@ export const Physics = {
         const ys = cy + tDown * dir.y;
         if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xs, y: ys, tau: tauSurface});
 
+        // viaSide tags the OBSERVATION-GEOMETRY origin of each surface-plane leg:
+        // countDownArrival is true only when surfaceInteraction is reached from a
+        // downward side-wall exit, false when reached from a cloud-base crossing.
+        // simstats uses it to split the net surface flux into base-derived (the
+        // transmitted channel under geometry "a") vs. side-derived (reassigned to
+        // S under "a"). Trajectories are unaffected.
         if (countDownArrival) {
-          cloudBaseTransmissions.push({xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
+          cloudBaseTransmissions.push({xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath, viaSide: true});
         }
 
         if (RNG.rand() < surfaceAlbedo) {
           localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_reflected"});
           dir = Physics.sampleLambertianUpwardDirection();
-          surfaceReflectionDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1});
+          surfaceReflectionDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1, viaSide: countDownArrival});
           surfaceBounceCount++;
 
           const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
@@ -234,7 +240,7 @@ export const Physics = {
         }
 
         localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_absorbed"});
-        return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
+        return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, viaSide: countDownArrival}};
       };
 
       
@@ -302,7 +308,7 @@ export const Physics = {
           totalPath += s * f;
           if (storePath) path.push({x: xb, y: yb, tau: tauCloud});
 
-          cloudBaseTransmissions.push({xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath});
+          cloudBaseTransmissions.push({xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, totalPath, viaSide: false});
 
           if (surfaceAlbedo > 0) {
             // Descend the clear gap to the infinite surface; the base crossing

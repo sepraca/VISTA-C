@@ -1,8 +1,8 @@
 # 3D Monte Carlo Cloud Radiative Transfer Simulator
 
-An interactive 3D Monte Carlo (MC) simulation of photon transport through a finite plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time Three.js visualization.
+An interactive 3D Monte Carlo (MC) simulation of solar incident photon transport through a finite plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time 3D photon trajectory visualization (using Three.js).
 
-Designed primarily as an educational tool for students and scientists working in cloud remote sensing and atmospheric radiative transfer, but numerically verified for scientific use.
+While originally designed as an intuitive educational tool for students and scientists/engineers working in cloud remote sensing and atmospheric radiative transfer, the code has evolved to capture realistic 3D radiative transfer situations. However, it has only been numerically validated against plane-parallel PythonicDISORT for limited cases (see tests folder). 
 
 ---
 
@@ -15,48 +15,49 @@ A hosted version is available at: https://sepraca.github.io/mc_cloud_rt_visualiz
 
 ## Features
 
-- **Reproducible MC statistics** — deterministic Mulberry32 RNG with fixed seed (42)
-- **3D photon path visualization** — animated and static path rendering with colored endpoints by outcome
-- **Henyey-Greenstein phase function** — exact inverse-CDF sampling for the scattering angle
-- **Lambertian surface reflection** — configurable surface albedo Aₛ with geometric sub-cloud gap propagation
-- **Finite-cloud illumination modes** — pencil-beam (centered) entry, or uniform illumination of the cloud top, optionally including the sunward side wall, to study 3D edge effects
-- **Net transmittance** — correctly accounts for multiple surface bounces: T = E↓ − E↑ at surface
-- **Bottom panel plots** — μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
-- **PNG export** — 3D view and bottom panel with diagnostic parameter headers
-- **Quantitative data export (JSON)** — full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts to NetCDF
-- **Fully modular ES module architecture** — 12 focused JavaScript files, no bundler required
+- **Reproducible MC statistics**: deterministic Mulberry32 RNG with fixed seed (42)
+- **3D photon path visualization**: animated and static path rendering with colored endpoints by outcome
+- **Henyey-Greenstein phase function**: exact inverse-CDF sampling for the scattering angle
+- **Lambertian surface reflection**: configurable surface albedo Aₛ with geometric sub-cloud gap propagation
+- **Finite-cloud illumination modes**: pencil-beam (centered) entry, or uniform illumination of the cloud top, optionally including the sunward side wall, to study 3D edge effects
+- **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
+- **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
+- **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
+- **PNG plot export**: 3D view and bottom panel with diagnostic parameter headers
+- **Quantitative data export (JSON)**: full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts the JSON file to NetCDF
+- **Fully modular ES module architecture**: 12 focused JavaScript files, no bundler required
 
 ---
 
 ## Physics Overview
 
-Each photon is launched from cloud top at a user-specified solar zenith angle Θ₀. Free paths are sampled from an exponential distribution with extinction coefficient β_ext. Scattering directions are drawn from the Henyey-Greenstein phase function via exact inverse-CDF sampling:
+Each photon is launched into the cloud at a user-specified solar zenith angle Θ₀. Free paths are sampled from an exponential distribution with extinction coefficient β_ext. Scattering directions are drawn from the analytic Henyey-Greenstein phase function via exact inverse-CDF sampling:
 
 $$\cos\theta = \frac{1}{2g}\left[1 + g^2 - \left(\frac{1-g^2}{1-g+2g\xi}\right)^2\right]$$
 
-At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. Net surface transmittance is:
+At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. Net normalized flux transmittance (surface absorption) is:
 
-$$T_{\text{net}} = \frac{E_{\downarrow} - E_{\uparrow}}{N_{\text{launched}}}$$
+$$T_{\text{net}} = \frac{F_{\downarrow} - F_{\uparrow}}{N_{\text{launched}}}$$
 
-where E↓ and E↑ are total downward and upward cloud-base crossings respectively.
+where F↓ and F↑ are total downward and upward cloud-base flux crossings, respectively.
 
 Photon outcomes: **Reflected** (exits cloud top) | **Net transmitted** (absorbed at surface) | **Cloud absorbed** | **Side escape**
 
 Conservation check: R + T + A + S = 1.0
 
-### Photon entry: pencil vs. finite-cloud illumination
+### Photon illumination: pencil beam vs. full cloud
 
-The **Photon entry** control sets where photons enter the cloud top:
+The **Photon illumination** control sets where photons enter the cloud:
 
-- **Centered (point source)** *(default)* — every photon enters at (x, y) = (0, 0),
+- **Centered (point source)** *(default)*: every photon enters at (x, y) = (0, 0),
   the classic plane-parallel pencil-beam launch. This is the only mode guaranteed
   bit-reproducible against the seed-42 reference cases.
-- **Uniform — cloud top** — entry points are drawn uniformly over the cloud-top
-  face, simulating full illumination of a finite cloud. For a large horizontal
+- **Uniform cloud top**: entry points are selected uniformly over the cloud-top
+  face, simulating full cloud-top illumination of a finite cloud. For a large horizontal
   extent this converges to the plane-parallel result; at finite extent it reveals
   3D edge leakage (photons launched near the edges escape out the sides), which
   the centered launch does not capture.
-- **Uniform — cloud top + sunward side** — additionally illuminates the sunward
+- **Uniform cloud top + sunward side**: additionally illuminates the sunward
   vertical wall at oblique sun. The two lit faces are weighted by their
   beam-projected areas, so the fraction of photons entering through the side is
 
@@ -72,21 +73,30 @@ their integer counts differ at the ~1σ Monte Carlo level. The horizontal extent
 be set up to 500 optical depths to push the uniform modes toward the plane-parallel
 limit.
 
-### Diagnostic plots: flux vs. radiance
+### Observation geometry: exit photon aggregation choices
 
-The bottom-panel diagnostics are two physically distinct quantities, so their
-y-axes are not interchangeable:
+With the code's ability to simulate 3D radiative transfer, an unambiguous aggregation of exiting photon statistics is no longer possible. A finite cloud loses photons through its **sides** as well as its top and base. Whether those side exits should be counted depends on the observer's position and field of view. The **Observation geometry** control selects one of two self-consistent conventions, applied identically to the reflected and transmitted channels:
+
+- **Cloud top/base faces only** *(default, "a")* — only photons whose final trajectory leaves through the cloud top or reaches the surface via the base are aggregated; every side-wall exit is counted separately and bookkept under S. This is appropriate for an observer (instrument) that can resolve the cloud top/base field of view.
+- **Cloud top/base + sides ("b")** — final trajectory side-wall exits are included in the reflected and transmitted flux aggregations, i.e., upward side escapes are aggregated into R and downward escapes into T. Appropriate for an observer (e.g. a satellite) that lacks the spatial resolution to distinguish the cloud top from cloud sides. Here S → 0 and the budget closes as R + T + A = 1.
+
+This is a pure **post-processing choice**: it changes only how the accumulated
+photon exit counts are aggregated, not the simulated trajectories. Switching the selection re-bins the current run instantly with no re-run. The two modes converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane
+projections and are unaffected by this control.
+
+Note that a single instrument (observer) can only sample a small part of the geometries given by these simulations. The full geometries are given so that the output can be filtered for a users specific use cases.
+
+### Diagnostic plots: flux vs. Bidirectional Distribution Function (BDF)
+
+The bottom-panel plots/diagnostics of the histograms and BDFs contain two physically distinct quantities, so their y-axes are not interchangeable:
 
 - The **μ = |cos Θ| exit-angle histograms** and the **optical path-length
-  distributions** are **flux (energy) distributions** — their y-values are
+  distributions** are **flux (energy) distributions** with y-values equal to
   photon counts (∝ energy) per bin, i.e. the number of photons exiting in each
   μ or path-length interval.
-- The **BDF** is a **radiance** quantity: BDF = (W/N)·π/(μ·Δμ·Δφ), normalized
-  per unit projected solid angle, which introduces an explicit 1/μ factor
-  relative to the photon count.
+- The **BDF** is a quantity proportional to **radiance**: BDF = (W/N)·π/(μ·Δμ·Δφ), which is normalized per unit projected solid angle. In particular, this introduces an explicit 1/μ factor relative to the photon count in the µ histograms.
 
-As a result the two are *consistent but not identical* representations of the
-same exit-direction data. Azimuthally averaging the BDF and converting back to
+As a result the BDF and µ histograms are *consistent but not identical* representations of the same exit-direction data. Azimuthally averaging the BDF and converting back to
 the flux (count) density recovers the μ histogram exactly:
 
 $$\frac{1}{N}\frac{dN}{d\mu} = 2\mu\,\overline{\text{BDF}}(\theta), \qquad \mu=\cos\theta$$
@@ -115,20 +125,22 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Parameter | Description | Default |
 |---|---|---|
 | Photons | Number of photons to simulate | 400 |
-| Cloud optical thickness τ | Total cloud optical depth | 10 |
-| Horizontal extent | Slab width in optical path units (range 2–500) | 40 |
+| Cloud optical thickness τ | Total cloud optical thickness (0.1-100) | 10 |
+| Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
-| Photon entry | Cloud-top entry: Centered (point source) / Uniform — cloud top / Uniform — cloud top + sunward side | Centered |
-| HG asymmetry g | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
-| Single-scattering albedo ω₀ | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
-| Surface albedo Aₛ | Lambertian surface reflectance (0 = black, 1 = mirror) | 0.0 |
-| Cloud β_ext (km⁻¹) | Volume extinction coefficient | 10.0 |
-| Cloud-base to surface (km) | Geometric gap thickness | 0.5 |
+| Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side | Centered |
+| Observation geometry | How exits are aggregated into R/T/S: cloud top/base faces only (a), or cloud top/base + sides (b) | Cloud top/base faces only |
+| HG asymmetry parameter (g) | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
+| Single-scattering albedo (ω₀) | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
+| Surface albedo (Aₛ) | Lambertian surface albedo (0 = black, 1 = non-absorbing) | 0.0 |
+| Cloud β_ext (km⁻¹) | Volume extinction coefficient (used to set cloud-surface aspect ratio) | 10.0 |
+| Cloud-base to surface (km) | Geometric gap thickness (used with β_ext to set cloud-surface aspect ratio) | 0.5 |
+| Footprint grid size | number of cloud top/base grid elements | 28 |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
 
-**Buttons:** Launch One (single animated photon) | Launch Ensemble | Reset | Pause/Resume | Step
+**Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Reset, Pause/Resume, Step
 
-**Bottom panel:** μ histograms | BDF polar plots | Optical path-length distributions
+**Bottom panel choices:** μ histograms, BDF polar plots, Optical path-length distributions
 
 ---
 
@@ -204,9 +216,9 @@ diagnostic content in machine-readable, full double precision (not the rounded
 values shown in the PNG headers):
 
 - **Run inputs** — τ, horizontal extent, Θ₀ (and μ₀), g, ω₀, Aₛ, β_ext,
-  sub-cloud gap, the photon-entry mode (`center` / `top` / `top_side`), and the RNG seed.
-- **Outputs** — all outcome counts and normalized fluxes (R, T_net, A, S, Aₛ_fc),
-  with the R + T + A + S energy-closure sum.
+  sub-cloud gap, the photon-illumination mode (`center` / `top` / `top_side`), and the RNG seed.
+- **Outputs** — all outcome counts and normalized fluxes (R, T, A, S),
+  with the R + T + A + S flux-closure sum.
 - **µ histograms** — reflected and net-transmitted (signed, down − up) exit-angle
   vectors with explicit bin edges and centers.
 - **BDF** — raw signed bin weights *and* the normalized
@@ -239,7 +251,7 @@ Programmatic use:
 from mc_export_reader import MCExport
 exp = MCExport.load("run.json")
 ds  = exp.to_xarray()          # labeled (theta, phi, mu, path) coordinates
-print(exp.fluxes["R_top_reflected"])
+print(exp.fluxes["R_reflected"])
 ```
 
 Because the Mulberry32 RNG is deterministic, two runs at the same seed, photon
@@ -254,7 +266,7 @@ rounding in `acos`/`cos`).
 comparing **two** JSON exports — rows for the µ histogram, optical path-length
 distribution, BDF vs. zenith, and BDF polar heatmap; columns for reflected and
 net-transmitted. The µ and path rows are area-normalized (flux/shape comparison)
-while the BDF rows are absolute (radiance); see *Diagnostic plots: flux vs. radiance*
+while the BDF rows are absolute (radiance); see *Diagnostic plots: flux vs. Bidirectional Distribution Function (BDF)*
 above. Edit the CONFIG block at the top of the script to point `FILE_A`/`FILE_B` at
 any two exports (e.g. centered vs. uniform illumination, or two solar zenith angles),
 then run it from that folder (`python illumination_comparison.py`). Requires NumPy +
@@ -281,10 +293,11 @@ A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, Joss) are detailed in
 
 ## Version History
 
-| Version | Description |
-|---|---|
-| v3.2 | Monolithic single-file implementation; surface geometry, export stats |
-| v4.0 | Modular ES module architecture; physics/stats decoupling; corrected net transmittance (T = E↓ − E↑); consistent N counts across all displays |
+See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
+[Releases](https://github.com/sepraca/mc_cloud_rt_visualization/releases) page for
+tagged versions.
+
+Latest: **v5.0.0** (2026-06-15).
 
 ---
 
@@ -298,4 +311,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *3D Monte Carlo Cloud Radiative Transfer Simulator* (v4.0). GitHub. https://github.com/sepraca/mc_cloud_rt_visualization
+> Platnick, S. (2026). *3D Monte Carlo Cloud Radiative Transfer Simulator* (v5.0.0). GitHub. https://github.com/sepraca/mc_cloud_rt_visualization

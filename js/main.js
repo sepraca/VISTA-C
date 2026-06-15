@@ -21,6 +21,7 @@ try {
   window.BottomPanel = BottomPanel;
   window.Export      = Export;
   window.RunControl  = RunControl;
+  window.SimStats    = SimStats;
 
   // Legacy shorthands used by some HTML event attributes.
   window.runOne                = RunControl.runOne;

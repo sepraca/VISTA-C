@@ -1,7 +1,7 @@
 {
   "format": "mc_cloud_rt_export",
   "schema_version": "1.0",
-  "generated": "2026-06-14T00:41:34.234Z",
+  "generated": "2026-06-15T15:53:13.049Z",
   "generator": "mc_cloud_rt_v4 — browser Monte Carlo cloud radiative transfer",
   "inputs": {
     "photons": 2000000,
@@ -14,7 +14,7 @@
     "surface_albedo": 0,
     "beta_ext_km": 10,
     "surface_distance_km": 0.5,
-    "photon_entry": "center",
+    "photon_illumination": "center",
     "rng_seed": 42,
     "units": {
       "tau_cloud": "optical depth (dimensionless)",
@@ -32,26 +32,25 @@
       "transmitted_down_at_surface": 708218,
       "final_transmitted_black_surface": 708218,
       "cloud_absorbed": 0,
-      "side_escape": 163104,
+      "side_exit": 163104,
       "terminated_event_cap": 0,
       "surface_reflected": 0,
       "surface_absorbed": 0,
       "net_transmitted": 708218
     },
     "fluxes": {
-      "R_top_reflected": 0.564339,
-      "T_net_surface": 0.354109,
+      "R_reflected": 0.564339,
+      "T_net_transmitted": 0.354109,
       "A_cloud_absorbed": 0,
-      "S_side_escape": 0.081552,
+      "S_side_exit": 0.081552,
       "Term_event_cap": 0,
       "closure_R_T_A_S_Term": 1,
-      "A_surface_absorbed": 0,
-      "T_down_at_surface": 0.354109,
+      "F_down_surface": 0.354109,
       "surface_reflections_per_photon": 0
     },
     "mean_scatterings_per_photon": 18.5691525,
     "mean_optical_path_per_photon": 18.581029956925505,
-    "notes": "Fluxes are per launched photon (analog MC, weight 1). T_net = (downward at surface − upward surface reflection) and equals A_surface for a non-absorbing surface by energy closure."
+    "notes": "Fluxes are normalized per launched photon (analog MC, weight 1). T_net_transmitted = (F_down_surface − upward surface reflection) and equals the surface absorption for a non-absorbing-cloud case by flux closure."
   },
   "mu_histograms": {
     "description": "Exit-angle histograms in |µ| = |cos Θ|. Reversed axis: bin 0 is near-vertical (µ→1), last bin near-horizontal (µ→0). net_transmitted_counts are signed (+1 downward arrival at surface, −1 surface reflection); identical to gross when A_s=0.",

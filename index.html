@@ -63,6 +63,25 @@
     font-size: 13px;
   }
 
+  /* Category headers: full-width row with a thin separator line above, to
+     group the inputs into Photon/Model, Plot, and Visualization sections. */
+  .controls .group-head {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.35);
+  }
+  .controls .group-head:first-child {
+    margin-top: 0;
+    padding-top: 2px;
+    border-top: none;
+  }
+
   input, select {
     width: 96px;
   }
@@ -296,6 +315,8 @@
   </div>
 
   <div class="controls">
+    <div class="group-head">Photon / Model</div>
+
     <label>Photons</label>
     <input id="photonCount" type="number" value="400" min="1" max="10000000" onblur="UI.getPhotonCount()">
 
@@ -308,20 +329,26 @@
     <label>Incident zenith Θ₀</label>
     <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad()">
 
-    <label>Photon entry</label>
+    <label>Photon illumination</label>
     <select id="photonEntry">
       <option value="center" selected>Centered (point source)</option>
-      <option value="top">Uniform — cloud top</option>
-      <option value="top_side">Uniform — cloud top + sunward side</option>
+      <option value="top">Uniform cloud top</option>
+      <option value="top_side">Uniform cloud top + sunward side</option>
     </select>
 
-    <label>HG asymmetry g</label>
+    <label>Observation geometry</label>
+    <select id="observationGeometry" onchange="SimStats.updateDisplay()">
+      <option value="faces" selected>Cloud top/base faces only</option>
+      <option value="faces_sides">Cloud top/base + sides</option>
+    </select>
+
+    <label>HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
 
-    <label>Single-scattering albedo ω₀</label>
+    <label>Single-scattering albedo (ω₀)</label>
     <input id="omega0" type="number" value="1.00" min="0" max="1" step="0.01" onblur="UI.getOmega0()">
 
-    <label>Surface albedo A<sub>s</sub></label>
+    <label>Surface albedo (A<sub>s</sub>)</label>
     <input id="surfaceAlbedo" type="number" value="0.00" min="0" max="1" step="0.01" onblur="UI.getSurfaceAlbedo(); Scene.buildCloudBox()">
 
     <label>Cloud β<sub>ext</sub> (km⁻¹)</label>
@@ -330,19 +357,8 @@
     <label>Cloud-base to surface (km)</label>
     <input id="surfaceDistanceKm" type="number" value="0.50" min="0" max="20" step="0.05" onblur="UI.getSurfaceDistanceKm(); Scene.buildCloudBox()">
 
-    <label>Max paths drawn</label>
-    <input id="maxPaths" type="number" value="250" min="0" max="1000" step="25" onblur="UI.getMaxPaths()">
+    <div class="group-head">Plot</div>
 
-    <label>Endpoint caps shown</label>
-    <div class="slider-wrap">
-      <span id="endpointCapValue" class="slider-value">6000</span>
-      <input id="endpointCap" type="range" value="6000" min="0" max="20000" step="500" oninput="RunControl.refreshEndpointDisplay()">
-    </div>
-
-    <label>Fade older endpoints</label>
-    <input id="fadeEndpoints" type="checkbox" checked onchange="RunControl.refreshEndpointDisplay()">
-
-    
     <label>Bottom panel</label>
     <select id="bottomPanelMode" onchange="BottomPanel.drawBottomPanel()">
       <option value="mu" selected>μ histograms</option>
@@ -360,7 +376,21 @@
     <label>Avg near-nadir BDF</label>
     <input id="avgNadirBdf" type="checkbox" checked onchange="BottomPanel.drawBottomPanel()">
 
-    <label>Footprint grid</label>
+    <div class="group-head">Visualization</div>
+
+    <label>Max paths drawn</label>
+    <input id="maxPaths" type="number" value="250" min="0" max="1000" step="25" onblur="UI.getMaxPaths()">
+
+    <label>Endpoint caps shown</label>
+    <div class="slider-wrap">
+      <span id="endpointCapValue" class="slider-value">6000</span>
+      <input id="endpointCap" type="range" value="6000" min="0" max="20000" step="500" oninput="RunControl.refreshEndpointDisplay()">
+    </div>
+
+    <label>Fade older endpoints</label>
+    <input id="fadeEndpoints" type="checkbox" checked onchange="RunControl.refreshEndpointDisplay()">
+
+    <label>Footprint grid size</label>
     <input id="footprintGrid" type="number" value="28" min="8" max="60" step="2" onblur="UI.getFootprintGrid(); BottomPanel.drawBottomPanel()">
 
     <label>Animate paths</label>

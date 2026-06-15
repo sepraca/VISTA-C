@@ -49,6 +49,13 @@ export const UI = {
     //   "top_side" — uniform over top + sunward side wall, projected-area weighted
     getPhotonEntryMode:   function() { return document.getElementById("photonEntry")?.value ?? "center"; },
 
+    // Observation geometry: how exits are aggregated into the R/T/S budget and
+    // the µ/BDF/path distributions (a pure post-processing choice; does not
+    // affect the simulated trajectories).
+    //   "faces"       — cloud top/base faces only (side exits counted in S)
+    //   "faces_sides" — also count side-wall exits (upward→R, downward→T, S→0)
+    getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "faces"; },
+
     // --- Display / visualization inputs ---
     getMaxPaths:      function() { return UI._getClampedInput("maxPaths", 0, 1000, 250, "Max paths drawn", true); },
     getEndpointCap:   function() { return UI._getClampedInput("endpointCap", 0, 20000, DEFAULT_ENDPOINT_MARKERS, "Endpoint caps shown", true); },

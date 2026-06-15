@@ -64,15 +64,34 @@ export const SimStats = {
       terminated: 0,        // hit the maxEvents safety cap (should be ~0)
       surfaceReflected: 0,
       surfaceAbsorbed: 0,
+      // Side-derived subset of the surface-plane tallies: downward side-wall
+      // exits that reached the surface (transmittedSide) and their surface
+      // reflections (surfaceReflectedSide). Used by the observation-geometry
+      // logic to peel the side contribution out of the transmitted channel.
+      transmittedSide: 0,
+      surfaceReflectedSide: 0,
+      // Terminal side-wall escapes split by vertical direction. Geometry "b"
+      // reassigns upward escapes to R and downward escapes to T.
+      sideEscapeUp: 0,
+      sideEscapeDown: 0,
       totalScatterings: 0,
       totalPath: 0
     },
 
     // --- Incremental bin accumulators ---
     muReflBins:     new Float64Array(MU_BINS),
-    muNetTransBins: new Float64Array(MU_BINS),          // signed (+down, -up)
+    muNetTransBins: new Float64Array(MU_BINS),          // signed (+down, -up) — TOTAL (base + side)
+    muSideTransBins: new Float64Array(MU_BINS),         // side-derived subset of muNetTransBins
     bdfReflWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfNetWeights:  new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfNetWeights:  new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),   // TOTAL (base + side)
+    bdfSideWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),   // side-derived subset
+    // Terminal side-wall escape angular distributions, split by vertical
+    // direction. Used only by observation geometry "b": upward escapes join the
+    // reflected channel, downward escapes join the transmitted channel.
+    muSideEscUpBins:   new Float64Array(MU_BINS),
+    muSideEscDownBins: new Float64Array(MU_BINS),
+    bdfSideEscUpWeights:   new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfSideEscDownWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -85,7 +104,10 @@ export const SimStats = {
     // terminal "transmitted" (A_s = 0) or "surface_absorbed" (A_s > 0).
     // Count identically equals the net-transmittance count
     // (transmitted - surfaceReflected), photon for photon.
-    netTransmittedPathLengths: [],
+    netTransmittedPathLengths: [],          // base-derived (geometry "a") surface-deposited paths
+    sideTransmittedPathLengths: [],         // side-derived surface-deposited paths (reassigned to S under "a", back to T under "b")
+    sideEscapeUpPaths: [],                  // terminal upward side escapes (join R under "b")
+    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under "b")
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
     // (Re)create footprint grids at the current UI resolution. Called on
@@ -114,16 +136,108 @@ export const SimStats = {
       const s = SimStats.stats;
       s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
       s.absorbed = 0; s.side = 0; s.terminated = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
+      s.transmittedSide = 0; s.surfaceReflectedSide = 0;
+      s.sideEscapeUp = 0; s.sideEscapeDown = 0;
       s.totalScatterings = 0; s.totalPath = 0;
       SimStats.muReflBins.fill(0);
       SimStats.muNetTransBins.fill(0);
+      SimStats.muSideTransBins.fill(0);
       SimStats.bdfReflWeights.fill(0);
       SimStats.bdfNetWeights.fill(0);
+      SimStats.bdfSideWeights.fill(0);
+      SimStats.muSideEscUpBins.fill(0);
+      SimStats.muSideEscDownBins.fill(0);
+      SimStats.bdfSideEscUpWeights.fill(0);
+      SimStats.bdfSideEscDownWeights.fill(0);
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
       SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
+      SimStats.sideTransmittedPathLengths = [];
+      SimStats.sideEscapeUpPaths = [];  SimStats.sideEscapeDownPaths = [];
+    },
+
+    // --- Observation geometry combiners ------------------------------------
+    // Every exit is accumulated unconditionally above; the observation geometry
+    // only chooses how to COMBINE the accumulators, so switching modes re-bins
+    // the SAME run with no re-simulation. Two modes:
+    //   "faces"       (a): cloud top/base faces only. Reflected = top face;
+    //                      transmitted = base-derived net surface flux (the
+    //                      side-derived part is peeled out and counted in S).
+    //   "faces_sides" (b): also count side-wall exits — upward escapes join R,
+    //                      downward escapes join T, side-derived surface flux
+    //                      stays in T — so S → 0 and the budget closes R+T+A=1.
+    // Footprints are left as plane projections (unchanged) per design.
+    _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : "faces"); },
+    observationGeometryLabel() {
+      return SimStats._obsGeom() === "faces_sides" ? "cloud top/base + sides"
+                                                    : "cloud top/base faces";
+    },
+    observationGeometryKey() {
+      return SimStats._obsGeom() === "faces_sides" ? "cloud_top_base_and_sides"
+                                                    : "cloud_top_base_faces_only";
+    },
+
+    reflectedMuBins() {
+      if (SimStats._obsGeom() !== "faces_sides") return SimStats.muReflBins;
+      const out = new Float64Array(MU_BINS);
+      for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i];
+      return out;
+    },
+    transmittedMuBins() {
+      const out = new Float64Array(MU_BINS);
+      if (SimStats._obsGeom() === "faces_sides") {
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] + SimStats.muSideEscDownBins[i];
+      } else {
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] - SimStats.muSideTransBins[i];
+      }
+      return out;
+    },
+    reflectedBdfWeights() {
+      if (SimStats._obsGeom() !== "faces_sides") return SimStats.bdfReflWeights;
+      const out = new Float64Array(SimStats.bdfReflWeights.length);
+      for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i];
+      return out;
+    },
+    transmittedBdfWeights() {
+      const out = new Float64Array(SimStats.bdfNetWeights.length);
+      if (SimStats._obsGeom() === "faces_sides") {
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] + SimStats.bdfSideEscDownWeights[i];
+      } else {
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] - SimStats.bdfSideWeights[i];
+      }
+      return out;
+    },
+    reflectedCount() {
+      const s = SimStats.stats;
+      return s.reflected + (SimStats._obsGeom() === "faces_sides" ? s.sideEscapeUp : 0);
+    },
+    transmittedNetCount() {
+      const s = SimStats.stats;
+      if (SimStats._obsGeom() === "faces_sides") {
+        return (s.transmitted - s.surfaceReflected) + s.sideEscapeDown;
+      }
+      return (s.transmitted - s.transmittedSide) - (s.surfaceReflected - s.surfaceReflectedSide);
+    },
+    sideExitCount() {
+      const s = SimStats.stats;
+      if (SimStats._obsGeom() === "faces_sides") {
+        return s.side - s.sideEscapeUp - s.sideEscapeDown;   // residual, ≈ 0 (all reassigned)
+      }
+      return s.side + (s.transmittedSide - s.surfaceReflectedSide);
+    },
+    // Path-length constituent arrays for the active geometry (returned as a
+    // list of segments so consumers iterate without allocating a concat copy).
+    reflectedPathSegments() {
+      return SimStats._obsGeom() === "faces_sides"
+        ? [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths]
+        : [SimStats.reflectedPathLengths];
+    },
+    transmittedPathSegments() {
+      return SimStats._obsGeom() === "faces_sides"
+        ? [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths]
+        : [SimStats.netTransmittedPathLengths];
     },
 
     // Record a downward arrival at the surface plane (independent of surface
@@ -134,15 +248,30 @@ export const SimStats = {
     registerCloudBaseTransmission(result) {
       SimStats.stats.transmitted++;
       SimStats._addFootprint(SimStats.footTrans, result.xExit, result.yExit);
-      SimStats.muNetTransBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
-      SimStats.bdfNetWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
+      const i = muBinIndex(Math.abs(result.dirZ ?? 0));
+      const b = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
+      SimStats.muNetTransBins[i] += 1;
+      SimStats.bdfNetWeights[b] += 1;
+      if (result.viaSide) {
+        SimStats.stats.transmittedSide++;
+        SimStats.muSideTransBins[i] += 1;
+        SimStats.bdfSideWeights[b] += 1;
+      }
     },
 
     // Record a Lambertian surface reflection direction: weight -1 in the
-    // net-transmitted µ and BDF accumulators (net = down - up).
+    // net-transmitted µ and BDF accumulators (net = down - up). Side-derived
+    // reflections (d.viaSide) are also tracked in the side-derived subset.
     registerSurfaceReflection(d) {
-      SimStats.muNetTransBins[muBinIndex(Math.abs(d.z ?? 0))] -= 1;
-      SimStats.bdfNetWeights[bdfBinIndex(d.x, d.y, d.z)] -= 1;
+      const i = muBinIndex(Math.abs(d.z ?? 0));
+      const b = bdfBinIndex(d.x, d.y, d.z);
+      SimStats.muNetTransBins[i] -= 1;
+      SimStats.bdfNetWeights[b] -= 1;
+      if (d.viaSide) {
+        SimStats.stats.surfaceReflectedSide++;
+        SimStats.muSideTransBins[i] -= 1;
+        SimStats.bdfSideWeights[b] -= 1;
+      }
     },
 
     // Store a surface interaction event for the 3D markers, keeping only
@@ -171,9 +300,30 @@ export const SimStats = {
         SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "side_escape") {
         SimStats.stats.side++;
+        // Record the escape direction so geometry "b" can reassign it: upward
+        // escapes (dirZ < 0) join the reflected channel, downward escapes
+        // (dirZ > 0) join the transmitted channel. Geometry "a" ignores these.
+        const ei = muBinIndex(Math.abs(result.dirZ ?? 0));
+        const eb = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
+        if ((result.dirZ ?? 0) < 0) {
+          SimStats.stats.sideEscapeUp++;
+          SimStats.muSideEscUpBins[ei] += 1;
+          SimStats.bdfSideEscUpWeights[eb] += 1;
+          SimStats.sideEscapeUpPaths.push(result.totalPath ?? 0);
+        } else {
+          SimStats.stats.sideEscapeDown++;
+          SimStats.muSideEscDownBins[ei] += 1;
+          SimStats.bdfSideEscDownWeights[eb] += 1;
+          SimStats.sideEscapeDownPaths.push(result.totalPath ?? 0);
+        }
       } else if (result.status === "surface_absorbed") {
         SimStats.stats.surfaceAbsorbed++;
-        SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+        // Route the path by terminal geometry: a surface absorption reached via
+        // a side wall belongs to S under geometry "a", not the transmitted path
+        // histogram. (At A_s = 0 there are no surface absorptions, so this path
+        // is never side-derived and the example cases are unaffected.)
+        if (result.viaSide) SimStats.sideTransmittedPathLengths.push(result.totalPath ?? 0);
+        else                SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "terminated") {
         // Photon hit the maxEvents safety cap in physics.js. Counted
         // separately so it can never masquerade as cloud absorption.
@@ -190,18 +340,23 @@ export const SimStats = {
       const s = SimStats.stats;
       const launched = Math.max(s.launched, 1);
 
-      // Cloud transmittance: normalized net transmitted energy at the surface.
-      //   T_net = E_down_sfc - E_up_sfc
-      // For A_s = 0 this reduces to the original black-surface transmittance.
+      // SURFACE FLUX DIAGNOSTICS are the PHYSICAL surface balance (total, both
+      // base- and side-derived), independent of observation geometry.
       const EdownSfc = s.transmitted / launched;
       const EupSfc   = s.surfaceReflected / launched;
-      const Rfinal   = s.reflected / launched;
-      // No clamp: T_net = A_sfc holds exactly, so a negative value would
-      // indicate a bookkeeping bug and should be visible, not masked.
-      const Tnet     = EdownSfc - EupSfc;
+      const totalSfcAbs = EdownSfc - EupSfc;           // total surface absorption
+      const totalSfcAbsCount = s.transmitted - s.surfaceReflected;
+
+      // FINAL OUTCOMES use the OBSERVED budget under the active observation
+      // geometry. Phase 1 = consistent "a": T is base-derived (excludes downward
+      // side-wall exits, which move to S). At A_s = 0 these reduce to the totals.
+      const Rcount   = SimStats.reflectedCount();
+      const Rfinal   = Rcount / launched;
+      const Tcount   = SimStats.transmittedNetCount();
+      const Tnet     = Tcount / launched;
       const Acloud   = s.absorbed / launched;
-      const Asurface = s.surfaceAbsorbed / launched;
-      const Sfinal   = s.side / launched;
+      const Scount   = SimStats.sideExitCount();
+      const Sfinal   = Scount / launched;
       const Tterm    = s.terminated / launched;
 
       const finalSumRTAS = Rfinal + Tnet + Acloud + Sfinal + Tterm;
@@ -219,19 +374,18 @@ export const SimStats = {
       document.getElementById("stats").textContent =
 `Launched: ${s.launched}
 
-FINAL OUTCOMES
-Top reflected R: ${Rfinal.toFixed(3)} (${s.reflected})
-Net surface transmittance T: ${Tnet.toFixed(3)} (${(s.transmitted - s.surfaceReflected)})
-Cloud absorbed A: ${Acloud.toFixed(3)} (${s.absorbed})
-Side escape S: ${Sfinal.toFixed(3)} (${s.side})
+FINAL OUTCOMES (observation geometry: ${SimStats.observationGeometryLabel()})
+Reflected flux (albedo), R: ${Rfinal.toFixed(3)} (${Rcount})
+Net flux transmittance (surface absorption), T: ${Tnet.toFixed(3)} (${Tcount})
+Cloud absorption, A: ${Acloud.toFixed(3)} (${s.absorbed})
+Flux exiting cloud sides, S: ${Sfinal.toFixed(3)} (${Scount})
 Terminated (event cap): ${Tterm.toFixed(3)} (${s.terminated})
 R + T + A + S + Term: ${finalSumRTAS.toFixed(3)}
 
-SURFACE ENERGY DIAGNOSTICS
-E_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
-E_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
-E_down_sfc - E_up_sfc: ${Tnet.toFixed(3)}
-Surface absorbed A_sfc: ${Asurface.toFixed(3)} (${s.surfaceAbsorbed})
+SURFACE FLUX DIAGNOSTICS (total, physical surface)
+F_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
+F_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
+F_down_sfc - F_up_sfc: ${totalSfcAbs.toFixed(3)} (${totalSfcAbsCount})
 
 BOUNDARY / MULTI-PASS DIAGNOSTICS
 Down at sfc plane: ${EdownSfc.toFixed(3)} (${s.transmitted})

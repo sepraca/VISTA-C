@@ -84,9 +84,9 @@ export const BottomPanel = {
       // bins carry signed weights (+1 per downward base/surface arrival,
       // -1 per surface reflection), so the bars show net (down − up) energy
       // per µ bin; identical to a gross histogram when A_s = 0.
-      const nNetTrans = SimStats.stats.transmitted - SimStats.stats.surfaceReflected;
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.muReflBins, 70, 42, 260, 118, "#60a5fa", "Reflected", SimStats.stats.reflected);
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.muNetTransBins, 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
+      const nNetTrans = SimStats.transmittedNetCount();
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.reflectedMuBins(), 70, 42, 260, 118, "#60a5fa", "Reflected", SimStats.reflectedCount());
+      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.transmittedMuBins(), 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "12px system-ui";
@@ -219,12 +219,18 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      function mean(arr) {
-        return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      // Path arrays are kept per-photon; the active observation geometry returns
+      // them as a list of segments (e.g. base-surface paths + downward side
+      // escapes under "b"), iterated without allocating a concatenated copy.
+      function segMean(segs) {
+        let sum = 0, n = 0;
+        for (const arr of segs) { for (const v of arr) sum += v; n += arr.length; }
+        return n ? sum / n : 0;
       }
-
-      const meanR = mean(SimStats.reflectedPathLengths);
-      const meanT = mean(SimStats.netTransmittedPathLengths);
+      const reflSegs  = SimStats.reflectedPathSegments();
+      const transSegs = SimStats.transmittedPathSegments();
+      const meanR = segMean(reflSegs);
+      const meanT = segMean(transSegs);
       const scaleMean = Math.max(meanR, meanT);
 
       // Use a representative path-length scale rather than the rare-event maximum.
@@ -235,14 +241,16 @@ export const BottomPanel = {
         Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10
       );
 
-      function drawPathHistogram(data, x0, y0, width, height, color, title, nOverride=null) {
+      function drawPathHistogram(segs, x0, y0, width, height, color, title) {
         const nBins = 24;
         const counts = new Array(nBins).fill(0);
+        let total = 0;
 
-        for (const vRaw of data) {
+        for (const arr of segs) for (const vRaw of arr) {
           const v = Math.max(0, vRaw || 0);
           const idx = Math.min(nBins - 1, Math.floor((v / niceMax) * nBins));
           counts[idx] += 1; // current analog photons have W = 1
+          total++;
         }
 
         const maxC = Math.max(1, ...counts);
@@ -265,7 +273,7 @@ export const BottomPanel = {
         ctx2.font = "bold 13px system-ui";
         ctx2.textAlign = "center";
         ctx2.textBaseline = "alphabetic";
-        ctx2.fillText(`${title}  N=${nOverride !== null ? nOverride : data.length}`, x0 + width / 2, y0 - 12);
+        ctx2.fillText(`${title}  N=${total}`, x0 + width / 2, y0 - 12);
 
         // Axis ticks and labels
         const yAxis = y0 + height;
@@ -291,14 +299,14 @@ export const BottomPanel = {
       // Per-photon paths of energy delivered to the surface: photons whose
       // terminal status is "transmitted" (A_s = 0) or "surface_absorbed"
       // (A_s > 0). Count equals the net-transmittance count exactly.
-      drawPathHistogram(SimStats.reflectedPathLengths, 70, 42, 260, 118, "#60a5fa", "Reflected");
-      drawPathHistogram(SimStats.netTransmittedPathLengths, 390, 42, 260, 118, "#86efac", "Net transmitted (surface-deposited)");
+      drawPathHistogram(reflSegs, 70, 42, 260, 118, "#60a5fa", "Reflected");
+      drawPathHistogram(transSegs, 390, 42, 260, 118, "#86efac", "Net transmitted (surface-deposited)");
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
       ctx2.fillText(
-        `Mean reflected path=${mean(SimStats.reflectedPathLengths).toFixed(2)}   |   Mean surface-deposited path=${mean(SimStats.netTransmittedPathLengths).toFixed(2)}   |   W=1 per photon`,
+        `Mean reflected path=${meanR.toFixed(2)}   |   Mean surface-deposited path=${meanT.toFixed(2)}   |   W=1 per photon`,
         w / 2,
         224
       );
@@ -315,8 +323,8 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.bdfReflWeights));
-      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.bdfNetWeights));
+      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights()));
+      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeights()));
 
       BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Reflected");
       BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Net Transmitted");

@@ -25,36 +25,37 @@ export const Export = {
     getOutcomeStatisticLines: function() {
       const launched = Math.max(SimStats.stats.launched, 1);
 
-      // Match the left-hand diagnostic panel exactly:
-      // Net surface transmittance is downward surface energy minus upward
-      // surface-reflected energy, not simply surface absorption.
-      const E_down_sfc_count = SimStats.stats.transmitted;
-      const E_up_sfc_count = SimStats.stats.surfaceReflected;
-      const Tnet_count = E_down_sfc_count - E_up_sfc_count;
+      // Match the left-hand diagnostic panel: R/T/A/S are the OBSERVED budget
+      // under the active observation geometry (Phase 1 = "a", cloud top/base
+      // faces only — T base-derived, downward side exits in S). F_down_sfc is the
+      // physical (total) surface quantity.
+      const R_count = SimStats.reflectedCount();
+      const T_count = SimStats.transmittedNetCount();
+      const side_count = SimStats.sideExitCount();
 
-      const R = SimStats.stats.reflected / launched;
-      const T = Tnet_count / launched;
+      const R = R_count / launched;
+      const T = T_count / launched;
       const A = SimStats.stats.absorbed / launched;
-      const S = SimStats.stats.side / launched;
+      const S = side_count / launched;
       const Term = SimStats.stats.terminated / launched;
-      const A_surface = SimStats.stats.surfaceAbsorbed / launched;
       const T_base = SimStats.stats.transmitted / launched;
       const surfaceRefl = SimStats.stats.surfaceReflected / launched;
 
+      // Compact R/T/A/S symbols (header is width-limited; the stats panel and
+      // README carry the full "Normalized … flux" definitions).
       return [
-        `R=${R.toFixed(3)} (${SimStats.stats.reflected})`,
-        `T=${T.toFixed(3)} (${Tnet_count})`,
+        `R=${R.toFixed(3)} (${R_count})`,
+        `T=${T.toFixed(3)} (${T_count})`,
         `A=${A.toFixed(3)} (${SimStats.stats.absorbed})`,
-        `S=${S.toFixed(3)} (${SimStats.stats.side})`,
-        `A_sfc=${A_surface.toFixed(3)} (${SimStats.stats.surfaceAbsorbed})`,
+        `S=${S.toFixed(3)} (${side_count})`,
         `R+T+A+S+Term=${(R + T + A + S + Term).toFixed(3)}`,
-        `T_down_sfc=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
+        `F_down_sfc=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
         `surface refl/photon=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`,
         `Term (event cap)=${Term.toFixed(3)} (${SimStats.stats.terminated})`
       ];
     },
 
-    // Human-readable label for the cloud-top photon-entry mode.
+    // Human-readable label for the cloud-top photon-illumination mode.
     photonEntryLabel: function(mode) {
       return mode === "top"      ? "uniform top"
            : mode === "top_side" ? "uniform top+side"
@@ -73,7 +74,8 @@ export const Export = {
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
         `RNG seed: ${RNG.currentSeed()}`,
-        `Photon entry: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`
+        `Photon illumination: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`,
+        `Obs geometry: ${UI.getObservationGeometry() === "faces_sides" ? "top/base + sides" : "top/base faces"}`
       ];
     },
 
@@ -326,11 +328,11 @@ export const Export = {
         const lines = Export.getExportParameterLines();
         const outcome = Export.getOutcomeStatisticLines();
 
-        // Settings rows (11 lines incl. Photon entry: 3 / 3 / 3 / 2 across four rows)
+        // Settings rows (12 lines incl. Photon illumination + Obs geometry: 3 / 3 / 3 / 3 across four rows)
         ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
         ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
         ctx.fillText(lines.slice(6, 9).join(" ,   "), 14 * scale, 114 * scale);
-        ctx.fillText(lines.slice(9, 11).join(" ,   "), 14 * scale, 140 * scale);
+        ctx.fillText(lines.slice(9, 12).join(" ,   "), 14 * scale, 140 * scale);
 
         // Outcome statistics rows (3 lines to prevent truncation)
         ctx.fillStyle = "#bfdbfe";
@@ -388,7 +390,7 @@ export const Export = {
         surface_albedo: UI.getSurfaceAlbedo(),
         beta_ext_km: UI.getCloudBetaExt(),
         surface_distance_km: UI.getSurfaceDistanceKm(),
-        photon_entry: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side"
+        photon_illumination: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side"
         rng_seed: RNG.currentSeed(),
         units: {
           tau_cloud: "optical depth (dimensionless)",
@@ -399,41 +401,47 @@ export const Export = {
       };
 
       // --- Outputs (counts + normalized fluxes; mirrors the stats panel) ---
-      const netTransCount = s.transmitted - s.surfaceReflected;
-      const R = s.reflected / launched;
+      // R/T/A/S are the OBSERVED budget under the active observation geometry.
+      // Phase 1 = consistent "a" (cloud top/base faces only): T is base-derived,
+      // downward side-wall exits are reassigned to S. F_down_surface and
+      // surface_reflected remain the physical (total) surface quantities.
+      const netTransCount = SimStats.transmittedNetCount();   // observation-geometry aware
+      const sideCount     = SimStats.sideExitCount();
+      const reflCount     = SimStats.reflectedCount();        // observation-geometry aware
+      const R = reflCount / launched;
       const Tnet = netTransCount / launched;
       const A = s.absorbed / launched;
-      const S = s.side / launched;
+      const S = sideCount / launched;
       const Term = s.terminated / launched;
       const outputs = {
+        observation_geometry: SimStats.observationGeometryKey(),   // "faces" (a) or "faces_sides" (b)
         counts: {
           launched: s.launched,
-          reflected: s.reflected,
+          reflected: SimStats.reflectedCount(),
           transmitted_down_at_surface: s.transmitted,
           final_transmitted_black_surface: s.finalTransmitted,
           cloud_absorbed: s.absorbed,
-          side_escape: s.side,
+          side_exit: sideCount,
           terminated_event_cap: s.terminated,
           surface_reflected: s.surfaceReflected,
           surface_absorbed: s.surfaceAbsorbed,
           net_transmitted: netTransCount
         },
         fluxes: {
-          R_top_reflected: R,
-          T_net_surface: Tnet,
-          A_cloud_absorbed: A,
-          S_side_escape: S,
+          R_reflected: R,                 // normalized reflected flux = cloud albedo (hemispheric); distinct from the directional BDF
+          T_net_transmitted: Tnet,        // net normalized flux transmittance (surface absorption), base-derived
+          A_cloud_absorbed: A,            // normalized cloud absorption
+          S_side_exit: S,                 // normalized flux exiting cloud sides (incl. side exits reaching the surface)
           Term_event_cap: Term,
           closure_R_T_A_S_Term: R + Tnet + A + S + Term,
-          A_surface_absorbed: s.surfaceAbsorbed / launched,
-          T_down_at_surface: s.transmitted / launched,
+          F_down_surface: s.transmitted / launched,   // normalized downward flux at the surface plane (total, physical)
           surface_reflections_per_photon: s.surfaceReflected / launched
         },
         mean_scatterings_per_photon: s.totalScatterings / launched,
         mean_optical_path_per_photon: s.totalPath / launched,
-        notes: "Fluxes are per launched photon (analog MC, weight 1). " +
-               "T_net = (downward at surface − upward surface reflection) and " +
-               "equals A_surface for a non-absorbing surface by energy closure."
+        notes: "Fluxes are normalized per launched photon (analog MC, weight 1). " +
+               "Observation geometry 'cloud_top_base_faces_only': R/T are cloud top/base face " +
+               "exits; downward side-wall exits that reach the surface are counted in S, not T."
       };
 
       // --- µ exit-angle histograms ---
@@ -451,17 +459,17 @@ export const Export = {
         n_bins: MU_BINS,
         mu_bin_edges: muEdges,           // length n_bins+1, descending 1→0
         mu_bin_centers: muCenters,       // length n_bins
-        reflected_counts: Array.from(SimStats.muReflBins),
-        net_transmitted_counts: Array.from(SimStats.muNetTransBins),
-        reflected_N: s.reflected,
+        reflected_counts: Array.from(SimStats.reflectedMuBins()),
+        net_transmitted_counts: Array.from(SimStats.transmittedMuBins()),
+        reflected_N: SimStats.reflectedCount(),
         net_transmitted_N: netTransCount
       };
 
       // --- BDF (bidirectional distribution function) ---
       // Reuse the display grid builder to guarantee identical normalization,
       // but take the UNSMOOTHED grids (no near-nadir averaging) as ground truth.
-      const reflGrid = BottomPanel.computeBdfGrid(SimStats.bdfReflWeights);
-      const netGrid  = BottomPanel.computeBdfGrid(SimStats.bdfNetWeights);
+      const reflGrid = BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights());
+      const netGrid  = BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeights());
 
       const thetaCentersDeg = [], muCentersBdf = [], deltaMu = [];
       for (let ir = 0; ir < BDF_THETA_BINS; ir++) {
@@ -497,16 +505,18 @@ export const Export = {
       // --- Optical path-length histograms (binned + true means) ---
       // Reproduce the bottom-panel computation exactly so the file matches the
       // figure: 24 bins on [0, niceMax], values ≥ niceMax clipped into bin 23.
-      const reflPaths = SimStats.reflectedPathLengths;
-      const netPaths  = SimStats.netTransmittedPathLengths;
-      const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-      const meanR = mean(reflPaths), meanT = mean(netPaths);
+      // Path arrays as observation-geometry segments (iterated, not concatenated).
+      const reflSegs  = SimStats.reflectedPathSegments();
+      const netSegs   = SimStats.transmittedPathSegments();
+      const segMean = segs => { let sum=0,n=0; for (const a of segs){for (const v of a) sum+=v; n+=a.length;} return n?sum/n:0; };
+      const segLen  = segs => { let n=0; for (const a of segs) n+=a.length; return n; };
+      const meanR = segMean(reflSegs), meanT = segMean(netSegs);
       const scaleMean = Math.max(meanR, meanT);
       const niceMax = Math.max(10, Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10);
       const PATH_BINS = 24;
-      function pathHist(arr) {
+      function pathHist(segs) {
         const counts = new Array(PATH_BINS).fill(0);
-        for (const vRaw of arr) {
+        for (const arr of segs) for (const vRaw of arr) {
           const v = Math.max(0, vRaw || 0);
           counts[Math.min(PATH_BINS - 1, Math.floor((v / niceMax) * PATH_BINS))] += 1;
         }
@@ -523,11 +533,11 @@ export const Export = {
         bin_max: niceMax,
         bin_edges: pathEdges,            // length n_bins+1; last bin is overflow
         overflow_in_last_bin: true,
-        reflected_counts: pathHist(reflPaths),
-        reflected_N: reflPaths.length,
+        reflected_counts: pathHist(reflSegs),
+        reflected_N: segLen(reflSegs),
         reflected_mean: meanR,
-        net_transmitted_counts: pathHist(netPaths),
-        net_transmitted_N: netPaths.length,
+        net_transmitted_counts: pathHist(netSegs),
+        net_transmitted_N: segLen(netSegs),
         net_transmitted_mean: meanT
       };
 
