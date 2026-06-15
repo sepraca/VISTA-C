@@ -287,7 +287,7 @@ Two reference test cases confirm reproducibility. With RNG seed = 42:
 ¹ Conservative (ω₀=1), black surface: T = direct cloud transmittance  
 ² Absorbing cloud, reflecting surface: T = net downward energy at surface
 
-A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, Joss) are detailed in the `tests/DISORT comparisons/` folder.
+A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, JOSS) are detailed in the `tests/DISORT comparisons/` folder.
 
 ---
 
