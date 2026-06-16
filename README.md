@@ -11,7 +11,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 ## Live Demo
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
-A hosted version is available at: https://sepraca.github.io/mc_cloud_rt_visualization/
+A hosted version is available at: https://sepraca.github.io/VISTA-C/
 
 ---
 
@@ -149,7 +149,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 ## File Structure
 
 ```
-mc_cloud_rt_visualization/
+VISTA-C/
 ├── index.html          # HTML shell: importmap, CSS, panel layout
 ├── js/
 │   ├── main.js         # Entry point: imports, window globals, startup
@@ -296,7 +296,7 @@ A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, JOSS) are detailed in
 ## Version History
 
 See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
-[Releases](https://github.com/sepraca/mc_cloud_rt_visualization/releases) page for
+[Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
 Latest: **v5.0.0** (2026-06-15).
@@ -313,4 +313,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *3D Monte Carlo Cloud Radiative Transfer Simulator* (v5.0.0). GitHub. https://github.com/sepraca/mc_cloud_rt_visualization
+> Platnick, S. (2026). *3D Monte Carlo Cloud Radiative Transfer Simulator* (v5.0.0). GitHub. https://github.com/sepraca/VISTA-C
