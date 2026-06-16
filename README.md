@@ -1,8 +1,10 @@
-# 3D Monte Carlo Cloud Radiative Transfer Simulator
+# VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer
 
-An interactive 3D Monte Carlo (MC) simulation of solar incident photon transport through a finite plane-parallel cloud layer, with Henyey-Greenstein phase function scattering, optional Lambertian surface reflection, and real-time 3D photon trajectory visualization (using Three.js).
+VISTA-C (Visualization of Interactive Stochastic Transport in Atmospheres–Clouds) is an interactive 3D Monte Carlo (MC) simulator of solar photon transport through a finite plane-parallel cloud layer.
 
-While originally designed as an intuitive educational tool for students and scientists/engineers working in cloud remote sensing and atmospheric radiative transfer, the code has evolved to capture realistic 3D radiative transfer situations. However, it has only been numerically validated against plane-parallel PythonicDISORT for limited cases (see tests folder). 
+The simulator combines physically based radiative transfer with real-time 3D visualization of individual photon trajectories. Current capabilities include Henyey-Greenstein scattering, Lambertian surface reflection, and user-selectable illumination and viewing geometries, allowing users to explore the influence of cloud optical properties and scene geometry on photon transport and radiative outcomes.
+
+Originally developed as an intuitive educational tool for students, scientists, and engineers working in cloud remote sensing and atmospheric radiative transfer, VISTA-C has evolved to represent increasingly realistic three-dimensional radiative transfer scenarios. Nevertheless, the code remains primarily a visualization and educational platform and has only been numerically validated against PythonicDISORT for a limited set of plane-parallel benchmark cases (see the tests/ directory). 
 
 ---
 
