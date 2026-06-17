@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer"
+abstract: >-
+  VISTA-C (Visualization of Interactive Stochastic Transport in
+  Atmospheres-Clouds) is an interactive 3D Monte Carlo simulator of solar
+  photon transport through a finite plane-parallel cloud layer, combining
+  physically based radiative transfer (Henyey-Greenstein scattering,
+  Lambertian surface reflection, user-selectable illumination and viewing
+  geometries) with real-time visualization of individual photon trajectories.
+type: software
+authors:
+  - family-names: Platnick
+    given-names: Steven
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # add your ORCID if you have one
+    # affiliation: "Your institution"                    # optional
+    # email: "you@example.com"                           # optional (will be public)
+version: 5.1.0
+date-released: 2026-06-17
+license: MIT
+url: "https://sepraca.github.io/VISTA-C/"
+repository-code: "https://github.com/sepraca/VISTA-C"
+keywords:
+  - Monte Carlo
+  - radiative transfer
+  - clouds
+  - aerosols
+  - remote sensing
+  - atmospheric science
+  - photon transport
+  - scientific visualization
+# After your first Zenodo-archived release, you can add the DOI here, e.g.:
+# identifiers:
+#   - type: doi
+#     value: "10.5281/zenodo.XXXXXXX"
+#     description: "Concept DOI (always resolves to the latest version)"
