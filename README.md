@@ -313,4 +313,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: a 3D Monte Carlo Cloud Radiative Transfer Simulator* (v5.0.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.0.0). GitHub. https://github.com/sepraca/VISTA-C
