@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.0] — 2026-06-17
+
+Usability and limiting-case release: a true-angle incident-beam arrow, access to
+the optically-thin / conservative-scattering regime, and a simpler Plot panel.
+
+### Added
+- **Cloud optical thickness now reaches 0.01** (was 0.1), with the input step
+  tightened to 0.01. This makes the optically-thin limit reachable — e.g.
+  confirming reflected flux → surface albedo as COT → 0 (validated against
+  DISORT) — and supports pristine-aerosol cases (low AOD).
+
+### Changed
+- **Incident-direction arrow redrawn as solid geometry** (cylinder shaft + cone
+  head, unlit red) so it stays clearly visible against dense photon paths during
+  large ensembles, instead of a hairline that WebGL renders 1 px wide.
+- **Near-nadir BDF azimuthal averaging is now always on**, and its toggle was
+  removed from the Plot panel. The averaging only ever affected the innermost
+  ring (θ < 5°) and is display-only; the JSON export remains raw/unsmoothed, and
+  its `bdf` description now notes that the PNG and JSON differ at that ring.
+
+### Fixed
+- **Incident-zenith (Θ₀) arrow orientation** now points along the true incident
+  direction, so its tilt equals Θ₀ across the full 0–89° range. Previously a
+  fixed vertical component compressed the apparent angle (≈35° at 60°, ≈39° at
+  89°), making the arrow look frozen at large Θ₀. Rendering-only; the simulated
+  photon directions were always correct.
+
 ## [5.0.0] — 2026-06-15
 
 Major capability release: quantitative data export, finite-cloud illumination

@@ -127,7 +127,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Parameter | Description | Default |
 |---|---|---|
 | Photons | Number of photons to simulate | 400 |
-| Cloud optical thickness τ | Total cloud optical thickness (0.1-100) | 10 |
+| Cloud optical thickness τ | Total cloud optical thickness (0.01-100) | 10 |
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
 | Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side | Centered |
@@ -299,7 +299,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest: **v5.0.0** (2026-06-15).
+Latest: **v5.1.0** (2026-06-17).
 
 ---
 
@@ -313,4 +313,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.0.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.1.0). GitHub. https://github.com/sepraca/VISTA-C

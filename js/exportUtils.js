@@ -486,8 +486,9 @@ export const Export = {
                      "Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ " +
                      "bins (0,5,…,355°). 'weights' are raw signed bin tallies W; " +
                      "'bdf' is the normalized function. Transmitted panels are net " +
-                     "(down−up) at the surface. Unsmoothed (display near-nadir " +
-                     "averaging not applied).",
+                     "(down−up) at the surface. These values are raw/unsmoothed; the " +
+                     "PNG figure φ-averages the innermost near-nadir ring (θ<5°) for " +
+                     "display only, so the PNG and this JSON differ at that ring.",
         n_theta_bins: BDF_THETA_BINS,
         n_phi_bins: BDF_PHI_BINS,
         theta_centers_deg: thetaCentersDeg,   // length n_theta_bins

@@ -153,10 +153,10 @@ export const BottomPanel = {
 
     smoothNearNadirAzimuth: function(grid, maxThetaDeg=5.0) {
       // At very small zenith angles, azimuth is physically ill-conditioned:
-      // many φ bins correspond to almost the same direction. Average across φ
-      // for near-nadir rings to suppress Monte Carlo bin noise.
-      if (!UI.getAvgNearNadirBdf()) return grid;
-
+      // many φ bins correspond to almost the same direction (and at θ=0 they all
+      // collapse to one direction). Always average across φ for near-nadir rings
+      // to suppress Monte Carlo bin noise — this is a display-only cosmetic; the
+      // JSON export uses the raw, unaveraged grid.
       for (let ir = 0; ir < grid.thetaBins; ir++) {
         let rowTheta = null;
         for (let ip = 0; ip < grid.phiBins; ip++) {
@@ -334,8 +334,7 @@ export const BottomPanel = {
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
       const scaleTxt = UI.getBdfColorScaleMode() === "log" ? "log BDF scale: 0.01–1" : "linear BDF scale: 0–1";
-      const avgTxt = UI.getAvgNearNadirBdf() ? "; near-nadir φ averaged" : "";
-      ctx2.fillText(`Transmitted panel is net down−up at surface; ${scaleTxt}${avgTxt}.`, w / 2, 212);
+      ctx2.fillText(`Transmitted panel is net down−up at surface; ${scaleTxt}; near-nadir φ averaged.`, w / 2, 212);
     },
 
     // Build the displayable BDF grid from a flat incremental weight array

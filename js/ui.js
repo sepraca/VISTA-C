@@ -34,7 +34,7 @@ export const UI = {
 
     // --- Physics / geometry inputs ---
     getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 10000000, 400, "Photons", true); },
-    getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.1, 100, 10, "Cloud optical thickness τ"); },
+    getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.01, 100, 10, "Cloud optical thickness τ"); },
     getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 500, 40, "Horizontal extent"); },
     getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },
     getG:                 function() { return UI._getClampedInput("gValue", -0.99, 0.99, 0.85, "HG asymmetry g"); },
@@ -74,7 +74,6 @@ export const UI = {
 
     // --- Plot control inputs ---
     getBdfColorScaleMode: function() { return document.getElementById("bdfColorScale")?.value ?? "linear"; },
-    getAvgNearNadirBdf:   function() { return document.getElementById("avgNadirBdf")?.checked ?? true; },
 
     // --- Outcome color map ---
     // Maps a photon exit status string to a Three.js hex color.

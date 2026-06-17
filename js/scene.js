@@ -224,14 +224,33 @@ export const Scene = {
     },
 
     // Add the red incident solar direction arrow above the cloud top.
+    // The arrow points along the TRUE incident direction so its tilt from
+    // vertical equals Θ₀ (0° → straight down, 89° → nearly horizontal). In world
+    // space the beam travels +x (toward the sunward side) and −z (downward, since
+    // τ increases as world z decreases); the sun therefore sits up and to the −x.
     addIncidentArrow: function() {
       const theta = UI.getTheta0Rad();
-      const start = new THREE.Vector3(-Math.sin(theta) * 3, 0, world.slabH/2 + 4);
-      const end = new THREE.Vector3(0, 0, world.slabH/2 + 0.25);
-      const dir = new THREE.Vector3().subVectors(end, start);
-      const length = dir.length();
-      const arrow = new THREE.ArrowHelper(dir.clone().normalize(), start, length, 0xef4444, 0.7, 0.35);
-      state.cloudGroup.add(arrow);
+      const dir = new THREE.Vector3(Math.sin(theta), 0, -Math.cos(theta));  // unit incident direction
+      const length = 5;
+      const headLength = 1.4, headRadius = 0.66, shaftRadius = 0.26;
+      const shaftLength = Math.max(0.1, length - headLength);
+      const tip = new THREE.Vector3(0, 0, world.slabH / 2 + 0.25);          // apex, just above top-centre
+
+      // Solid-geometry arrow (cylinder shaft + cone head) so it stays clearly
+      // visible against dense photon paths — a Line shaft can't be thickened
+      // because WebGL ignores linewidth. MeshBasic = unlit, full-brightness red.
+      const mat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength, 16), mat);
+      shaft.quaternion.copy(quat);
+      shaft.position.copy(tip).addScaledVector(dir, -(headLength + shaftLength / 2));
+      state.cloudGroup.add(shaft);
+
+      const head = new THREE.Mesh(new THREE.ConeGeometry(headRadius, headLength, 16), mat);
+      head.quaternion.copy(quat);
+      head.position.copy(tip).addScaledVector(dir, -headLength / 2);
+      state.cloudGroup.add(head);
     },
 
     // Rebuild all 3D histogram geometry (footprints, surface markers).
