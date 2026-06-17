@@ -12,7 +12,7 @@ type: software
 authors:
   - family-names: Platnick
     given-names: Steven
-    # orcid: "https://orcid.org/0000-0000-0000-0000"   # add your ORCID if you have one
+    orcid: "https://orcid.org/0000-0003-3964-3567
     # affiliation: "Your institution"                    # optional
     # email: "you@example.com"                           # optional (will be public)
 version: 5.1.0
@@ -29,7 +29,7 @@ keywords:
   - atmospheric science
   - photon transport
   - scientific visualization
-# After your first Zenodo-archived release, you can add the DOI here, e.g.:
+# After first Zenodo-archived release, add the DOI here, e.g.:
 # identifiers:
 #   - type: doi
 #     value: "10.5281/zenodo.XXXXXXX"
