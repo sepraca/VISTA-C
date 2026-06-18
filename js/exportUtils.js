@@ -147,7 +147,7 @@ export const Export = {
         ["#60a5fa", "Reflected paths", "line"],
         ["#86efac", "Transmitted paths", "line"],
         ["#94a3b8", "Absorbed paths", "line"],
-        ["#facc15", "Top reflected endpoints", "dot"],
+        ["#60a5fa", "Top reflected endpoints", "dot"],
         ["#22c55e", "Bottom transmitted endpoints", "dot"],
         ["#111827", "Absorption locations", "dot"],
         ["#f97316", "Side boundary escape", "dot"],

@@ -230,7 +230,7 @@ export const Photons = {
       let color, radius;
 
       if (result.status === "reflected") {
-        color = 0xfacc15;
+        color = 0x60a5fa;
         radius = 0.16;
       } else if (result.status === "transmitted") {
         color = 0x22c55e;
