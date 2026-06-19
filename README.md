@@ -120,8 +120,11 @@ The colored spherical markers in the 3-D view indicate two distinct types of tra
 
 The **surface-absorption heatmap** (Aₛ > 0; toggle "Show surface heatmap") shows
 where photons are absorbed at the surface. It uses a grid 2× the cloud extent to
-capture surface absorption from cloud side leakage. Absorption beyond the
-surface grid is tagged to the closest corner surface grid cell. This is geometry-independent, 
+capture surface absorption from cloud side leakage. Absorption beyond the surface
+grid is clamped to the nearest boundary cell, each axis independently: a landing
+past the grid in one axis goes to the nearest edge cell, and one past it in both
+axes goes to a corner. The four corners therefore tend to be the brightest overflow
+bins, since each collects an entire far-field corner region. This is geometry-independent, 
 i.e., every physical landing is binned, regardless of the Observation geometry choice.
 
 The **"Endpoint caps shown"** slider is a non-destructive display filter. Lowering the set value and then increasing it
