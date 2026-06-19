@@ -277,6 +277,25 @@ export const Scene = {
         false
       );
 
+      // Surface-absorption heatmap (A_s>0 only): where photons are absorbed at
+      // the Lambertian surface. Grid is 2× the cloud extent (far side-wall
+      // landings clamp to the edge cells); it rises UP from the surface plane.
+      // Relief matches the reflected/base heatmaps (2.8) so all three share one
+      // height scale. Trade-off: at a small sub-cloud gap (low d_sfc / β_ext)
+      // this can overlap the base-crossing footprint in mid-gap — acceptable
+      // since both are translucent. Light brown, geometry-independent.
+      if (UI.getSurfaceAlbedo() > 0 && UI.getShowSurfaceHeatmap()) {
+        Scene.addFootprintHeatmap(
+          SimStats.footSurfAbs,
+          Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
+          0xc8a27a,
+          true,
+          world.slabW * 2,
+          world.slabD * 2,
+          2.8
+        );
+      }
+
       Scene.addSurfaceInteractionMarkers();
     },
 
@@ -312,23 +331,26 @@ export const Scene = {
     // Build a footprint heatmap on the cloud top or base plane from an
     // incremental count grid ({nBins, counts: Float64Array(nBins*nBins)},
     // accumulated in SimStats).
-    addFootprintHeatmap: function(foot, zPlane, color, isTop) {
+    addFootprintHeatmap: function(foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
       if (!foot || !foot.counts) return;
       const nBins = foot.nBins;
       const counts = foot.counts;
-      const halfW = world.slabW / 2;
-      const halfD = world.slabD / 2;
+      const fullW = extentW ?? world.slabW;   // domain width (defaults to cloud extent)
+      const fullD = extentD ?? world.slabD;
+      const halfW = fullW / 2;
+      const halfD = fullD / 2;
 
       let maxCount = 1;
       for (let i = 0; i < counts.length; i++)
         if (counts[i] > maxCount) maxCount = counts[i];
 
-      const cellW = world.slabW / nBins;
-      const cellD = world.slabD / nBins;
+      const cellW = fullW / nBins;
+      const cellD = fullD / nBins;
       // AESTHETIC: max relief height. Original 2.8; tried 1.2 to keep boxes
-      // from burying the co-planar endpoint dots. Currently 2.8 for an
-      // opacity-only A/B comparison (opacity lowered separately below).
-      const maxHeight = 2.8;
+      // from burying the co-planar endpoint dots. Caller may override — the
+      // surface heatmap uses a smaller relief so it doesn't collide with the
+      // base-crossing footprint that hangs down into the gap.
+      const reliefHeight = maxHeight ?? 2.8;
       const baseColor = new THREE.Color(color);
 
       for (let ix = 0; ix < nBins; ix++) {
@@ -337,7 +359,7 @@ export const Scene = {
           if (c === 0) continue;
 
           const frac = c / maxCount;
-          const h = 0.045 + maxHeight * frac;
+          const h = 0.045 + reliefHeight * frac;
 
           const geom = new THREE.BoxGeometry(
             Math.max(0.02, cellW * 0.92),

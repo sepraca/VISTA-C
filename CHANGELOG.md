@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.0] — 2026-06-18
+
+Visualization clarity improvements. Consistent visualization colors, better description of 3-D exit markers, added surface absorption heatmap, several rendering/usability fixes.
+
+### Added
+- **Surface-absorption heatmap** (Aₛ > 0): a 2-D map of photon surface absorption, on a grid 2× the cloud extent to better indicated absorption from cloud side leakage. Absorption beyond the surface grid is tagged to the closest corner grid cell. Geometry-independent. A **"Show surface heatmap"** toggle (default on) can be used to avoid overlap with the cloud base crossing footprint, and removes its rendering cost when off.
+
+### Changed
+- **Exit-marker legend descriptions.** Green markers are now
+  drawn at *every* downward cloud-base crossing (consistent with the base footprint heatmap),
+  relabeled **"downward cloud-base crossings"** (was "bottom transmitted
+  endpoints"): unchanged at Aₛ = 0, but now also shown at Aₛ > 0. Blue markers
+  relabeled **"upward cloud-top crossings"** (was "top reflected endpoints").
+  Footprint legend "transmitted 2-D footprint" → **"downward cloud-base crossings
+  footprint"**; "surface absorbed events" → **"surface absorbed endpoints"**.
+- **Reflected endpoints recolored** from yellow to blue (`#60a5fa`) to match the
+  reflected paths and footprint.
+- **Surface-heatmap relief** matched to the reflected/base heatmaps so all three
+  share one height scale (heights remain self-normalized within each map).
+- **"Endpoint caps shown" is now a non-destructive display filter** — lowering
+  then raising it reveals the same markers (retained, not discarded), even when a
+  run finished with the slider at zero. The slider counts *markers* (crossings +
+  endpoints), which exceed the photon count.
+
+### Fixed
+- **Surface absorptions were drawn twice** (a terminal endpoint plus a redundant
+  surface event); now drawn once, as the dark brown endpoint, consistent with how cloud
+  absorption is shown. Mid-trajectory surface *reflections* remain events (purple).
+
 ## [5.1.0] — 2026-06-17
 
 Usability and limiting-case release: a true-angle incident-beam arrow, access to

@@ -147,12 +147,13 @@ export const Export = {
         ["#60a5fa", "Reflected paths", "line"],
         ["#86efac", "Transmitted paths", "line"],
         ["#94a3b8", "Absorbed paths", "line"],
-        ["#60a5fa", "Top reflected endpoints", "dot"],
-        ["#22c55e", "Bottom transmitted endpoints", "dot"],
+        ["#60a5fa", "Upward cloud-top crossings", "dot"],
+        ["#22c55e", "Downward cloud-base crossings", "dot"],
         ["#111827", "Absorption locations", "dot"],
         ["#f97316", "Side boundary escape", "dot"],
         ["#60a5fa", "Reflected 2-D footprint", "square"],
-        ["#86efac", "Transmitted 2-D footprint", "square"],
+        ["#86efac", "Downward cloud-base crossings footprint", "square"],
+        ["#c8a27a", "Surface-absorbed footprint", "square"],
         ["#fff700", "Photon tracer", "line"],
         ["#fef08a", "Scattering flash", "star"]
       ];

@@ -6,6 +6,11 @@ import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
 
+// Stored-endpoint buffer cap = the "Endpoint caps shown" slider maximum. Storage
+// is bounded by THIS (not the live display cap), so dragging the slider down and
+// back up is a non-destructive show/hide: markers are retained and re-rendered.
+const ENDPOINT_BUFFER_MAX = 20000;
+
 export const Photons = {
     clearLastScatterMarker: function() {
       if (state.lastScatterMarker) {
@@ -176,8 +181,10 @@ export const Photons = {
     },
 
     trimEndpointMarkers: function() {
-      const cap = UI.getEndpointCap();
-      const excess = state.endpointData.length - cap;
+      // Bound storage by the fixed buffer max, NOT the live display cap, so the
+      // slider only changes how many are drawn (see syncEndpointMesh), never how
+      // many are kept. This makes lowering then raising the slider reversible.
+      const excess = state.endpointData.length - ENDPOINT_BUFFER_MAX;
       if (excess > 0) state.endpointData.splice(0, excess);
     },
 
@@ -196,17 +203,20 @@ export const Photons = {
 
     syncEndpointMesh: function() {
       const data = state.endpointData;
-      const cap = Math.max(UI.getEndpointCap(), 1);
-      const mesh = Photons._ensureEndpointMesh(Math.max(cap, data.length));
+      // Display the most recent `cap` markers from the (larger) stored buffer;
+      // the rest are retained, just not drawn. cap=0 draws nothing but keeps all.
+      const cap = Math.max(UI.getEndpointCap(), 0);
+      const shown = Math.min(cap, data.length);
+      const start = data.length - shown;
+      const mesh = Photons._ensureEndpointMesh(Math.max(shown, 1));
       const fade = UI.getFadeEndpoints();
-      const n = data.length;
       const m4 = new THREE.Matrix4();
       const col = new THREE.Color();
 
-      for (let i = 0; i < n; i++) {
-        const d = data[i];
-        // Oldest markers are at low index; newest are brightest/largest.
-        const ageFrac = (!fade || n <= 1) ? 1 : i / (n - 1);
+      for (let i = 0; i < shown; i++) {
+        const d = data[start + i];
+        // Oldest drawn markers are at low index; newest are brightest/largest.
+        const ageFrac = (!fade || shown <= 1) ? 1 : i / (shown - 1);
         const s = d.radius * (0.65 + 0.35 * ageFrac);
         m4.makeScale(s, s, s).setPosition(d.x, d.y, d.z);
         mesh.setMatrixAt(i, m4);
@@ -214,7 +224,7 @@ export const Photons = {
         mesh.setColorAt(i, col);
       }
 
-      mesh.count = n;
+      mesh.count = shown;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     },
@@ -222,9 +232,23 @@ export const Photons = {
     // Adds a marker only; cap-trimming and fading are deferred to
     // finalizeEndpoints() so per-photon cost stays O(1).
     addEndpoint: function(result) {
-      const cap = UI.getEndpointCap();
-      if (cap <= 0) {
-        return;
+      // Markers are always stored (bounded by ENDPOINT_BUFFER_MAX in
+      // trimEndpointMarkers); the display cap only decides how many are drawn
+      // (syncEndpointMesh). So even at cap=0 they accumulate and can be revealed.
+
+      // Green markers at every DOWNWARD cloud-base crossing (viaSide:false), so
+      // green is defined consistently as a base-crossing event — 1:1 with the
+      // transmitted footprint. At A_s=0 a transmitted photon crosses the base
+      // exactly once, reproducing the previous single green endpoint; at A_s>0 a
+      // photon may cross several times (bouncing off a reflective surface) and
+      // each crossing is marked. viaSide:true entries are surface arrivals off a
+      // side-wall exit — they never touch the base plane, so they are skipped.
+      if (result.cloudBaseTransmissions) {
+        for (const t of result.cloudBaseTransmissions) {
+          if (t.viaSide) continue;
+          const b = Coords.simToWorldPoint({x: t.xExit, y: t.yExit, tau: t.tauExit});
+          state.endpointData.push({x: b.x, y: b.y, z: b.z, color: 0x22c55e, radius: 0.16});
+        }
       }
 
       let color, radius;
@@ -233,8 +257,9 @@ export const Photons = {
         color = 0x60a5fa;
         radius = 0.16;
       } else if (result.status === "transmitted") {
-        color = 0x22c55e;
-        radius = 0.16;
+        // Downward termination at the cloud base (A_s=0) is already drawn by the
+        // base-crossing marker above; no separate endpoint is added.
+        return;
       } else if (result.status === "side_escape") {
         color = 0xf97316;
         radius = 0.14;

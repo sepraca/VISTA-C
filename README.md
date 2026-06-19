@@ -18,11 +18,12 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 ## Features
 
 - **Reproducible MC statistics**: deterministic Mulberry32 RNG with fixed seed (42)
-- **3D photon path visualization**: animated and static path rendering with colored endpoints by outcome
+- **3D photon path visualization**: animated and static path rendering with colored crossing and endpoint markers by outcome
 - **Henyey-Greenstein phase function**: exact inverse-CDF sampling for the scattering angle
 - **Lambertian surface reflection**: configurable surface albedo Aₛ with geometric sub-cloud gap propagation
 - **Finite-cloud illumination modes**: pencil-beam (centered) entry, or uniform illumination of the cloud top, optionally including the sunward side wall, to study 3D edge effects
 - **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
+- **Surface-absorption heatmap** (Aₛ > 0): toggleable 2-D map of where photons are absorbed at the Lambertian surface, on a grid 2× the cloud extent to capture finite-cloud side leakage
 - **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
 - **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
 - **PNG plot export**: 3D view and bottom panel with diagnostic parameter headers
@@ -106,6 +107,28 @@ $$\frac{1}{N}\frac{dN}{d\mu} = 2\mu\,\overline{\text{BDF}}(\theta), \qquad \mu=\
 so the cos Θ enters as a multiplicative weighting of the y-axis (flux ↔ radiance),
 not merely as an x-axis change of variable.
 
+### 3-D markers: crossings vs. endpoints, and the surface heatmap
+
+The colored spherical markers in the 3-D view indicate two distinct types of transport: *net crossings* (where a photon can pass through a plane one or more times) and *terminal endpoints* (where a photon's trajectory ends; one per photon).
+
+- **Downward cloud-base crossings** (green) are drawn at *every* downward crossing
+  of the cloud base. Here, the markers show **each** downward crossings, e.g., a trajectory where a surface reflected photon re-enters the cloud and scatters back towards the surface again (or multiple times). The marker numbers are 1:1 with the green *downward cloud-base crossings footprint* heat map up to the number indicated in the "Endpoint caps shown" selection. For Aₛ = 0, each transmitted photon crosses the cloud base only once, so a crossing coincides with a photon's termination.
+- **Upward cloud-top crossings** (blue): a reflected photon crosses the cloud top boundary exactly once, so these are simultaneously a crossing *and* a terminal endpoint.
+- **Terminal endpoints**: surface-absorbed (brown) only when Aₛ > 0, cloud-absorbed
+  (black), and side-escape (orange). Mid-trajectory surface *reflections* are
+  shown separately as events (purple).
+
+The **surface-absorption heatmap** (Aₛ > 0; toggle "Show surface heatmap") shows
+where photons are absorbed at the surface. It uses a grid 2× the cloud extent to
+capture surface absorption from cloud side leakage. Absorption beyond the
+surface grid is tagged to the closest corner surface grid cell. This is geometry-independent, 
+i.e., every physical landing is binned, regardless of the Observation geometry choice.
+
+The **"Endpoint caps shown"** slider is a non-destructive display filter. Lowering the set value and then increasing it
+back to its original setting reveals the same markers (they are retained, not discarded), even when a run
+finished with the slider at zero. Note that the slider counts *markers* (crossings + endpoints)
+that can exceed the photon count.
+
 ---
 
 ## Running Locally
@@ -138,6 +161,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Cloud β_ext (km⁻¹) | Volume extinction coefficient (used to set cloud-surface aspect ratio) | 10.0 |
 | Cloud-base to surface (km) | Geometric gap thickness (used with β_ext to set cloud-surface aspect ratio) | 0.5 |
 | Footprint grid size | number of cloud top/base grid elements | 28 |
+| Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0); off also removes its render cost | on |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
 
 **Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Reset, Pause/Resume, Step
@@ -299,7 +323,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest: **v5.1.0** (2026-06-17).
+Latest: **v5.2.0** (2026-06-18).
 
 ---
 
@@ -313,4 +337,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.1.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.2.0). GitHub. https://github.com/sepraca/VISTA-C

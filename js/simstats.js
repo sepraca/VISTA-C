@@ -50,6 +50,7 @@ function bdfBinIndex(dx, dy, dz) {
 // Cap on stored surface-interaction events (3D markers show at most the
 // most recent 1200; storing more is wasted memory at large photon counts).
 const SURFACE_EVENT_CAP = 1200;
+const SURFACE_FOOT_EXTENT = 2;      // surface-absorption grid spans 2× the cloud extent
 
 export const SimStats = {
 
@@ -95,6 +96,7 @@ export const SimStats = {
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
+    footSurfAbs: {nBins: 0, counts: null},
 
     // Per-photon arrays retained only where the display needs raw values
     // (path-length axis range adapts to the run); these store plain numbers
@@ -121,6 +123,16 @@ export const SimStats = {
           f.counts = new Float64Array(nBins * nBins);
         }
       }
+      // Surface-absorption grid spans 2× the cloud extent (to capture finite-cloud
+      // side leakage that lands beyond the cloud footprint); 2× bins keeps the
+      // cell size equal to the cloud footprint. The factor 2 MUST match the one
+      // in _addSurfaceFootprint and in Scene.rebuildHistograms.
+      const nSurf = nBins * SURFACE_FOOT_EXTENT;
+      const fs = SimStats.footSurfAbs;
+      if (fs.nBins !== nSurf || !fs.counts) {
+        fs.nBins = nSurf;
+        fs.counts = new Float64Array(nSurf * nSurf);
+      }
     },
 
     _addFootprint(f, x, y) {
@@ -129,6 +141,22 @@ export const SimStats = {
       const ix = Math.floor(((x + world.slabW / 2) / world.slabW) * n);
       const iy = Math.floor(((y + world.slabD / 2) / world.slabD) * n);
       if (ix >= 0 && ix < n && iy >= 0 && iy < n) f.counts[ix * n + iy]++;
+    },
+
+    // Surface-absorption footprint: bins (x,y) over a grid SURFACE_FOOT_EXTENT×
+    // the cloud extent. Landings beyond the grid (far side-wall leakage) clamp
+    // to the nearest edge cell — preserving direction rather than being dropped.
+    _addSurfaceFootprint(x, y) {
+      const f = SimStats.footSurfAbs;
+      if (!f.counts) return;
+      const n = f.nBins;
+      const extW = world.slabW * SURFACE_FOOT_EXTENT;
+      const extD = world.slabD * SURFACE_FOOT_EXTENT;
+      let ix = Math.floor(((x + extW / 2) / extW) * n);
+      let iy = Math.floor(((y + extD / 2) / extD) * n);
+      ix = Math.max(0, Math.min(n - 1, ix));
+      iy = Math.max(0, Math.min(n - 1, iy));
+      f.counts[ix * n + iy]++;
     },
 
     // Reset all counters and accumulators to their initial empty state.
@@ -151,6 +179,7 @@ export const SimStats = {
       SimStats.bdfSideEscDownWeights.fill(0);
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
+      SimStats.footSurfAbs = {nBins: 0, counts: null};
       SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
       SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
@@ -318,6 +347,10 @@ export const SimStats = {
         }
       } else if (result.status === "surface_absorbed") {
         SimStats.stats.surfaceAbsorbed++;
+        // Where the photon was absorbed at the surface (net transmittance, one
+        // per absorbed photon). Geometry-independent: all physical landings are
+        // binned, including side-derived ones that land beyond the cloud.
+        SimStats._addSurfaceFootprint(result.xExit, result.yExit);
         // Route the path by terminal geometry: a surface absorption reached via
         // a side wall belongs to S under geometry "a", not the transmitted path
         // histogram. (At A_s = 0 there are no surface absorptions, so this path
@@ -368,7 +401,10 @@ export const SimStats = {
         : "Active photon: none";
 
       const endpointCap  = UI.getEndpointCap();
-      const endpointShown = state.endpointData ? state.endpointData.length : 0;
+      // Stored buffer can exceed the display cap (non-destructive filter); the
+      // "shown" count is what's actually drawn = min(cap, stored).
+      const endpointStored = state.endpointData ? state.endpointData.length : 0;
+      const endpointShown = Math.min(endpointCap, endpointStored);
       const bottomMode   = document.getElementById("bottomPanelMode")?.value ?? "mu";
 
       document.getElementById("stats").textContent =

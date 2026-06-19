@@ -388,6 +388,9 @@
     <label>Footprint grid size</label>
     <input id="footprintGrid" type="number" value="28" min="8" max="60" step="2" onblur="UI.getFootprintGrid(); BottomPanel.drawBottomPanel()">
 
+    <label>Show surface heatmap</label>
+    <input id="showSurfaceHeatmap" type="checkbox" checked onchange="Scene.rebuildHistograms()">
+
     <label>Animate paths</label>
     <input id="animatePaths" type="checkbox">
 
@@ -423,17 +426,18 @@
   <div><span class="swatch" style="background:#60a5fa"></span>Reflected photon paths</div>
   <div><span class="swatch" style="background:#86efac"></span>Transmitted photon paths</div>
   <div><span class="swatch" style="background:#94a3b8"></span>Absorbed photon paths</div>
-  <div><span class="dot" style="background:#60a5fa"></span>top reflected endpoints</div>
-  <div><span class="dot" style="background:#22c55e"></span>bottom transmitted endpoints</div>
+  <div><span class="dot" style="background:#60a5fa"></span>upward cloud-top crossings</div>
+  <div><span class="dot" style="background:#22c55e"></span>downward cloud-base crossings</div>
   <div><span class="dot" style="background:#111827"></span>absorption locations</div>
   <div><span class="dot" style="background:#f97316"></span>side boundary escape</div>
   <div><span class="square" style="background:#60a5fa"></span>reflected 2-D top footprint</div>
-  <div><span class="square" style="background:#86efac"></span>transmitted 2-D bottom footprint</div>
+  <div><span class="square" style="background:#86efac"></span>downward cloud-base crossings footprint</div>
+  <div><span class="square" style="background:#c8a27a"></span>surface-absorbed footprint</div>
   <div><span class="swatch" style="background:#fff700;height:8px"></span>glowing photon head / active trail</div>
   <div><span style="color:#fef08a">✦</span> scattering-event flash</div>
   <div><span style="color:#f7d4bc">●</span> last scatter marker while paused</div>
   <div><span class="dot" style="background:#a855f7"></span>surface reflected events</div>
-  <div><span class="dot" style="background:#7c2d12"></span>surface absorbed events</div>
+  <div><span class="dot" style="background:#7c2d12"></span>surface absorbed endpoints</div>
 </div>
 
 <div id="muPanel">

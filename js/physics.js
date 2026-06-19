@@ -239,7 +239,11 @@ export const Physics = {
           return {result: {status: "side_escape", xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
         }
 
-        localSurfaceEvents.push({x: xs, y: ys, tau: tauSurface, type: "surface_absorbed"});
+        // A terminal surface absorption is drawn ONCE, as a brown endpoint (see
+        // Photons.addEndpoint), consistent with how cloud absorption is shown.
+        // It is deliberately NOT also pushed as a surface event, which would
+        // double-mark the same point. Only mid-trajectory surface reflections
+        // are recorded as events.
         return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, viaSide: countDownArrival}};
       };
 

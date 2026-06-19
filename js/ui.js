@@ -74,6 +74,7 @@ export const UI = {
 
     // --- Plot control inputs ---
     getBdfColorScaleMode: function() { return document.getElementById("bdfColorScale")?.value ?? "linear"; },
+    getShowSurfaceHeatmap: function() { return document.getElementById("showSurfaceHeatmap")?.checked ?? true; },
 
     // --- Outcome color map ---
     // Maps a photon exit status string to a Three.js hex color.
