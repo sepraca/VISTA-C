@@ -38,11 +38,13 @@ Each photon is launched into the cloud at a user-specified solar zenith angle Θ
 
 $$\cos\theta = \frac{1}{2g}\left[1 + g^2 - \left(\frac{1-g^2}{1-g+2g\xi}\right)^2\right]$$
 
-At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. Net normalized flux transmittance (surface absorption) is:
+At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. The net (physical) surface absorption is F↓ − F↑, where F↓ and F↑ are the total downward and upward crossings of the **surface plane** — counting every photon that reaches the surface, whether it arrived through the cloud base *or* by exiting a cloud side and descending through the clear gap. This surface balance is **independent of the Observation-geometry setting**.
+
+How that absorption is reported as the transmittance T depends on the Observation geometry. Under the side-inclusive geometries ("cloud top/base/side faces" or "entire scene") it is the full physical absorption,
 
 $$T_{\text{net}} = \frac{F_{\downarrow} - F_{\uparrow}}{N_{\text{launched}}}$$
 
-where F↓ and F↑ are total downward and upward cloud-base flux crossings, respectively.
+while under "cloud top/base faces only" (the default) photons that reach the surface via a cloud-side exit are attributed to S instead of T, so T ≤ (F↓ − F↑)/N_launched. They converge as the horizontal extent grows and side leakage vanishes.
 
 Photon outcomes: **Reflected** (exits cloud top) | **Net transmitted** (absorbed at surface) | **Cloud absorbed** | **Side escape**
 
@@ -78,13 +80,16 @@ limit.
 
 ### Observation geometry: exit photon aggregation choices
 
-With the code's ability to simulate 3D radiative transfer, an unambiguous aggregation of exiting photon statistics is no longer possible. A finite cloud loses photons through its **sides** as well as its top and base. Whether those side exits should be counted depends on the observer's position and field of view. The **Observation geometry** control selects one of two self-consistent conventions, applied identically to the reflected and transmitted channels:
+With the code's ability to simulate 3D radiative transfer, an unambiguous aggregation of exiting photon statistics is no longer possible. A finite cloud loses photons through its **sides** as well as its top and base, and over a reflective surface some photons reflect off the surface and escape upward *beside* the cloud without ever re-entering it. How those exits are counted depends on the observer. The **Observation geometry** control selects one of three self-consistent conventions, applied identically to the reflected and transmitted channels:
 
-- **Cloud top/base faces only** *(default, "a")* — only photons whose final trajectory leaves through the cloud top or reaches the surface via the base are aggregated; every side-wall exit is counted separately and bookkept under S. This is appropriate for an observer (instrument) that can resolve the cloud top/base field of view.
-- **Cloud top/base + sides ("b")** — final trajectory side-wall exits are included in the reflected and transmitted flux aggregations, i.e., upward side escapes are aggregated into R and downward escapes into T. Appropriate for an oblique viewing observer (e.g., satellite) that lacks the spatial resolution to distinguish the cloud top from cloud sides. Here S → 0 and the budget closes as R + T + A = 1.
+- **Cloud top/base faces only** *(default, "a"; key `top-base_faces`)* — only photons whose final trajectory leaves through the cloud top or reaches the surface via the base are aggregated into R/T; every side-wall exit, the surface-reflected upward bypass, and side-derived surface absorption are bookkept under S. Appropriate for an instrument that resolves only the cloud top/base field of view.
+- **Cloud top/base/side faces** *("b"; key `all_faces`)* — the **cloud element**: photons leaving any cloud face are aggregated — upward (top + sides) → R, downward (base + sides) → T. Surface-reflected photons that escape upward *without re-touching the cloud* did not leave a cloud face, so they remain in S. Appropriate for an imager whose pixel resolves the cloud itself but not the surrounding surface.
+- **Entire scene** *("c"; key `scene`)* — a wide field of view collecting **all** upwelling flux from the whole domain → R and all downwelling → T (the surface-reflected upward bypass counts as upwelling here). S = 0 and the budget closes as R + T + A = 1. Appropriate for a coarse, sides-unresolving observer (e.g. a satellite). Note that R then includes flux that reflected off the surface and bypassed the cloud, so it is the albedo of the whole scene, not pure cloud-top reflectance.
+
+The only difference between "b" and "c" is the surface-reflected upward bypass: "b" keeps it in S; "c" folds it into R. Transmittance T is identical for "b" and "c" (the physical net surface absorption F↓ − F↑); under "a" the side-derived part of that absorption is instead attributed to S.
 
 This is a pure **post-processing choice**: it changes only how the accumulated
-photon exit counts are aggregated, not the simulated trajectories. Switching the selection re-bins the current run instantly with no re-run. The two modes converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane
+photon exit counts are aggregated, not the simulated trajectories. Switching the selection re-bins the current run instantly with no re-run. The three converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane
 projections and are unaffected by this control.
 
 Note that a single instrument (observer) can only sample a small part of the geometries given by these simulations. The full geometries are given so that the output can be filtered for a users specific use cases.
@@ -157,7 +162,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
 | Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side | Centered |
-| Observation geometry | How exits are aggregated into R/T/S: cloud top/base faces only (a), or cloud top/base + sides (b) | Cloud top/base faces only |
+| Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), top/base/side faces / cloud element (b), or entire scene (c) | Cloud top/base faces only |
 | HG asymmetry parameter (g) | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
 | Single-scattering albedo (ω₀) | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
 | Surface albedo (Aₛ) | Lambertian surface albedo (0 = black, 1 = non-absorbing) | 0.0 |
@@ -326,7 +331,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest: **v5.2.0** (2026-06-18).
+Latest: **v5.3.0** (2026-06-18).
 
 ---
 
@@ -349,5 +354,5 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.2.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.3.0). GitHub. https://github.com/sepraca/VISTA-C
 

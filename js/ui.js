@@ -52,9 +52,11 @@ export const UI = {
     // Observation geometry: how exits are aggregated into the R/T/S budget and
     // the µ/BDF/path distributions (a pure post-processing choice; does not
     // affect the simulated trajectories).
-    //   "faces"       — cloud top/base faces only (side exits counted in S)
-    //   "faces_sides" — also count side-wall exits (upward→R, downward→T, S→0)
-    getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "faces"; },
+    //   "top-base_faces" (a) — cloud top/base faces only (sides + surface bypass → S)
+    //   "all_faces"      (b) — cloud element: top/base/side faces → R/T; surface-
+    //                          reflected upward bypass (no cloud face) stays in S
+    //   "scene"          (c) — entire scene: all up → R, all down → T, S → 0
+    getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "top-base_faces"; },
 
     // --- Display / visualization inputs ---
     getMaxPaths:      function() { return UI._getClampedInput("maxPaths", 0, 1000, 250, "Max paths drawn", true); },

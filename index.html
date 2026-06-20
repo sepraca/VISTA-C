@@ -336,8 +336,9 @@
 
     <label>Observation geometry</label>
     <select id="observationGeometry" onchange="SimStats.updateDisplay()">
-      <option value="faces" selected>Cloud top/base faces only</option>
-      <option value="faces_sides">Cloud top/base + sides</option>
+      <option value="top-base_faces" selected>Cloud top/base faces only</option>
+      <option value="all_faces">Cloud top/base/side faces (cloud element)</option>
+      <option value="scene">Entire scene</option>
     </select>
 
     <label>HG asymmetry parameter (g)</label>

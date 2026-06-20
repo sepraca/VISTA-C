@@ -229,9 +229,17 @@ export const BottomPanel = {
       }
       const reflSegs  = SimStats.reflectedPathSegments();
       const transSegs = SimStats.transmittedPathSegments();
-      const meanR = segMean(reflSegs);
+      const meanR = segMean(reflSegs);          // active-geometry means (drive the printed labels)
       const meanT = segMean(transSegs);
-      const scaleMean = Math.max(meanR, meanT);
+
+      // The x-axis scale is taken from the FULL, observation-geometry-INDEPENDENT
+      // path sets (all reflected-channel + all transmitted-channel paths), so the
+      // axis and bin edges are identical across a/b/c. Only the plotted bars and
+      // the printed means change with the geometry selection — this avoids the
+      // illusion of differing transmitted distributions when only the axis moved.
+      const allReflPaths  = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPaths];
+      const allTransPaths = [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths];
+      const scaleMean = Math.max(segMean(allReflPaths), segMean(allTransPaths));
 
       // Use a representative path-length scale rather than the rare-event maximum.
       // This keeps the bulk of the reflected/transmitted distributions visible.

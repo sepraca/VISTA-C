@@ -236,7 +236,10 @@ export const Physics = {
           const xe = xs + tUp * dir.x;
           const ye = ys + tUp * dir.y;
           if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xe, y: ye, tau: tauCloud});
-          return {result: {status: "side_escape", xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
+          // bypass: surface-reflected photon escaping UPWARD without re-entering the
+          // cloud (it never left a cloud face). Geometry "all_faces" routes these to
+          // S; "scene" keeps them in R. Distinguishes this from a genuine side-wall exit.
+          return {result: {status: "side_escape", bypass: true, xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs}};
         }
 
         // A terminal surface absorption is drawn ONCE, as a brown endpoint (see

@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.3.0] — 2026-06-18
+
+Observation-geometry correction. The old "cloud top/base + sides" was mislabeled:
+it actually collected the **entire scene** (folding surface-reflected upward-bypass
+flux into R). It is split into three correctly-labeled geometries, with a new
+cloud-element geometry in the middle.
+
+### Changed
+- **Observation geometry is now a three-way choice** (was two):
+  - **`top-base_faces`** (a) — cloud top/base faces only. Unchanged from the old
+    `faces` / "cloud top/base faces only."
+  - **`all_faces`** (b) — NEW, the "cloud element": photons leaving any cloud face
+    go to R (upward: top + sides) or T (downward: base + sides), but
+    surface-reflected photons that escape upward *without re-entering the cloud*
+    stay in **S** (they left no cloud face).
+  - **`scene`** (c) — entire scene: all upwelling → R, all downwelling → T, S = 0.
+    This is exactly the old `faces_sides` behavior, renamed and relabeled. R here
+    includes surface-bypass reflections, so it is the whole-scene albedo, not pure
+    cloud-top reflectance.
+  The only difference between b and c is the surface-reflected upward bypass
+  (S under b, R under c); T and A are identical across b and c.
+- **JSON `observation_geometry` keys** are now `top-base_faces` / `all_faces` /
+  `scene` (were `cloud_top_base_faces_only` / `cloud_top_base_and_sides`). Old
+  exports still load — only the label string changed (old "…and_sides" ≡ `scene`).
+
+### Fixed
+- **Path-length x-axis is now observation-geometry-independent.** Its scale is
+  taken from the full (all-channel) path set rather than the active geometry's
+  subset, so a/b/c share identical bin edges. Previously the axis could tip across
+  a decade boundary between geometries (e.g. >60 vs >70), making the *identical*
+  b/c transmitted distributions appear different.
+
 ## [5.2.0] — 2026-06-18
 
 Visualization clarity improvements. Consistent visualization colors, better description of 3-D exit markers, added surface absorption heatmap, several rendering/usability fixes.

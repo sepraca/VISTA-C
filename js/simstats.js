@@ -71,10 +71,14 @@ export const SimStats = {
       // logic to peel the side contribution out of the transmitted channel.
       transmittedSide: 0,
       surfaceReflectedSide: 0,
-      // Terminal side-wall escapes split by vertical direction. Geometry "b"
-      // reassigns upward escapes to R and downward escapes to T.
+      // Terminal side-wall escapes split by vertical direction. Geometries
+      // "all_faces"/"scene" reassign upward escapes to R and downward to T.
+      // sideEscapeUp counts GENUINE upward cloud-side-wall exits only; the
+      // surface-reflected upward bypass (no cloud face) is tallied separately
+      // in surfaceBypassUp so "all_faces" can keep it in S while "scene" → R.
       sideEscapeUp: 0,
       sideEscapeDown: 0,
+      surfaceBypassUp: 0,
       totalScatterings: 0,
       totalPath: 0
     },
@@ -93,6 +97,10 @@ export const SimStats = {
     muSideEscDownBins: new Float64Array(MU_BINS),
     bdfSideEscUpWeights:   new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     bdfSideEscDownWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    // Surface-reflected upward bypass (no cloud face): a subset peeled out of the
+    // upward-escape pool. Joins R only under "scene"; stays in S under "all_faces".
+    muBypassBins:     new Float64Array(MU_BINS),
+    bdfBypassWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -108,8 +116,9 @@ export const SimStats = {
     // (transmitted - surfaceReflected), photon for photon.
     netTransmittedPathLengths: [],          // base-derived (geometry "a") surface-deposited paths
     sideTransmittedPathLengths: [],         // side-derived surface-deposited paths (reassigned to S under "a", back to T under "b")
-    sideEscapeUpPaths: [],                  // terminal upward side escapes (join R under "b")
-    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under "b")
+    sideEscapeUpPaths: [],                  // GENUINE upward side-wall escapes (join R under all_faces/scene)
+    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under all_faces/scene)
+    bypassPaths: [],                        // surface-reflected upward bypass (join R only under scene)
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
     // (Re)create footprint grids at the current UI resolution. Called on
@@ -165,7 +174,7 @@ export const SimStats = {
       s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
       s.absorbed = 0; s.side = 0; s.terminated = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
       s.transmittedSide = 0; s.surfaceReflectedSide = 0;
-      s.sideEscapeUp = 0; s.sideEscapeDown = 0;
+      s.sideEscapeUp = 0; s.sideEscapeDown = 0; s.surfaceBypassUp = 0;
       s.totalScatterings = 0; s.totalPath = 0;
       SimStats.muReflBins.fill(0);
       SimStats.muNetTransBins.fill(0);
@@ -177,6 +186,8 @@ export const SimStats = {
       SimStats.muSideEscDownBins.fill(0);
       SimStats.bdfSideEscUpWeights.fill(0);
       SimStats.bdfSideEscDownWeights.fill(0);
+      SimStats.muBypassBins.fill(0);
+      SimStats.bdfBypassWeights.fill(0);
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};
@@ -185,38 +196,47 @@ export const SimStats = {
       SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
       SimStats.sideTransmittedPathLengths = [];
       SimStats.sideEscapeUpPaths = [];  SimStats.sideEscapeDownPaths = [];
+      SimStats.bypassPaths = [];
     },
 
     // --- Observation geometry combiners ------------------------------------
     // Every exit is accumulated unconditionally above; the observation geometry
     // only chooses how to COMBINE the accumulators, so switching modes re-bins
-    // the SAME run with no re-simulation. Two modes:
-    //   "faces"       (a): cloud top/base faces only. Reflected = top face;
-    //                      transmitted = base-derived net surface flux (the
-    //                      side-derived part is peeled out and counted in S).
-    //   "faces_sides" (b): also count side-wall exits — upward escapes join R,
-    //                      downward escapes join T, side-derived surface flux
-    //                      stays in T — so S → 0 and the budget closes R+T+A=1.
-    // Footprints are left as plane projections (unchanged) per design.
-    _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : "faces"); },
+    // the SAME run with no re-simulation. Footprints are left as plane
+    // projections (unchanged) per design. Observation geometry — one of three keys:
+    //   "top-base_faces" (a): cloud top/base faces only; sides → S.
+    //   "all_faces"      (b): cloud element (top/base/side faces). Genuine upward
+    //                         side exits → R, downward side → T, but surface-
+    //                         reflected upward bypass (no cloud face) stays in S.
+    //   "scene"          (c): entire scene — all upwelling → R, all downwelling
+    //                         absorption + downward side → T, S → 0 (bypass → R).
+    // T-side helpers are identical for all_faces and scene ("sides included");
+    // only the R/S split differs (whether the bypass pool joins R).
+    _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : "top-base_faces"); },
+    _sidesIncluded() { return SimStats._obsGeom() !== "top-base_faces"; },        // all_faces or scene
+    _bypassInReflected() { return SimStats._obsGeom() === "scene"; },             // scene only
     observationGeometryLabel() {
-      return SimStats._obsGeom() === "faces_sides" ? "cloud top/base + sides"
-                                                    : "cloud top/base faces";
+      const g = SimStats._obsGeom();
+      return g === "scene"     ? "entire scene"
+           : g === "all_faces" ? "cloud top/base/side faces"
+                               : "cloud top/base faces";
     },
     observationGeometryKey() {
-      return SimStats._obsGeom() === "faces_sides" ? "cloud_top_base_and_sides"
-                                                    : "cloud_top_base_faces_only";
+      const g = SimStats._obsGeom();
+      return g === "scene" || g === "all_faces" ? g : "top-base_faces";
     },
 
     reflectedMuBins() {
-      if (SimStats._obsGeom() !== "faces_sides") return SimStats.muReflBins;
+      if (!SimStats._sidesIncluded()) return SimStats.muReflBins;
+      const byp = SimStats._bypassInReflected();
       const out = new Float64Array(MU_BINS);
-      for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i];
+      for (let i = 0; i < MU_BINS; i++)
+        out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i] + (byp ? SimStats.muBypassBins[i] : 0);
       return out;
     },
     transmittedMuBins() {
       const out = new Float64Array(MU_BINS);
-      if (SimStats._obsGeom() === "faces_sides") {
+      if (SimStats._sidesIncluded()) {
         for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] + SimStats.muSideEscDownBins[i];
       } else {
         for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] - SimStats.muSideTransBins[i];
@@ -224,14 +244,16 @@ export const SimStats = {
       return out;
     },
     reflectedBdfWeights() {
-      if (SimStats._obsGeom() !== "faces_sides") return SimStats.bdfReflWeights;
+      if (!SimStats._sidesIncluded()) return SimStats.bdfReflWeights;
+      const byp = SimStats._bypassInReflected();
       const out = new Float64Array(SimStats.bdfReflWeights.length);
-      for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i];
+      for (let i = 0; i < out.length; i++)
+        out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i] + (byp ? SimStats.bdfBypassWeights[i] : 0);
       return out;
     },
     transmittedBdfWeights() {
       const out = new Float64Array(SimStats.bdfNetWeights.length);
-      if (SimStats._obsGeom() === "faces_sides") {
+      if (SimStats._sidesIncluded()) {
         for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] + SimStats.bdfSideEscDownWeights[i];
       } else {
         for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] - SimStats.bdfSideWeights[i];
@@ -240,31 +262,36 @@ export const SimStats = {
     },
     reflectedCount() {
       const s = SimStats.stats;
-      return s.reflected + (SimStats._obsGeom() === "faces_sides" ? s.sideEscapeUp : 0);
+      if (!SimStats._sidesIncluded()) return s.reflected;
+      return s.reflected + s.sideEscapeUp + (SimStats._bypassInReflected() ? s.surfaceBypassUp : 0);
     },
     transmittedNetCount() {
       const s = SimStats.stats;
-      if (SimStats._obsGeom() === "faces_sides") {
+      if (SimStats._sidesIncluded()) {
         return (s.transmitted - s.surfaceReflected) + s.sideEscapeDown;
       }
       return (s.transmitted - s.transmittedSide) - (s.surfaceReflected - s.surfaceReflectedSide);
     },
     sideExitCount() {
       const s = SimStats.stats;
-      if (SimStats._obsGeom() === "faces_sides") {
-        return s.side - s.sideEscapeUp - s.sideEscapeDown;   // residual, ≈ 0 (all reassigned)
+      if (!SimStats._sidesIncluded()) {
+        return s.side + (s.transmittedSide - s.surfaceReflectedSide);   // "a": sides + bypass + side-absorption
       }
-      return s.side + (s.transmittedSide - s.surfaceReflectedSide);
+      // residual ≈ 0 (genuine up/down + bypass all accounted). "all_faces" keeps
+      // bypass in S; "scene" reassigns it to R, leaving only the residual.
+      const residual = s.side - s.sideEscapeUp - s.sideEscapeDown - s.surfaceBypassUp;
+      return residual + (SimStats._bypassInReflected() ? 0 : s.surfaceBypassUp);
     },
     // Path-length constituent arrays for the active geometry (returned as a
     // list of segments so consumers iterate without allocating a concat copy).
     reflectedPathSegments() {
-      return SimStats._obsGeom() === "faces_sides"
-        ? [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths]
-        : [SimStats.reflectedPathLengths];
+      if (!SimStats._sidesIncluded()) return [SimStats.reflectedPathLengths];
+      const segs = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths];
+      if (SimStats._bypassInReflected()) segs.push(SimStats.bypassPaths);   // scene only
+      return segs;
     },
     transmittedPathSegments() {
-      return SimStats._obsGeom() === "faces_sides"
+      return SimStats._sidesIncluded()
         ? [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths]
         : [SimStats.netTransmittedPathLengths];
     },
@@ -335,10 +362,19 @@ export const SimStats = {
         const ei = muBinIndex(Math.abs(result.dirZ ?? 0));
         const eb = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
         if ((result.dirZ ?? 0) < 0) {
-          SimStats.stats.sideEscapeUp++;
-          SimStats.muSideEscUpBins[ei] += 1;
-          SimStats.bdfSideEscUpWeights[eb] += 1;
-          SimStats.sideEscapeUpPaths.push(result.totalPath ?? 0);
+          if (result.bypass) {
+            // Surface-reflected upward bypass (no cloud face): separate pool so
+            // "all_faces" keeps it in S while "scene" folds it into R.
+            SimStats.stats.surfaceBypassUp++;
+            SimStats.muBypassBins[ei] += 1;
+            SimStats.bdfBypassWeights[eb] += 1;
+            SimStats.bypassPaths.push(result.totalPath ?? 0);
+          } else {
+            SimStats.stats.sideEscapeUp++;
+            SimStats.muSideEscUpBins[ei] += 1;
+            SimStats.bdfSideEscUpWeights[eb] += 1;
+            SimStats.sideEscapeUpPaths.push(result.totalPath ?? 0);
+          }
         } else {
           SimStats.stats.sideEscapeDown++;
           SimStats.muSideEscDownBins[ei] += 1;
@@ -418,14 +454,10 @@ Flux exiting cloud sides, S: ${Sfinal.toFixed(3)} (${Scount})
 Terminated (event cap): ${Tterm.toFixed(3)} (${s.terminated})
 R + T + A + S + Term: ${finalSumRTAS.toFixed(3)}
 
-SURFACE FLUX DIAGNOSTICS (total, physical surface)
+SURFACE FLUX DIAGNOSTICS (total, physical surface; geometry-independent)
 F_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
 F_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
-F_down_sfc - F_up_sfc: ${totalSfcAbs.toFixed(3)} (${totalSfcAbsCount})
-
-BOUNDARY / MULTI-PASS DIAGNOSTICS
-Down at sfc plane: ${EdownSfc.toFixed(3)} (${s.transmitted})
-Surface reflections / photon: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
+Net surface absorption (F_down_sfc - F_up_sfc): ${totalSfcAbs.toFixed(3)} (${totalSfcAbsCount})
 
 Mean scatterings / photon: ${meanScat.toFixed(2)}
 Mean optical path / photon: ${meanPath.toFixed(2)}

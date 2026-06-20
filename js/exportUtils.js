@@ -50,7 +50,7 @@ export const Export = {
         `S=${S.toFixed(3)} (${side_count})`,
         `R+T+A+S+Term=${(R + T + A + S + Term).toFixed(3)}`,
         `F_down_sfc=${T_base.toFixed(3)} (${SimStats.stats.transmitted})`,
-        `surface refl/photon=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`,
+        `F_up_sfc=${surfaceRefl.toFixed(3)} (${SimStats.stats.surfaceReflected})`,
         `Term (event cap)=${Term.toFixed(3)} (${SimStats.stats.terminated})`
       ];
     },
@@ -75,7 +75,7 @@ export const Export = {
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
         `RNG seed: ${RNG.currentSeed()}`,
         `Photon illumination: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`,
-        `Obs geometry: ${UI.getObservationGeometry() === "faces_sides" ? "top/base + sides" : "top/base faces"}`
+        `Obs geometry: ${SimStats.observationGeometryLabel()}`
       ];
     },
 
@@ -415,7 +415,7 @@ export const Export = {
       const S = sideCount / launched;
       const Term = s.terminated / launched;
       const outputs = {
-        observation_geometry: SimStats.observationGeometryKey(),   // "faces" (a) or "faces_sides" (b)
+        observation_geometry: SimStats.observationGeometryKey(),   // "top-base_faces" (a), "all_faces" (b), or "scene" (c)
         counts: {
           launched: s.launched,
           reflected: SimStats.reflectedCount(),
@@ -441,8 +441,11 @@ export const Export = {
         mean_scatterings_per_photon: s.totalScatterings / launched,
         mean_optical_path_per_photon: s.totalPath / launched,
         notes: "Fluxes are normalized per launched photon (analog MC, weight 1). " +
-               "Observation geometry 'cloud_top_base_faces_only': R/T are cloud top/base face " +
-               "exits; downward side-wall exits that reach the surface are counted in S, not T."
+               "'observation_geometry' sets how exits are bucketed: 'top-base_faces' = R/T from the " +
+               "cloud top/base faces only (side exits, surface-reflected upward bypass, and side-derived " +
+               "surface absorption all go to S); 'all_faces' = the cloud element (top/base/side faces → " +
+               "R/T), with only the surface-reflected upward bypass in S; 'scene' = entire scene (all " +
+               "upwelling → R, all downwelling → T, S = 0)."
       };
 
       // --- µ exit-angle histograms ---

@@ -328,6 +328,21 @@ export const Scene = {
       }
     },
 
+    // TODO(perf): this builds ONE Mesh+BoxGeometry+Material PER non-empty cell
+    // (~3700 meshes at 100k photons, rebuilt every display refresh). Convert each
+    // of the three heatmaps to a single InstancedMesh: shared unit BoxGeometry +
+    // one material; per cell set an instance matrix (position + non-uniform scale
+    // for bar height) and setColorAt(i, ...), with count = non-empty cells.
+    // DESIGN DECISION to resolve first: the current look varies opacity AND
+    // emissiveIntensity per cell (opacity 0.22+0.30*frac, emissive 0.25+0.9*frac),
+    // but an InstancedMesh shares one material and three.js instanceColor is
+    // RGB-only (no per-instance alpha/emissive). So choose either
+    //   (a) bake the brightness factor into the instance color + a fixed opacity
+    //       (simple, low risk, but cells no longer fade in transparency), or
+    //   (b) inject a per-instance attribute via material.onBeforeCompile for
+    //       opacity/emissive (faithful to current look, fiddlier shader work).
+    // Not headlessly verifiable (no WebGL) — needs a reload-and-eyeball loop.
+    //
     // Build a footprint heatmap on the cloud top or base plane from an
     // incremental count grid ({nBins, counts: Float64Array(nBins*nBins)},
     // accumulated in SimStats).
