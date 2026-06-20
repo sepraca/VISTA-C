@@ -336,8 +336,18 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
+## Development Notes
+
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation.
+
+The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
+by the project author.
+
+---
+
 ## Citation / Attribution
 
 If you use this simulator in teaching or research, please cite as:
 
 > Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.2.0). GitHub. https://github.com/sepraca/VISTA-C
+
