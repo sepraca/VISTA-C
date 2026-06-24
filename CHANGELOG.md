@@ -28,6 +28,10 @@ cloud-element geometry in the middle.
 - **JSON `observation_geometry` keys** are now `top-base_faces` / `all_faces` /
   `scene` (were `cloud_top_base_faces_only` / `cloud_top_base_and_sides`). Old
   exports still load — only the label string changed (old "…and_sides" ≡ `scene`).
+- **Responsive overlay UI** — the control panel, header, legend, and bottom-panel
+  plots now scale proportionally to fit smaller laptop/desktop windows (the 3-D
+  canvas stays native resolution and reclaims the freed space). Presentation only;
+  no effect on the simulation or its outputs.
 
 ### Fixed
 - **Path-length x-axis is now observation-geometry-independent.** Its scale is

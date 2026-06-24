@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { state, world, UI_PANEL_WIDTH } from './state.js';
+import { state, world, UI_PANEL_WIDTH, setUiPanelWidth } from './state.js';
 import { RNG } from './rng.js';
 import { Coords } from './coords.js';
 import { Physics } from './physics.js';
@@ -19,14 +19,32 @@ const CHUNK_SIZE = 1000;
 const DISPLAY_EVERY_CHUNKS = 10;
 
 export const RunControl = {
+    // Proportionally shrink the overlay chrome (controls, header, legend, bottom
+    // plots) so the interface fits smaller laptop/desktop screens. The 3-D canvas
+    // stays at native resolution; only the CSS overlays scale via --ui-scale, and
+    // the 3-D viewport offset (UI_PANEL_WIDTH) shrinks with the panel.
+    applyUiScale: function() {
+      const BASE_W = 1550, BASE_H = 900, MIN_SCALE = 0.6;
+      const scale = Math.max(MIN_SCALE,
+        Math.min(1, window.innerWidth / BASE_W, window.innerHeight / BASE_H));
+      const panelW = Math.round(440 * scale);   // scaled control-panel footprint
+      const root = document.documentElement.style;
+      root.setProperty("--ui-scale", scale.toFixed(3));
+      root.setProperty("--ui-panel-w", panelW + "px");
+      setUiPanelWidth(panelW);
+    },
+
     init: function() {
+      RunControl.applyUiScale();
       state.scene = new THREE.Scene();
       state.scene.background = new THREE.Color(0x0f172a);
 
       const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
 
       state.camera = new THREE.PerspectiveCamera(50, view3dWidth / window.innerHeight, 0.1, 2000);
-      state.camera.position.set(0, -90, 18);
+
+      // state.camera.position.set(0, -90, 33);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
+      state.camera.position.set(0, -90, 21);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
 
       state.renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
       state.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -37,7 +55,7 @@ export const RunControl = {
       state.controls = new OrbitControls(state.camera, state.renderer.domElement);
       state.controls.enableDamping = true;
       state.camera.up.set(0, 0, 1);
-      state.controls.target.set(0, 0, -15);
+      state.controls.target.set(0, 0, -12);
 
       const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 1.8);
       state.scene.add(hemi);
@@ -64,6 +82,7 @@ export const RunControl = {
     },
 
     onWindowResize: function() {
+      RunControl.applyUiScale();
       const view3dWidth = window.innerWidth - UI_PANEL_WIDTH;
       state.camera.aspect = view3dWidth / window.innerHeight;
       state.camera.updateProjectionMatrix();

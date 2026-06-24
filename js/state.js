@@ -38,6 +38,9 @@ export const world = { tauCloud: 10, slabW: 40, slabD: 40, slabH: 10, zScale: 1 
 // Maximum endpoint sphere markers shown in the 3D view.
 export const DEFAULT_ENDPOINT_MARKERS = 6000;
 
-// Width of the left UI panel in CSS pixels.
-// MUST match the #ui width rule in index.html.
-export const UI_PANEL_WIDTH = 418;
+// Left UI-panel footprint in CSS pixels — the x-offset where the 3-D viewport
+// begins. Dynamic: RunControl.applyUiScale() shrinks it with the overlay
+// "--ui-scale" so the 3-D view reclaims the freed space on smaller screens.
+// Exported as a live binding; importers see updates via setUiPanelWidth().
+export let UI_PANEL_WIDTH = 418;
+export function setUiPanelWidth(w) { UI_PANEL_WIDTH = w; }

@@ -40,9 +40,10 @@ export const Scene = {
 
     // Reset state.camera to the default view position.
     resetCamera: function() {
-      state.camera.position.set(0, -90, 18);
+      // state.camera.position.set(0, -90, 33);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
+      state.camera.position.set(0, -90, 21);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
       state.camera.up.set(0, 0, 1);
-      state.controls.target.set(0, 0, -15);
+      state.controls.target.set(0, 0, -12);
       state.controls.update();
     },
 

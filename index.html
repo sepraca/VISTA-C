@@ -14,6 +14,14 @@
 </script>
 
 <style>
+  :root {
+    /* UI scale-to-fit. RunControl.applyUiScale() sets these from the viewport so
+       the overlay chrome shrinks on smaller laptop/desktop screens (the 3-D canvas
+       stays native resolution). --ui-panel-w is the scaled left-panel footprint,
+       used for the 3-D viewport offset and to center the bottom panel/header. */
+    --ui-scale: 1;
+    --ui-panel-w: 440px;
+  }
   body {
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -27,6 +35,8 @@
     top: 12px;
     left: 12px;
     z-index: 10;
+    transform-origin: top left;
+    transform: scale(var(--ui-scale));
     width: 418px;
     background: rgba(15, 23, 42, 0.88);
     border: 1px solid rgba(148, 163, 184, 0.45);
@@ -34,7 +44,10 @@
     padding: 14px;
     box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     backdrop-filter: blur(8px);
-      max-height: calc(100vh - 24px);
+      /* Divide by --ui-scale so that, after transform:scale, the panel still
+         fills the window height (content scrolls within). Without this the scaled
+         panel ends partway down the screen. */
+      max-height: calc((100vh - 24px) / var(--ui-scale));
       overflow-y: auto;
       overflow-x: hidden;
       box-sizing: border-box;
@@ -144,12 +157,21 @@
 
   #exportButtons {
     position: absolute;
-    left: 485px;
+    left: calc(var(--ui-panel-w) + 48px);
     top: 14px;
     z-index: 20;
+    transform-origin: top left;
+    transform: scale(var(--ui-scale));
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+  }
+
+  /* Below a wide monitor, the top row can't fit the 3 download buttons AND the
+     legend side by side, so the buttons collide with the legend. Stack them
+     vertically there (a narrow column at top-left of the 3-D area). */
+  @media (max-width: 1700px) {
+    #exportButtons { flex-direction: column; align-items: flex-start; }
   }
 
   #exportButtons button {
@@ -169,6 +191,8 @@
     right: 18px;
     top: 16px;
     z-index: 10;
+    transform-origin: top right;
+    transform: scale(var(--ui-scale));
     background: rgba(71, 85, 105, 0.88);
     border: 1px solid rgba(203, 213, 225, 0.55);
     border-radius: 12px;
@@ -214,8 +238,9 @@
   #note {
     position: absolute;
     bottom: 12px;
-	left: calc(460px + (100vw - 460px) / 2);
-    transform: translateX(-50%);
+    left: calc(var(--ui-panel-w) + (100vw - var(--ui-panel-w)) / 2);
+    transform: translateX(-50%) scale(var(--ui-scale));
+    transform-origin: bottom center;
     right: 12px;
     z-index: 10;
     text-align: center;
@@ -226,8 +251,9 @@
 
   #muPanel {
     position: absolute;
-    left: calc(460px + (100vw - 460px) / 2);
-    transform: translateX(-50%);
+    left: calc(var(--ui-panel-w) + (100vw - var(--ui-panel-w)) / 2);
+    transform: translateX(-50%) scale(var(--ui-scale));
+    transform-origin: bottom center;
     bottom: 34px;
     z-index: 10;
     width: 700px;
