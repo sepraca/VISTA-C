@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.4.0] — 2026-06-29
+
+Rendering-performance release. No change to the physics, statistics, or any exported
+output — the visualization is byte-for-byte identical.
+
+### Changed
+- **Footprint heatmaps now render as a single `InstancedMesh` each** (reflected,
+  base-crossing, and surface). Previously each non-empty grid cell was its own
+  `Mesh` + `BoxGeometry` + `MeshStandardMaterial` — ~3700 objects at 100k photons,
+  rebuilt on every display refresh; now three instanced meshes draw all cells from a
+  shared unit box scaled per instance. Per-cell color, opacity, and emissive glow are
+  preserved exactly: color via `setColorAt`, and per-instance opacity + emissive
+  (which three.js `instanceColor` cannot carry) via two `InstancedBufferAttribute`s
+  injected through `material.onBeforeCompile`. The look is unchanged; 1M-photon runs
+  are ~15–25% faster and allocate/free far fewer objects, so orbit/pan stays smoother
+  during and after large runs.
+
 ## [5.3.0] — 2026-06-18
 
 Observation-geometry correction. The old "cloud top/base + sides" was mislabeled:
@@ -32,6 +49,9 @@ cloud-element geometry in the middle.
   plots now scale proportionally to fit smaller laptop/desktop windows (the 3-D
   canvas stays native resolution and reclaims the freed space). Presentation only;
   no effect on the simulation or its outputs.
+- **Default cloud framing lowered** so the visualization sits clear of the legend on
+  load (the camera and its target are panned down together, so the view angle is
+  unchanged). Presentation only.
 
 ### Fixed
 - **Path-length x-axis is now observation-geometry-independent.** Its scale is

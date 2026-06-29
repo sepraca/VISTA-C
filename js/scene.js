@@ -16,8 +16,11 @@ export const Scene = {
         const obj = group.children.pop();
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
+          // Shared materials (e.g. the reused heatmap material) are kept across
+          // rebuilds so their compiled shader program isn't thrown away each time;
+          // skip disposing them. Per-object materials are disposed normally.
+          if (Array.isArray(obj.material)) obj.material.forEach(m => { if (!m.userData?.shared) m.dispose(); });
+          else if (!obj.material.userData?.shared) obj.material.dispose();
         }
         group.remove(obj);
       }
@@ -329,24 +332,50 @@ export const Scene = {
       }
     },
 
-    // TODO(perf): this builds ONE Mesh+BoxGeometry+Material PER non-empty cell
-    // (~3700 meshes at 100k photons, rebuilt every display refresh). Convert each
-    // of the three heatmaps to a single InstancedMesh: shared unit BoxGeometry +
-    // one material; per cell set an instance matrix (position + non-uniform scale
-    // for bar height) and setColorAt(i, ...), with count = non-empty cells.
-    // DESIGN DECISION to resolve first: the current look varies opacity AND
-    // emissiveIntensity per cell (opacity 0.22+0.30*frac, emissive 0.25+0.9*frac),
-    // but an InstancedMesh shares one material and three.js instanceColor is
-    // RGB-only (no per-instance alpha/emissive). So choose either
-    //   (a) bake the brightness factor into the instance color + a fixed opacity
-    //       (simple, low risk, but cells no longer fade in transparency), or
-    //   (b) inject a per-instance attribute via material.onBeforeCompile for
-    //       opacity/emissive (faithful to current look, fiddlier shader work).
-    // Not headlessly verifiable (no WebGL) — needs a reload-and-eyeball loop.
-    //
+    // Shared material for every footprint heatmap. InstancedMesh draws all cells of
+    // a heatmap with ONE material, but three.js per-instance color is RGB-only — no
+    // per-instance opacity or emissive. We add those two via onBeforeCompile:
+    //   instanceAlpha  -> scales the fragment alpha (old per-cell opacity)
+    //   instanceEmis   -> scales an emissive term tinted by the instance color
+    //                     (vColor, supplied by three's USE_INSTANCING_COLOR path)
+    // so the look is identical to the old per-cell MeshStandardMaterial. One lazy
+    // singleton, reused across rebuilds and all three heatmaps, so the shader
+    // compiles once; clearGroup keeps it (userData.shared) instead of disposing it.
+    _heatMat: null,
+    _heatmapMaterial: function() {
+      if (Scene._heatMat) return Scene._heatMat;
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,      // modulated per instance by setColorAt
+        emissive: 0x000000,   // per-instance glow added in the shader
+        roughness: 0.45,
+        transparent: true,
+        depthWrite: false
+      });
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>',
+            '#include <common>\nattribute float instanceAlpha;\nattribute float instanceEmis;\nvarying float vAlpha;\nvarying float vEmis;')
+          .replace('#include <begin_vertex>',
+            '#include <begin_vertex>\nvAlpha = instanceAlpha;\nvEmis = instanceEmis;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>',
+            '#include <common>\nvarying float vAlpha;\nvarying float vEmis;')
+          .replace('#include <emissivemap_fragment>',
+            '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor * vEmis;')
+          .replace('#include <dithering_fragment>',
+            'gl_FragColor.a *= vAlpha;\n#include <dithering_fragment>');
+      };
+      mat.customProgramCacheKey = () => 'vista-heatmap-v1';
+      mat.userData.shared = true;   // clearGroup must not dispose this
+      Scene._heatMat = mat;
+      return mat;
+    },
+
     // Build a footprint heatmap on the cloud top or base plane from an
     // incremental count grid ({nBins, counts: Float64Array(nBins*nBins)},
-    // accumulated in SimStats).
+    // accumulated in SimStats). All non-empty cells render as a single
+    // InstancedMesh (a shared unit box scaled per instance) — formerly one
+    // Mesh+geometry+material per cell (thousands of objects, rebuilt each refresh).
     addFootprintHeatmap: function(foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
       if (!foot || !foot.counts) return;
       const nBins = foot.nBins;
@@ -356,9 +385,11 @@ export const Scene = {
       const halfW = fullW / 2;
       const halfD = fullD / 2;
 
-      let maxCount = 1;
-      for (let i = 0; i < counts.length; i++)
+      let maxCount = 1, nCells = 0;
+      for (let i = 0; i < counts.length; i++) {
         if (counts[i] > maxCount) maxCount = counts[i];
+        if (counts[i] > 0) nCells++;
+      }
 
       const cellW = fullW / nBins;
       const cellD = fullD / nBins;
@@ -369,40 +400,53 @@ export const Scene = {
       const reliefHeight = maxHeight ?? 2.8;
       const baseColor = new THREE.Color(color);
 
-      for (let ix = 0; ix < nBins; ix++) {
-        for (let iy = 0; iy < nBins; iy++) {
-          const c = counts[ix * nBins + iy];
-          if (c === 0) continue;
+      if (nCells > 0) {
+        // Unit box scaled per instance by the instance matrix (cell footprint ×
+        // bar height). Per-instance color/opacity/glow are filled below.
+        const geom = new THREE.BoxGeometry(1, 1, 1);
+        const cw = Math.max(0.02, cellW * 0.92);
+        const cd = Math.max(0.02, cellD * 0.92);
+        const mesh = new THREE.InstancedMesh(geom, Scene._heatmapMaterial(), nCells);
+        mesh.frustumCulled = false;   // cells span the whole domain
 
-          const frac = c / maxCount;
-          const h = 0.045 + reliefHeight * frac;
+        const alpha = new Float32Array(nCells);
+        const emis  = new Float32Array(nCells);
+        const m4 = new THREE.Matrix4();
+        const col = new THREE.Color();
+        const white = new THREE.Color(0xffffff);
 
-          const geom = new THREE.BoxGeometry(
-            Math.max(0.02, cellW * 0.92),
-            Math.max(0.02, cellD * 0.92),
-            h
-          );
-          const cellColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.18 + 0.45 * frac);
-          const mat = new THREE.MeshStandardMaterial({
-            color: cellColor,
-            emissive: cellColor,
-            emissiveIntensity: 0.25 + 0.9 * frac,
-            transparent: true,
-            // AESTHETIC: lowered max opacity from (0.42 + 0.48*frac, peak 0.90)
-            // so the heatmap is more translucent and the endpoint dots show
-            // through. To REVERT, set back to 0.42 + 0.48 * frac.
-            opacity: 0.22 + 0.30 * frac,
-            roughness: 0.45,
-            depthWrite: false
-          });
+        let i = 0;
+        for (let ix = 0; ix < nBins; ix++) {
+          for (let iy = 0; iy < nBins; iy++) {
+            const c = counts[ix * nBins + iy];
+            if (c === 0) continue;
 
-          const mesh = new THREE.Mesh(geom, mat);
-          const x = -halfW + cellW * (ix + 0.5);
-          const y = -halfD + cellD * (iy + 0.5);
-          const z = isTop ? zPlane + h / 2 : zPlane - h / 2;
-          mesh.position.set(x, y, z);
-          state.histogramGroup.add(mesh);
+            const frac = c / maxCount;
+            const h = 0.045 + reliefHeight * frac;
+            const x = -halfW + cellW * (ix + 0.5);
+            const y = -halfD + cellD * (iy + 0.5);
+            const z = isTop ? zPlane + h / 2 : zPlane - h / 2;
+
+            m4.makeScale(cw, cd, h);
+            m4.setPosition(x, y, z);
+            mesh.setMatrixAt(i, m4);
+
+            col.copy(baseColor).lerp(white, 0.18 + 0.45 * frac);
+            mesh.setColorAt(i, col);
+
+            alpha[i] = 0.22 + 0.30 * frac;   // old per-cell opacity (see history below)
+            emis[i]  = 0.25 + 0.9 * frac;    // old emissiveIntensity
+            i++;
+          }
         }
+        // AESTHETIC history: max opacity was lowered from (0.42 + 0.48*frac, peak
+        // 0.90) so the heatmap is more translucent and the endpoint dots show
+        // through. To REVERT, set alpha[i] back to 0.42 + 0.48 * frac.
+        geom.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alpha, 1));
+        geom.setAttribute('instanceEmis',  new THREE.InstancedBufferAttribute(emis, 1));
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        state.histogramGroup.add(mesh);
       }
 
       // Outline frame so the heatmap domain boundary is visually clear.
