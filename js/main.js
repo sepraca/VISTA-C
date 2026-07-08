@@ -50,5 +50,5 @@ try {
     "Then open <code>http://localhost:8000/</code>.<br><br>" +
     "<small>Error: " + String(err).replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s])) + "</small>";
 
-  document.getElementById("stats").textContent = "3-D renderer failed to load.";
+  document.getElementById("statsTop").textContent = "3-D renderer failed to load.";
 }

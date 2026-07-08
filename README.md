@@ -21,8 +21,9 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 - **3D photon path visualization**: animated and static path rendering with colored crossing and endpoint markers by outcome
 - **Henyey-Greenstein phase function**: exact inverse-CDF sampling for the scattering angle
 - **Lambertian surface reflection**: configurable surface albedo Aₛ with geometric sub-cloud gap propagation
-- **Finite-cloud illumination modes**: pencil-beam (centered) entry, or uniform illumination of the cloud top, optionally including the sunward side wall, to study 3D edge effects
+- **Finite-cloud illumination modes**: pencil-beam (centered) entry, uniform illumination of the cloud top (optionally including the sunward side wall), or a **uniform domain** launch that also illuminates the clear sky around the cloud, to study 3D edge effects and direct clear-sky surface illumination *(work in progress toward v6.0.0 — see [CHANGELOG](CHANGELOG.md)'s Unreleased section; open domain boundary only for now)*
 - **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
+- **R/T/A component breakdown**: an optional expanded view (any illumination mode) splitting each of R, T, and A into its constituent exit/origin populations — see *Illumination and observation-geometry bookkeeping* below
 - **Surface-absorption heatmap** (Aₛ > 0): toggleable 2-D map of where photons are absorbed at the Lambertian surface, on a grid 2× the cloud extent to capture finite-cloud side leakage
 - **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
 - **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
@@ -40,7 +41,7 @@ $$\cos\theta = \frac{1}{2g}\left[1 + g^2 - \left(\frac{1-g^2}{1-g+2g\xi}\right)^
 
 At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. The net (physical) surface absorption is F↓ − F↑, where F↓ and F↑ are the total downward and upward crossings of the **surface plane** — counting every photon that reaches the surface, whether it arrived through the cloud base *or* by exiting a cloud side and descending through the clear gap. This surface balance is **independent of the Observation-geometry setting**.
 
-How that absorption is reported as the transmittance T depends on the Observation geometry. Under the side-inclusive geometries ("cloud top/base/side faces" or "entire scene") it is the full physical absorption,
+How that absorption is reported as the transmittance T depends on the Observation geometry. Under the side-inclusive geometry ("cloud top/base/side faces") it is the full physical absorption,
 
 $$T_{\text{net}} = \frac{F_{\downarrow} - F_{\uparrow}}{N_{\text{launched}}}$$
 
@@ -69,6 +70,21 @@ The **Photon illumination** control sets where photons enter the cloud:
 $$p_{\text{side}} = \frac{\tau_{\text{cloud}}\sin\Theta_0}{W\cos\Theta_0 + \tau_{\text{cloud}}\sin\Theta_0}$$
 
 where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-only mode.
+- **Uniform domain** *(work in progress — see note above)*: extends illumination beyond
+  the cloud itself. Photons launch from a top-of-atmosphere plane uniform over a domain
+  **M times wider than the cloud** (new **domain factor M ≥ 1** input, shown only in this
+  mode) and are ray-cast to their first surface — cloud top, sunward side wall, or, new,
+  the clear ground. This is what makes a non-black surface (Aₛ > 0) receive direct solar
+  illumination as well as light diffusing out through the cloud, closing a gap in every
+  other illumination mode: previously, R/T/A described only what the cloud does to light
+  that already hits the cloud, not what a satellite pixel or model grid cell sees over
+  cloud plus bright clear sky. Cloud fraction **f_c = 1/M²** is reported alongside M — note
+  M is a **1D** (linear) scaling and f_c is **2D** (areal): M = 2 means f_c = 0.25, not
+  "half the cloud fraction." A live warning banner appears if M is smaller than the
+  minimum needed to fully capture direct sunward-wall illumination at the current
+  Θ₀/τ_cloud/horizontal-extent combination (M_min = 1 + 2·(τ_cloud/W)·tanΘ₀). The domain
+  boundary is currently **open/isolated** only (far clear sky beyond the launch margin is
+  unilluminated); periodic tiling is planned but not yet implemented.
 
 The centered launch draws no extra random numbers, so it leaves the RNG stream
 unchanged; the uniform modes consume entry draws. Note that at Θ₀ = 0 the *top* and
@@ -80,16 +96,71 @@ limit.
 
 ### Observation geometry: exit photon aggregation choices
 
-With the code's ability to simulate 3D radiative transfer, an unambiguous categorization of exiting photon statistics is no longer possible. A finite cloud loses photons through its sides as well as its top and base, and over a reflective surface photons can reflect off the surface and escape to space without ever re-interacting with the cloud. How those exits are bookket depends on the **Observation geometry** selection that allows for one of the following three aggregations:
+With the code's ability to simulate 3D radiative transfer, an unambiguous categorization of exiting photon statistics is no longer possible. A finite cloud loses photons through its sides as well as its top and base, and over a reflective surface photons can reflect off the surface and escape to space without ever re-interacting with the cloud. How those exits are bookkept depends on the **Observation geometry** selection, which offers two aggregations:
 
 - **Cloud top/base faces only** *(default, "a"; key `top-base_faces`)*: only photons whose final trajectory leaves through the cloud top or reaches the surface via the base are aggregated into R or T, respectively. In this case, photons that exit a cloud-side (either reflected to space or surface-absorbed) and photons that are surface-reflected and escape to space without re-interacting with the cloud (bypass escape) are bookkept under S. Appropriate for an observer (e.g., imager) whose field of view (FOV) can resolve the cloud top or base and exclude the surrounding scene.
-- **Cloud top/base/side faces** *("b"; key `all_faces`)*: photons leaving any cloud face (top, base or sides) are aggregated. Upward propagating (top + sides) → R, downward propagating (base + sides) → T. Surface-reflected bypass photons (escape upward *without re-interacting with the cloud*) remain in S. Appropriate for an observer FOV that cannot distinguish the cloud top/base from its sides.
-- **Entire scene** *("c"; key `scene`)*: a wide field of view observation that collects all upwelling (R) and downwelling (T) photons that have interacted with the cloud over the entire scene domain. In this case, surface-reflected upward bypass photons are bookkept with R. S = 0 by definition and the budget closes as R + T + A = 1. Meaningful for a coarse-resolving observer (imager where the cloud fraction is sub-pixel). However, because the code's photon illumination capabilities currently do not provide surface-incident photons, there is no correct physical observation corresponding to this scene selection.
-
-The only difference between "b" and "c" is the surface-reflected upward bypass: "b" bookkeeps these photons in S; "c" folds them into R. Transmittance T is identical for "b" and "c" (the physical net surface absorption F↓ − F↑); under "a" the side-derived part of that surface absorption is instead attributed to S.
+- **Cloud top/base/side faces** *("b"; key `all_faces`)*: photons leaving any cloud face (top, base or sides) are aggregated. Upward propagating (top + sides) → R, downward propagating (base + sides) → T. This already includes any clear-sky-direct surface absorption possible under Uniform domain illumination (see below) — the only population still excluded from both R and T here is the surface-reflected upward bypass (escapes *without re-touching the cloud*), which remains in S. Appropriate for an observer FOV that cannot distinguish the cloud top/base from its sides.
 
 This is a pure **post-processing choice**: it changes only how the accumulated
-photon exit counts are aggregated, not the simulated trajectories. A user can select different observation geometries without a re-run. The three converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane projections and are unaffected by this control.
+photon exit counts are aggregated, not the simulated trajectories. A user can select either geometry without a re-run. The two converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane projections and are unaffected by this control.
+
+*(Prior to v6.0.0, a third choice, "Entire scene," folded the surface-reflected bypass into R as well, so S = 0 by definition — but the code had no way to launch surface-incident photons, so there was no physically meaningful observation it corresponded to. It has been removed as a selectable Observation geometry. Uniform domain illumination — work in progress toward v6.0.0, see above — now provides an always-shown, dropdown-independent **ENTIRE DOMAIN** report block instead, described next, which finally gives that whole-scene total a real physical source population to draw from.)*
+
+#### R/T/A component breakdown and the ENTIRE DOMAIN block
+
+A **"Show R/T/A components"** toggle (default off) expands R, T, and A each into their
+constituent populations — available under **every** illumination mode, not just Uniform
+domain:
+
+- **R** splits into: cloud-top exit, cloud-side exit (upward), clear-sky-direct bypass
+  (Uniform domain only), and clear-sky-via-cloud bypass (a surface-reflected photon that
+  re-enters the cloud and then escapes upward — possible under any illumination mode
+  whenever Aₛ > 0).
+- **T** splits into: cloud-base-derived, cloud-side-derived, and clear-sky-direct
+  (Uniform domain only) net surface absorption.
+- **A** splits into: cloud-incident (the photon's very first ray-cast hit the cloud) vs.
+  clear-sky-incident (Uniform domain only: launched into clear sky, reflected by the
+  surface, and recycled into the cloud before being absorbed there).
+
+The clear-sky components are always zero for the three legacy illumination modes (they have
+no clear-sky photon source); the breakdown is otherwise identical there, and directly
+explains why "cloud top/base/side faces" R can exceed "cloud top/base faces only" R
+whenever Aₛ > 0 (the difference is exactly the cloud-side-exit population — see the table
+below).
+
+Under **Uniform domain** illumination specifically, an always-shown **ENTIRE DOMAIN** block
+reports the full-domain-normalized R_domain/T_domain/A_cloud budget (fractions of the
+*entire* launched domain, closing to 1.000), independent of the Observation-geometry
+dropdown above; the same "Show R/T/A components" toggle expands it to the same style of
+breakdown. A **"Show entire-domain plots"** toggle (bottom panel, Uniform domain only)
+similarly swaps the Reflected/Net Transmitted μ-histogram, BDF, and path-length plots from
+the cloud-element-only population to the domain-wide one (the domain-wide Net Transmitted
+view excludes the clear-sky-direct population — a true delta-function spike at exactly
+Θ₀ — from the plotted bars/mean, reporting its count as separate text instead).
+
+The table below summarizes which outcome bucket (R/T/S/A) each kind of photon exit is
+assigned to, for every combination now available — verified directly against the
+`reflectedCount()`/`transmittedNetCount()`/`sideExitCount()`/`domain*Count()` counter
+identities in `simstats.js`, at multiple Θ₀/Aₛ/ω₀/M combinations and for both Uniform
+domain and legacy illumination:
+
+| Exit / event | Obs. geometry: top/base faces only | Obs. geometry: top/base/side faces | ENTIRE DOMAIN (Uniform domain only, dropdown-independent) |
+|---|---|---|---|
+| Cloud-top exit (upward) | R | R | R |
+| Cloud-side exit (upward) | S | R | R |
+| Cloud-base-derived net surface absorption | T | T | T |
+| Cloud-side-derived net surface absorption | S | T | T |
+| Clear-sky-direct net surface absorption (Uniform domain only) | S | T | T |
+| Surface bypass (reflects, escapes upward, never (re-)touches cloud) | S | S | R |
+| Cloud interior absorption | A | A | A |
+
+Two verified identities fall out of this: **R_domain = R("top/base/side faces") + bypass**
+— "entire domain" R exceeds "top/base/side faces" R by exactly the bypass count, nothing
+else — and **T("top/base/side faces") already equals T_domain exactly**, since that
+Observation geometry already folds in cloud-side- *and* clear-sky-direct-derived surface
+absorption; only "top/base faces only" excludes those two (folding both into S instead).
+Full derivation (down to the individual per-crossing counters) is in
+`TODO-direct-surface-illumination.md`.
 
 Note that a single instrument (observer) can only sample a small part of the geometries given by these simulations. The full geometries are given so that the output can be filtered for a users specific use cases.
 
@@ -160,15 +231,18 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Cloud optical thickness τ | Total cloud optical thickness (0.01-100) | 10 |
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
-| Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side | Centered |
-| Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), top/base/side faces / cloud element (b), or entire scene (c) | Cloud top/base faces only |
+| Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain *(WIP, see above)* | Centered |
+| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination *(WIP)* | 4 |
+| Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), or top/base/side faces / cloud element (b) | Cloud top/base faces only |
 | HG asymmetry parameter (g) | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
 | Single-scattering albedo (ω₀) | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
 | Surface albedo (Aₛ) | Lambertian surface albedo (0 = black, 1 = non-absorbing) | 0.0 |
 | Cloud β_ext (km⁻¹) | Volume extinction coefficient (used to set cloud-surface aspect ratio) | 10.0 |
 | Cloud-base to surface (km) | Geometric gap thickness (used with β_ext to set cloud-surface aspect ratio) | 0.5 |
+| Show entire-domain plots | Bottom-panel plots use the domain-wide (not cloud-element-only) population; Uniform domain only *(WIP)* | off |
 | Footprint grid size | number of cloud top/base grid elements | 28 |
 | Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0); off also removes its render cost | on |
+| Show R/T/A components | Expand R/T/A into their constituent populations (any illumination mode) *(WIP, see above)* | off |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
 
 **Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Reset, Pause/Resume, Step
@@ -330,7 +404,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest: **v5.4.0** (2026-06-29).
+Latest tagged release: **v5.4.0** (2026-06-29). Uniform domain illumination and the R/T/A
+component breakdown (marked *WIP* above) are in progress toward **v6.0.0** — see
+CHANGELOG.md's `[Unreleased]` section — and not yet tagged or pushed.
 
 ---
 

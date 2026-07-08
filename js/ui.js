@@ -44,18 +44,123 @@ export const UI = {
     getSurfaceDistanceKm: function() { return UI._getClampedInput("surfaceDistanceKm", 0, 20, 0.5, "Cloud-base to surface distance"); },
 
     // Cloud-top incident entry mode:
-    //   "center"   — all photons enter at (x,y)=(0,0)  [default; reproducible]
-    //   "top"      — uniform over the cloud-top face
-    //   "top_side" — uniform over top + sunward side wall, projected-area weighted
+    //   "center"         — all photons enter at (x,y)=(0,0)  [default; reproducible]
+    //   "top"            — uniform over the cloud-top face
+    //   "top_side"       — uniform over top + sunward side wall, projected-area weighted
+    //   "uniform_domain" — TOA-uniform launch over the full M·W x M·D domain (see
+    //                      getDomainFactor); ray-cast to the first surface (cloud
+    //                      top / sunward side / ground). Subsumes "top" at M = 1.
     getPhotonEntryMode:   function() { return document.getElementById("photonEntry")?.value ?? "center"; },
+
+    // Domain factor M (dimensionless, M >= 1): full domain width = M x cloud
+    // width W, centered on the cloud (M x W/2 on each side). Only meaningful
+    // when illumination = "uniform_domain"; see TODO-direct-surface-
+    // illumination.md, "The core knob: domain factor".
+    getDomainFactor:      function() { return UI._getClampedInput("domainFactor", 1, 50, 4, "Domain factor M"); },
+
+    // Cloud fraction f_c = 1/M^2 (areal, 2D) -- NOT the same scaling as M (1D,
+    // linear). See TODO "The core knob: domain factor".
+    getCloudFraction: function() {
+      const M = UI.getDomainFactor();
+      return 1 / (M * M);
+    },
+
+    // "Show R/T/A components" checkbox (default off; id retained as
+    // "showDomainComponents" for continuity): expands the (a)/(b)/(c)/(d)-style
+    // R/T/A component breakdown, same collapsed-by-default pattern as "Show
+    // surface heatmap". Two call sites, mutually exclusive per run (see
+    // SimStats.updateDisplay()): under Illumination = "Uniform domain", expands
+    // the ENTIRE DOMAIN block; under any other (legacy) illumination mode,
+    // appends the breakdown under FINAL OUTCOMES instead (v6.0.1 -- see TODO
+    // "2.B/2.C" discussion). The underlying counters are general-purpose and
+    // meaningful whenever A_s > 0, regardless of illumination mode.
+    getShowDomainComponents: function() { return document.getElementById("showDomainComponents")?.checked ?? false; },
+
+    // "Show entire-domain plots" checkbox (default off; Illumination = "Uniform
+    // domain" only): swaps the bottom panel's Reflected/Net-Transmitted
+    // mu-histograms and BDF polar plots from the cloud-element view to the
+    // bypass-inclusive, domain-wide view (SimStats.*DomainWide() functions),
+    // independent of the Observation-geometry dropdown -- same "always
+    // available, unconditional" design as the ENTIRE DOMAIN scalar block. See
+    // TODO "Second round of live-UI feedback" for why this exists (the dropdown
+    // cleanup had silently removed the only way to see this in the plots).
+    getShowEntireDomainPlots: function() { return document.getElementById("showEntireDomainPlots")?.checked ?? false; },
+
+    // Minimum domain factor that avoids under-sampling direct sunward-wall
+    // illumination: the domain must extend at least tau_cloud*tan(theta0)
+    // beyond the cloud edge on the upwind side (the "reservoir" of TOA points
+    // whose descending ray clips the sunward wall). Derived from
+    // M*halfW >= halfW + tauCloud*tan(theta0) => M >= 1 + 2*(tauCloud/slabW)*tan(theta0).
+    // Depends only on theta0 and the tauCloud/slabW ratio. See TODO, "The core
+    // knob: domain factor" for the full derivation and worked examples.
+    getMinDomainFactor: function() {
+      const tauCloud = UI.getTauCloud();
+      const slabW    = UI.getHorizontalExtent();
+      const theta0   = UI.getTheta0Rad();
+      return 1 + 2 * (tauCloud / slabW) * Math.tan(theta0);
+    },
+
+    // Live, persistent warning (not the transient showLimitWarning banner):
+    // shown whenever illumination = "uniform_domain" and the current M is
+    // below getMinDomainFactor() for the current theta0/tauCloud/slabW. Call
+    // after any change to photonEntry, domainFactor, theta0, tauCloud, or
+    // hExtent.
+    updateDomainMarginWarning: function() {
+      const box = document.getElementById("domainMarginWarning");
+      if (!box) return;
+      if (UI.getPhotonEntryMode() !== "uniform_domain") {
+        box.style.display = "none";
+        return;
+      }
+      const mMin = UI.getMinDomainFactor();
+      const m    = UI.getDomainFactor();
+      if (m < mMin - 1e-9) {
+        box.textContent = `M = ${m.toFixed(2)} is below M ≈ ${mMin.toFixed(2)}, the minimum needed at this Θ₀/τ_cloud/W to fully capture direct sunward-wall illumination. Sunward-wall illumination will be under-sampled; increase M for realistic behavior at this Θ₀.`;
+        box.style.display = "block";
+      } else {
+        box.style.display = "none";
+      }
+    },
+
+    // Show/hide the domain-factor input row: only relevant when illumination
+    // = "uniform_domain". Called on photonEntry's onchange (and once at
+    // RunControl.init() to sync everything to the loaded selection).
+    onIlluminationChange: function() {
+      const group = document.getElementById("domainFactorGroup");
+      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      if (group) group.style.display = isUniformDomain ? "contents" : "none";
+      UI.updateDomainMarginWarning();
+
+      // "Show entire-domain plots" only has any effect under "Uniform domain"
+      // illumination (see getShowEntireDomainPlots). Force it off and disable
+      // it otherwise, so it can't be left checked-but-inert when switching to a
+      // legacy illumination mode -- user feedback: a stale-looking checked box
+      // that silently does nothing was confusing. Re-enabled (still unchecked)
+      // when switching back to "Uniform domain"; the user re-opts-in each time,
+      // same as it starts unchecked on first load.
+      const entireDomainBox = document.getElementById("showEntireDomainPlots");
+      if (entireDomainBox) {
+        if (!isUniformDomain) entireDomainBox.checked = false;
+        entireDomainBox.disabled = !isUniformDomain;
+      }
+      // Dim the label too (see CSS .controls label.dimmed) -- it's a plain
+      // sibling element, not a <label for=>-bound control, so disabling the
+      // checkbox alone doesn't visually dim it; native disabled-checkbox
+      // rendering was also too subtle on its own (see index.html CSS comment).
+      const entireDomainLabel = document.getElementById("showEntireDomainPlotsLabel");
+      if (entireDomainLabel) entireDomainLabel.classList.toggle("dimmed", !isUniformDomain);
+    },
 
     // Observation geometry: how exits are aggregated into the R/T/S budget and
     // the µ/BDF/path distributions (a pure post-processing choice; does not
-    // affect the simulated trajectories).
+    // affect the simulated trajectories). Only 2 values -- the old third value
+    // ("Entire scene") never fit as a peer of these two (it needs a clear-sky-
+    // sourced photon population that only exists under "Uniform domain"
+    // illumination); it's now the always-shown "ENTIRE DOMAIN" stats-panel block
+    // instead (see SimStats.buildDomainBlockText), independent of this selector.
     //   "top-base_faces" (a) — cloud top/base faces only (sides + surface bypass → S)
     //   "all_faces"      (b) — cloud element: top/base/side faces → R/T; surface-
     //                          reflected upward bypass (no cloud face) stays in S
-    //   "scene"          (c) — entire scene: all up → R, all down → T, S → 0
     getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "top-base_faces"; },
 
     // --- Display / visualization inputs ---

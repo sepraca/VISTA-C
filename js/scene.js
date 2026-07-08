@@ -39,6 +39,17 @@ export const Scene = {
       const L = UI.getHorizontalExtent();
       world.slabW = L;
       world.slabD = L;
+
+      // Full illumination-domain extent (M·W x M·D), used to size the rendered
+      // Lambertian surface plane so it visually matches the region photons are
+      // actually launched over. Legacy illumination modes (center/top/top_side)
+      // collapse to M=1, so domainW/domainD === slabW/slabD and rendering is
+      // unchanged from before this was added. See TODO-direct-surface-
+      // illumination.md, "Uniform domain" section, for the M·W domain definition.
+      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const M = isUniformDomain ? UI.getDomainFactor() : 1;
+      world.domainW = M * L;
+      world.domainD = M * L;
     },
 
     // Reset state.camera to the default view position.
@@ -98,8 +109,14 @@ export const Scene = {
       state.cloudGroup.add(bottomPlane);
 
       // Lambertian surface plane — opacity scales with A_s so a black surface
-      // is subtle while brighter surfaces are visually obvious.
+      // is subtle while brighter surfaces are visually obvious. Sized to the
+      // full illumination-domain extent (world.domainW/domainD), NOT the cloud
+      // extent, so that under "Uniform domain" illumination the drawn surface
+      // visually matches the M·W x M·D region photons are actually launched
+      // over. For legacy modes domainW/domainD === slabW/slabD, so this is
+      // pixel-identical to the pre-existing fixed-extent rendering.
       const surfaceAlbedo = UI.getSurfaceAlbedo();
+      const domainPlaneGeom = new THREE.PlaneGeometry(world.domainW, world.domainD);
       const surfaceMat = new THREE.MeshBasicMaterial({
         color: surfaceAlbedo > 0 ? 0xa855f7 : 0x1f2937,
         transparent: true,
@@ -107,11 +124,11 @@ export const Scene = {
         side: THREE.DoubleSide,
         depthWrite: false
       });
-      const surfacePlane = new THREE.Mesh(planeGeom, surfaceMat);
+      const surfacePlane = new THREE.Mesh(domainPlaneGeom, surfaceMat);
       surfacePlane.position.z = Coords.tauToZ(Coords.getSurfaceTau());
       state.cloudGroup.add(surfacePlane);
 
-      const surfaceEdges = new THREE.EdgesGeometry(planeGeom);
+      const surfaceEdges = new THREE.EdgesGeometry(domainPlaneGeom);
       const surfaceEdgeMat = new THREE.LineBasicMaterial({
         color: surfaceAlbedo > 0 ? 0xc084fc : 0x64748b,
         transparent: true,
@@ -120,6 +137,23 @@ export const Scene = {
       const surfaceEdge = new THREE.LineSegments(surfaceEdges, surfaceEdgeMat);
       surfaceEdge.position.z = Coords.tauToZ(Coords.getSurfaceTau()) + 0.005;
       state.cloudGroup.add(surfaceEdge);
+
+      // When the surface domain is wider than the cloud (M>1), also outline the
+      // cloud's own footprint AT the surface plane's z-level, dimly, so users can
+      // see where the (much smaller) cloud sits inside the wider launch domain —
+      // otherwise the size jump between cloud box and surface plane can read as
+      // just "the surface got bigger" rather than "here's the cloud within it."
+      if (world.domainW > world.slabW + 1e-9) {
+        const cloudFootprintGeom = new THREE.EdgesGeometry(planeGeom);
+        const cloudFootprintMat = new THREE.LineBasicMaterial({
+          color: 0x7dd3fc,
+          transparent: true,
+          opacity: 0.55
+        });
+        const cloudFootprintOutline = new THREE.LineSegments(cloudFootprintGeom, cloudFootprintMat);
+        cloudFootprintOutline.position.z = Coords.tauToZ(Coords.getSurfaceTau()) + 0.006;
+        state.cloudGroup.add(cloudFootprintOutline);
+      }
 
       // Vertical guide line showing the clear cloud-to-surface gap.
       const gapGuideMat = new THREE.LineBasicMaterial({

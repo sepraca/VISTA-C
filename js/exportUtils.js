@@ -6,6 +6,27 @@ import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
 import { BottomPanel } from './bottomPanel.js';
 
+// Legend box geometry, shared between drawExportLegend() and
+// drawExportLegendBottomCentered() so the two can never drift out of sync (a
+// literal duplicated-constant mismatch bit us earlier this session with the
+// old top-right legend's hardcoded width). LEGEND_COL_W=560 (up from an
+// original 340) leaves generous room for the longest label, "Downward
+// cloud-base crossings footprint" (39 characters) plus its swatch, at 20px
+// font -- the previous 340 let that label's text run past the column's own
+// boundary and out past the box's right edge entirely (confirmed by the
+// user's export: "the right edge of the legend box overlaps with a line of
+// text"). Exact glyph metrics aren't available outside a real browser canvas
+// (no headless canvas/measureText in this dev environment), so this is sized
+// with a deliberately generous safety margin (~14px/character allowance at
+// 20px font, well above a typical sans-serif's actual per-character width)
+// rather than tuned to the pixel -- comfortably fits, with room to spare.
+const LEGEND_COL_W = 560;
+const LEGEND_ROW_H = 32;
+const LEGEND_PAD = 10;
+const LEGEND_ROWS = 6;   // 12 entries / 2 columns
+const LEGEND_BOX_W = LEGEND_COL_W * 2 + 2 * LEGEND_PAD;
+const LEGEND_BOX_H = LEGEND_ROWS * LEGEND_ROW_H + 2 * LEGEND_PAD;
+
 export const Export = {
     downloadDataURL: function(dataURL, filename) {
       const link = document.createElement("a");
@@ -57,9 +78,42 @@ export const Export = {
 
     // Human-readable label for the cloud-top photon-illumination mode.
     photonEntryLabel: function(mode) {
-      return mode === "top"      ? "uniform top"
-           : mode === "top_side" ? "uniform top+side"
+      return mode === "top"            ? "uniform top"
+           : mode === "top_side"       ? "uniform top+side"
+           : mode === "uniform_domain" ? "uniform domain"
            : "centered";
+    },
+
+    // Domain-block lines for PNG headers (v6.0 Phase 2): empty array unless
+    // Illumination = "Uniform domain", so legacy-mode PNG exports are pixel-
+    // identical to before this feature existed.
+    //
+    // Deliberately NOT folded into "Obs geometry" (see getExportParameterLines
+    // below): that line describes the Observation-geometry dropdown, which
+    // still drives the FINAL OUTCOMES numbers (the blue R/T/A/S box) even when
+    // "Show entire-domain plots" is checked -- those two settings are
+    // independent by design (TODO decision #6), so relabeling "Obs geometry"
+    // to "entire domain" would misrepresent what the blue box's numbers
+    // actually are (they'd still be e.g. cloud top/base faces, not domain-wide
+    // -- R_domain/T_domain on THIS line are the true domain-wide numbers).
+    // Third line here is the correct place instead: it only describes the
+    // bottom-panel PLOTS specifically, which is exactly what it's true of.
+    getDomainOutputLines: function() {
+      if (UI.getPhotonEntryMode() !== "uniform_domain") return [];
+      const launched = Math.max(SimStats.stats.launched, 1);
+      const M = UI.getDomainFactor();
+      const fc = UI.getCloudFraction();
+      const Rd = SimStats.domainReflectedCount() / launched;
+      const Td = SimStats.domainTransmittedNetCount() / launched;
+      const Ad = SimStats.domainAbsorbedCount() / launched;
+      const lines = [
+        `Domain factor M=${M.toFixed(2)} (f_c=${fc.toFixed(4)}), boundary: open`,
+        `R_domain=${Rd.toFixed(3)}   T_domain=${Td.toFixed(3)}   R+T+A_cloud=${(Rd + Td + Ad).toFixed(3)}`
+      ];
+      if (UI.getShowEntireDomainPlots()) {
+        lines.push("Bottom-panel plots: entire domain (Reflected + Net Transmitted)");
+      }
+      return lines;
     },
 
     getExportParameterLines: function() {
@@ -158,12 +212,12 @@ export const Export = {
         ["#fef08a", "Scattering flash", "star"]
       ];
 
-      const colW = 340;
-      const rowH = 32;
+      const colW = LEGEND_COL_W;
+      const rowH = LEGEND_ROW_H;
       const rows = Math.ceil(entries.length / 2);
-      const pad = 10;
-      const boxW = colW * 2 + 2 * pad;
-      const boxH = rows * rowH + 2 * pad;
+      const pad = LEGEND_PAD;
+      const boxW = LEGEND_BOX_W;
+      const boxH = LEGEND_BOX_H;
 
       ctx.save();
       ctx.fillStyle = "rgba(71, 85, 105, 0.88)";
@@ -180,6 +234,29 @@ export const Export = {
       ctx.restore();
 
       return {width: boxW, height: boxH};
+    },
+
+    // Bottom-of-image legend layout (v6.0 follow-up): the top-right corner
+    // couldn't reliably fit both the legend AND the parameter/stat/domain
+    // column without either overlapping (original bug) or running off the
+    // right edge of the canvas (a first fix's failure mode -- confirmed by the
+    // user's Θ₀=60°, M=2 export, where the legend's right column got clipped).
+    // A second attempt split the legend into two boxes anchored to opposite
+    // edges at the bottom -- user feedback: keep it as ONE box (same layout as
+    // drawExportLegend above), just moved to the bottom and horizontally
+    // centered. Moving it off the top row at all still sidesteps the whole
+    // overlap-vs-clipping class of bug, since it no longer competes for
+    // horizontal space with the parameter/stat/domain column, which now lives
+    // entirely at the top (see download3DView -- stat/domain boxes right-
+    // justified there instead).
+    drawExportLegendBottomCentered: function(ctx, canvasWidth, canvasHeight) {
+      const margin = 60;
+      // drawExportLegend's box size is fixed (LEGEND_BOX_W/H above, no
+      // measureText involved), so it can be computed directly rather than
+      // drawing once just to read back the size.
+      const x = (canvasWidth - LEGEND_BOX_W) / 2;
+      const y = canvasHeight - LEGEND_BOX_H - margin;
+      return Export.drawExportLegend(ctx, x, y);
     },
 
     autoCropCanvas: function(canvas, options={}) {
@@ -253,22 +330,32 @@ export const Export = {
         // Draw only the visible 3D viewport (right of the UI panel).
         ctx.drawImage(source, panelPx, 0, viewW, source.height, 0, 0, viewW, source.height);
 
-        // Add context overlays: legend, key run inputs, and outcome statistics.
-        Export.drawExportLegend(ctx, canvasOut.width - 760, 55);
-        const paramBox = Export.drawExportParameterBox(ctx, 180, 55, {fontSize: 26});
+        // Add context overlays: key run inputs (top-left), outcome statistics
+        // and the entire-domain box (top-right, right-justified), and the
+        // legend (bottom, centered as one box -- see
+        // drawExportLegendBottomCentered). Three separate regions that never
+        // compete for the same horizontal space, which is what the earlier
+        // top-right-corner arrangement got wrong (first overlapped, then, after
+        // a partial fix, could clip off the right edge instead -- confirmed by
+        // the user's Θ₀=60°, M=2 export). Per user feedback, the stat/domain
+        // boxes are right-justified to the canvas edge (not just pushed clear
+        // of the legend), and the legend stays a single box, just moved down
+        // and centered rather than split in two.
+        //
+        // Left/right margins share one value (`margin`) so the parameter box's
+        // distance from the left edge visually matches the stat/domain boxes'
+        // distance from the right edge -- symmetric framing, per user request,
+        // and it maximizes the untouched 3D-view space between them.
+        const margin = 60;
+        const paramBox = Export.drawExportParameterBox(ctx, margin, 55, {fontSize: 26});
 
-        // Outcome statistics below the parameter box.
         const outcome = Export.getOutcomeStatisticLines();
         const statFontSize = 24;
         const statLineH = Math.round(statFontSize * 1.38);
-        const statX = 180 + paramBox.width + 12;
         const statY = 55;
         ctx.save();
         ctx.font = `700 ${statFontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
         const statColor = "#bfdbfe";
-        ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
-        ctx.strokeStyle = "rgba(226, 232, 240, 0.75)";
-        ctx.lineWidth = 1;
         // Measure width from the longest of the 3 rows
         const row1 = outcome.slice(0, 4).join(" ,   ");
         const row2 = outcome.slice(4, 6).join(" ,   ");
@@ -278,6 +365,40 @@ export const Export = {
                                ctx.measureText(row2).width,
                                ctx.measureText(row3).width) + 2 * statPad;
         const statH = 3 * statLineH + 2 * statPad;
+        ctx.restore();
+        // Right-justified: right edge flush with the same margin as the
+        // parameter box's left edge, regardless of measured width (a "ragged
+        // left, flush right" stack with the domain box below) -- clamped to
+        // never sit left of the parameter box's own right edge, in case a
+        // narrow export width or unusually long text would otherwise push the
+        // two into each other.
+        const leftBoundary = margin + paramBox.width + 12;
+        const statX = Math.max(canvasOut.width - statW - margin, leftBoundary);
+
+        // "Entire domain" box (v6.0 Phase 2): only present for "Uniform domain"
+        // illumination (getDomainOutputLines returns [] otherwise), so legacy-mode
+        // exports are pixel-identical to before this feature existed.
+        const domainLines = Export.getDomainOutputLines();
+        let domainW = 0, domainH = 0, domainX = 0;
+        if (domainLines.length > 0) {
+          ctx.save();
+          ctx.font = `700 ${statFontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          domainW = Math.max(...domainLines.map(l => ctx.measureText(l).width)) + 2 * statPad;
+          domainH = domainLines.length * statLineH + 2 * statPad;
+          ctx.restore();
+          domainX = Math.max(canvasOut.width - domainW - margin, leftBoundary);
+        }
+        const domainY = statY + statH + 12;
+
+        // Legend: single box, bottom-centered.
+        Export.drawExportLegendBottomCentered(ctx, canvasOut.width, canvasOut.height);
+
+        // Now draw the stat box (right-justified position from above).
+        ctx.save();
+        ctx.font = `700 ${statFontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+        ctx.strokeStyle = "rgba(226, 232, 240, 0.75)";
+        ctx.lineWidth = 1;
         ctx.fillRect(statX, statY, statW, statH);
         ctx.strokeRect(statX, statY, statW, statH);
         ctx.fillStyle = statColor;
@@ -285,6 +406,24 @@ export const Export = {
         ctx.fillText(row2, statX + statPad, statY + statPad + statFontSize + statLineH);
         ctx.fillText(row3, statX + statPad, statY + statPad + statFontSize + 2 * statLineH);
         ctx.restore();
+
+        // And the domain box, right-justified independently (its width usually
+        // differs from the stat box above it, so this is "ragged left, flush
+        // right" for the pair, not a shared left edge).
+        if (domainLines.length > 0) {
+          ctx.save();
+          ctx.font = `700 ${statFontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+          ctx.strokeStyle = "rgba(226, 232, 240, 0.75)";
+          ctx.lineWidth = 1;
+          ctx.fillRect(domainX, domainY, domainW, domainH);
+          ctx.strokeRect(domainX, domainY, domainW, domainH);
+          ctx.fillStyle = "#fde68a";
+          domainLines.forEach((line, i) => {
+            ctx.fillText(line, domainX + statPad, domainY + statPad + statFontSize + i * statLineH);
+          });
+          ctx.restore();
+        }
 
         const cropped = Export.autoCropCanvas(canvasOut, {pad: 70});
         const dataURL = cropped.toDataURL("image/png");
@@ -309,7 +448,36 @@ export const Export = {
         // Export at the panel's high-DPI native resolution.
         // Header is large enough for key settings plus outcome diagnostics.
         const scale = canvas2.width / 700;
-        const headerH = Math.round(236 * scale);
+        // Domain lines (v6.0 Phase 2): [] unless Illumination = "Uniform domain",
+        // so legacy-mode exports keep the exact same header height as before.
+        const domainLines = Export.getDomainOutputLines();
+        const domainLineH = Math.round(18 * scale);
+
+        // When "Show entire-domain plots" is active, the dropdown-driven Obs
+        // geometry setting and its associated outcome stats (R/T/A/S/Term,
+        // F_down_sfc/F_up_sfc) describe a DIFFERENT combiner than what's
+        // actually plotted below them in this export -- they don't change when
+        // the checkbox is toggled, but the plots do. Showing them invites
+        // exactly the misreading the domain block's own "Bottom-panel plots:
+        // entire domain" line exists to prevent, just one level more directly
+        // (numbers, not just a label). So: drop the Obs-geometry settings line
+        // and skip the outcome-stats rows entirely in that case -- the domain
+        // block's own R_domain/T_domain/closure numbers are what's actually
+        // relevant, and are already shown. Every other combination (legacy
+        // modes; Uniform Domain with the checkbox unchecked) is unaffected --
+        // pixel-identical to before.
+        const showEntireDomain = UI.getPhotonEntryMode() === "uniform_domain" && UI.getShowEntireDomainPlots();
+
+        const allLines = Export.getExportParameterLines();
+        const lines = showEntireDomain ? allLines.slice(0, -1) : allLines;   // drop trailing "Obs geometry" line
+        const outcome = showEntireDomain ? [] : Export.getOutcomeStatisticLines();
+
+        // Last settings row sits at y=140 regardless (its content just has one
+        // fewer item when Obs geometry is dropped); the outcome rows normally
+        // run through y=220. When outcome rows are skipped, the domain lines
+        // start right after the settings rows instead, one row-height down.
+        const domainStartY = showEntireDomain ? 166 : 220;
+        const headerH = Math.round((domainStartY + 16) * scale) + (domainLines.length > 0 ? domainLines.length * domainLineH + Math.round(8 * scale) : 0);
         const canvasOut = document.createElement("canvas");
         canvasOut.width = canvas2.width;
         canvasOut.height = canvas2.height + headerH;
@@ -326,21 +494,32 @@ export const Export = {
         ctx.fillText(title, 14 * scale, 30 * scale);
 
         ctx.font = `${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
-        const lines = Export.getExportParameterLines();
-        const outcome = Export.getOutcomeStatisticLines();
 
-        // Settings rows (12 lines incl. Photon illumination + Obs geometry: 3 / 3 / 3 / 3 across four rows)
+        // Settings rows (11 or 12 lines depending on whether Obs geometry was
+        // dropped: 3 / 3 / 3 / 3-or-2 across four rows)
         ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
         ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
         ctx.fillText(lines.slice(6, 9).join(" ,   "), 14 * scale, 114 * scale);
         ctx.fillText(lines.slice(9, 12).join(" ,   "), 14 * scale, 140 * scale);
 
-        // Outcome statistics rows (3 lines to prevent truncation)
-        ctx.fillStyle = "#bfdbfe";
-        ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
-        ctx.fillText(outcome.slice(0, 4).join(" ,   "), 14 * scale, 168 * scale);
-        ctx.fillText(outcome.slice(4, 6).join(" ,   "), 14 * scale, 194 * scale);
-        ctx.fillText(outcome.slice(6, 9).join(" ,   "), 14 * scale, 220 * scale);
+        // Outcome statistics rows (3 lines to prevent truncation) -- skipped
+        // entirely when they'd describe a different combiner than the plots
+        // below (see above).
+        if (outcome.length > 0) {
+          ctx.fillStyle = "#bfdbfe";
+          ctx.font = `bold ${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          ctx.fillText(outcome.slice(0, 4).join(" ,   "), 14 * scale, 168 * scale);
+          ctx.fillText(outcome.slice(4, 6).join(" ,   "), 14 * scale, 194 * scale);
+          ctx.fillText(outcome.slice(6, 9).join(" ,   "), 14 * scale, 220 * scale);
+        }
+
+        // "Entire domain" lines, in the extra header space reserved above.
+        if (domainLines.length > 0) {
+          ctx.fillStyle = "#fde68a";
+          domainLines.forEach((line, i) => {
+            ctx.fillText(line, 14 * scale, domainStartY * scale + (i + 1) * domainLineH);
+          });
+        }
 
         ctx.drawImage(canvas2, 0, headerH);
 
@@ -372,7 +551,11 @@ export const Export = {
     //   * Path-length distributions are exported as fixed-bin histograms that
     //     reproduce the on-screen panel exactly (24 bins, same adaptive max,
     //     long tail clipped into the final overflow bin) plus the true means.
-    SCHEMA_VERSION: "1.0",
+    // 1.1 (v6.0 Phase 2): added inputs.domain_factor/domain_boundary and
+    // outputs.cloud_fraction/uniform_domain_outputs, all conditional on
+    // Illumination = "Uniform domain" -- purely additive, no existing field
+    // removed or renamed, so 1.0 readers remain compatible.
+    SCHEMA_VERSION: "1.1",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -391,7 +574,7 @@ export const Export = {
         surface_albedo: UI.getSurfaceAlbedo(),
         beta_ext_km: UI.getCloudBetaExt(),
         surface_distance_km: UI.getSurfaceDistanceKm(),
-        photon_illumination: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side"
+        photon_illumination: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side" | "uniform_domain"
         rng_seed: RNG.currentSeed(),
         units: {
           tau_cloud: "optical depth (dimensionless)",
@@ -400,6 +583,14 @@ export const Export = {
           beta_ext_km: "km^-1", surface_distance_km: "km"
         }
       };
+
+      // domain_factor/domain_boundary only meaningful under "Uniform domain"
+      // illumination -- omitted otherwise rather than exported as meaningless.
+      const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      if (isDomain) {
+        inputs.domain_factor = UI.getDomainFactor();
+        inputs.domain_boundary = "open";   // Phase 3 adds "periodic"
+      }
 
       // --- Outputs (counts + normalized fluxes; mirrors the stats panel) ---
       // R/T/A/S are the OBSERVED budget under the active observation geometry.
@@ -415,7 +606,7 @@ export const Export = {
       const S = sideCount / launched;
       const Term = s.terminated / launched;
       const outputs = {
-        observation_geometry: SimStats.observationGeometryKey(),   // "top-base_faces" (a), "all_faces" (b), or "scene" (c)
+        observation_geometry: SimStats.observationGeometryKey(),   // "top-base_faces" (a) or "all_faces" (b)
         counts: {
           launched: s.launched,
           reflected: SimStats.reflectedCount(),
@@ -444,9 +635,53 @@ export const Export = {
                "'observation_geometry' sets how exits are bucketed: 'top-base_faces' = R/T from the " +
                "cloud top/base faces only (side exits, surface-reflected upward bypass, and side-derived " +
                "surface absorption all go to S); 'all_faces' = the cloud element (top/base/side faces → " +
-               "R/T), with only the surface-reflected upward bypass in S; 'scene' = entire scene (all " +
-               "upwelling → R, all downwelling → T, S = 0)."
+               "R/T), with only the surface-reflected upward bypass in S. Under 'Uniform domain' " +
+               "illumination this budget is still cloud-normalized (same denominator, all launched " +
+               "photons) -- see 'uniform_domain_outputs' below for the always-on, geometry-independent " +
+               "domain-wide total."
       };
+
+      // --- "Entire domain" outputs (v6.0 Phase 2) ---
+      // Only present when Illumination = "Uniform domain"; omitted otherwise since
+      // there is no domain concept for point-source/top/top_side launches. See TODO
+      // "Draft: panel & export wording" for the schema this mirrors.
+      if (isDomain) {
+        outputs.cloud_fraction = UI.getCloudFraction();
+
+        const RdCount = SimStats.domainReflectedCount();
+        const TdCount = SimStats.domainTransmittedNetCount();
+        const AdCount = SimStats.domainAbsorbedCount();
+        const Rd = RdCount / launched, Td = TdCount / launched, Ad = AdCount / launched;
+        const rc = SimStats.rComponents(), tc = SimStats.tComponents(), ac = SimStats.aComponents();
+        const flux = (count) => ({ flux: count / launched, count });
+
+        outputs.uniform_domain_outputs = {
+          domain_boundary: "open",   // Phase 3 adds "periodic"
+          R_domain: flux(RdCount),
+          R_components: {
+            cloud_top: flux(rc.cloudTop),
+            cloud_side: flux(rc.cloudSide),
+            clear_direct: flux(rc.clearDirect),
+            clear_via_cloud: flux(rc.clearViaCloud)
+          },
+          T_domain: flux(TdCount),
+          T_components: {
+            // 3 terms only -- T has no clear-via-cloud analogue to R's (d); see
+            // TODO "T and A component decomposition". via_cloud_base/via_cloud_side
+            // each still mix directly-cloud-incident with clear-sky-recycled
+            // origins (not split further here).
+            via_cloud_base: flux(tc.viaBase),
+            via_cloud_side: flux(tc.viaSide),
+            clear_direct: flux(tc.clearDirect)
+          },
+          A_cloud_domain: flux(AdCount),
+          A_cloud_components: {
+            cloud_incident: flux(ac.cloudIncident),
+            clear_recycled: flux(ac.clearRecycled)
+          },
+          closure_R_T_Acloud: Rd + Td + Ad
+        };
+      }
 
       // --- µ exit-angle histograms ---
       // Binning (must match simstats.muBinIndex): bin i covers

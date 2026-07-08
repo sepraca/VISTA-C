@@ -80,16 +80,64 @@ export const SimStats = {
       sideEscapeDown: 0,
       surfaceBypassUp: 0,
       totalScatterings: 0,
-      totalPath: 0
+      totalPath: 0,
+      // --- v6.0 "Uniform domain" component bookkeeping (Phase 2) ---
+      // R's (c)/(d) split: surfaceBypassUp (existing, unsplit total) divides into
+      // bypassClearDirect (touchedCloud=false, never touched the cloud box -- new
+      // "clear-direct" component (c)) and bypassViaCloud (touchedCloud=true, today's
+      // "clear-via-cloud" component (d)). Sum always equals surfaceBypassUp.
+      bypassClearDirect: 0,
+      bypassViaCloud: 0,
+      // T's (c) split: transmittedSide/surfaceReflectedSide (existing) mix genuine
+      // cloud-side arrivals with clear-direct arrivals (both tagged viaSide=true --
+      // see physics.js's uniform-domain launch resolution). These new counters
+      // isolate the touchedCloud=false subset so genuine "via cloud side" can be
+      // recovered as transmittedSide - transmittedClearDirect (and likewise for
+      // reflections), without changing the existing viaSide-based fields at all.
+      transmittedClearDirect: 0,
+      surfaceReflectedClearDirect: 0,
+      // A_cloud origin split (launch-region, not touched-cloud): cloud-incident
+      // (directly illuminated) vs. clear-recycled (clear-launched, bounced off the
+      // surface, re-entered the cloud, and was absorbed inside it). Sum always
+      // equals stats.absorbed.
+      absorbedCloudIncident: 0,
+      absorbedClearRecycled: 0
     },
 
     // --- Incremental bin accumulators ---
     muReflBins:     new Float64Array(MU_BINS),
-    muNetTransBins: new Float64Array(MU_BINS),          // signed (+down, -up) — TOTAL (base + side)
-    muSideTransBins: new Float64Array(MU_BINS),         // side-derived subset of muNetTransBins
+    // Net-Transmitted / surface-absorbed angular distributions (v6.0.1 rewrite --
+    // see TODO "3.A" discussion). TERMINAL-EVENT-ONLY construction: each photon
+    // contributes at most one +1 entry, at the angle of its actual terminal
+    // downward arrival at the surface (status "transmitted" at A_s=0, or
+    // "surface_absorbed" at A_s>0) -- reflections along the way are NOT binned
+    // at all. This replaces an earlier ±1 running-ledger scheme (arrival +1 at
+    // its own angle, reflection -1 at a DIFFERENT, freshly-resampled Lambertian
+    // angle) that summed to the right scalar total but could produce spurious
+    // negative bins wherever a bin's reflection subtraction outweighed its local
+    // arrival population -- most severely for Uniform Domain's clear-direct
+    // population (a true delta function at exactly Θ₀, so every OTHER bin had
+    // no matching arrivals to absorb the broadly-scattered Lambertian
+    // reflections). The new construction is a genuine non-negative count in
+    // every bin, for every illumination mode and every A_s, by construction --
+    // not just "doesn't happen to trigger" the old scheme's failure mode.
+    // muTransBaseBins: base-derived (viaSide=false )terminal arrivals -- always
+    // touchedCloud=true (only genuine cloud-base crossings reach this branch).
+    muTransBaseBins: new Float64Array(MU_BINS),
+    // muTransSideBins: side-derived (viaSide=true) terminal arrivals, RAW --
+    // mixes genuine cloud-side-wall arrivals with clear-direct arrivals (both
+    // tagged viaSide=true, see physics.js's uniform-domain launch resolution).
+    muTransSideBins: new Float64Array(MU_BINS),
+    // Decontaminated (touchedCloud=true only) subset of muTransSideBins, so the
+    // "cloud-only" views (default Uniform Domain display, sides included) show
+    // genuine cloud-transmitted structure, not the clear-direct population's
+    // degenerate single-angle spike. For legacy illumination modes (touchedCloud
+    // always true) this is bit-identical to muTransSideBins.
+    muTransSideCloudOnlyBins: new Float64Array(MU_BINS),
     bdfReflWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfNetWeights:  new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),   // TOTAL (base + side)
-    bdfSideWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),   // side-derived subset
+    bdfTransBaseWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfTransSideWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfTransSideCloudOnlyWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     // Terminal side-wall escape angular distributions, split by vertical
     // direction. Used only by observation geometry "b": upward escapes join the
     // reflected channel, downward escapes join the transmitted channel.
@@ -115,10 +163,21 @@ export const SimStats = {
     // Count identically equals the net-transmittance count
     // (transmitted - surfaceReflected), photon for photon.
     netTransmittedPathLengths: [],          // base-derived (geometry "a") surface-deposited paths
-    sideTransmittedPathLengths: [],         // side-derived surface-deposited paths (reassigned to S under "a", back to T under "b")
+    sideTransmittedPathLengths: [],         // side-derived surface-deposited paths, RAW (mixes genuine cloud-side arrivals with clear-direct's trivial zero-path arrivals -- see TODO "3.B")
+    // Decontaminated (touchedCloud=true only) subset of sideTransmittedPathLengths,
+    // used by the default (non-domain-wide) Transmitted path view so a clear-direct
+    // photon's exact-zero path (no optical depth in the clear-air gap) doesn't
+    // crash the reported mean. For legacy illumination modes (touchedCloud always
+    // true) this is bit-identical to sideTransmittedPathLengths.
+    sideTransmittedPathLengthsCloudOnly: [],
     sideEscapeUpPaths: [],                  // GENUINE upward side-wall escapes (join R under all_faces/scene)
     sideEscapeDownPaths: [],                // terminal downward side escapes (join T under all_faces/scene)
-    bypassPaths: [],                        // surface-reflected upward bypass (join R only under scene)
+    bypassPaths: [],                        // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
+    // Decontaminated (touchedCloud=true only) subset of bypassPaths -- the
+    // "clear-via-cloud" (d) component only, excluding clear-direct (c). Used to
+    // scale the entire-domain Reflected path-length panel's axis without being
+    // crushed by the (legitimate, but panel-breaking) clear-direct zero-spike.
+    bypassPathsCloudOnly: [],
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
     // (Re)create footprint grids at the current UI resolution. Called on
@@ -176,12 +235,17 @@ export const SimStats = {
       s.transmittedSide = 0; s.surfaceReflectedSide = 0;
       s.sideEscapeUp = 0; s.sideEscapeDown = 0; s.surfaceBypassUp = 0;
       s.totalScatterings = 0; s.totalPath = 0;
+      s.bypassClearDirect = 0; s.bypassViaCloud = 0;
+      s.transmittedClearDirect = 0; s.surfaceReflectedClearDirect = 0;
+      s.absorbedCloudIncident = 0; s.absorbedClearRecycled = 0;
       SimStats.muReflBins.fill(0);
-      SimStats.muNetTransBins.fill(0);
-      SimStats.muSideTransBins.fill(0);
+      SimStats.muTransBaseBins.fill(0);
+      SimStats.muTransSideBins.fill(0);
+      SimStats.muTransSideCloudOnlyBins.fill(0);
       SimStats.bdfReflWeights.fill(0);
-      SimStats.bdfNetWeights.fill(0);
-      SimStats.bdfSideWeights.fill(0);
+      SimStats.bdfTransBaseWeights.fill(0);
+      SimStats.bdfTransSideWeights.fill(0);
+      SimStats.bdfTransSideCloudOnlyWeights.fill(0);
       SimStats.muSideEscUpBins.fill(0);
       SimStats.muSideEscDownBins.fill(0);
       SimStats.bdfSideEscUpWeights.fill(0);
@@ -194,9 +258,9 @@ export const SimStats = {
       SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
       SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
-      SimStats.sideTransmittedPathLengths = [];
+      SimStats.sideTransmittedPathLengths = [];  SimStats.sideTransmittedPathLengthsCloudOnly = [];
       SimStats.sideEscapeUpPaths = [];  SimStats.sideEscapeDownPaths = [];
-      SimStats.bypassPaths = [];
+      SimStats.bypassPaths = [];  SimStats.bypassPathsCloudOnly = [];
     },
 
     // --- Observation geometry combiners ------------------------------------
@@ -237,9 +301,9 @@ export const SimStats = {
     transmittedMuBins() {
       const out = new Float64Array(MU_BINS);
       if (SimStats._sidesIncluded()) {
-        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] + SimStats.muSideEscDownBins[i];
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i] + SimStats.muTransSideBins[i] + SimStats.muSideEscDownBins[i];
       } else {
-        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muNetTransBins[i] - SimStats.muSideTransBins[i];
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i];
       }
       return out;
     },
@@ -252,12 +316,96 @@ export const SimStats = {
       return out;
     },
     transmittedBdfWeights() {
-      const out = new Float64Array(SimStats.bdfNetWeights.length);
+      const out = new Float64Array(SimStats.bdfTransBaseWeights.length);
       if (SimStats._sidesIncluded()) {
-        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] + SimStats.bdfSideEscDownWeights[i];
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i] + SimStats.bdfTransSideWeights[i] + SimStats.bdfSideEscDownWeights[i];
       } else {
-        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfNetWeights[i] - SimStats.bdfSideWeights[i];
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i];
       }
+      return out;
+    },
+    // Cloud-only variants of the above (v6.0 Phase 2): identical to
+    // transmittedMuBins/transmittedBdfWeights but built from the touchedCloud=true
+    // subset, so the clear-direct population (a delta function at exactly Θ₀ for
+    // unscattered domain launches) doesn't dominate/degenerate the plot. For
+    // legacy illumination modes (touchedCloud always true) this is bit-identical to
+    // the non-cloud-only version. bottomPanel.js uses these for the "Net
+    // Transmitted" plots; the domain-wide T_domain scalar (domainTransmittedNetCount)
+    // still reports the true total including clear-direct.
+    transmittedMuBinsCloudOnly() {
+      const out = new Float64Array(MU_BINS);
+      if (SimStats._sidesIncluded()) {
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i] + SimStats.muTransSideCloudOnlyBins[i] + SimStats.muSideEscDownBins[i];
+      } else {
+        for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i];
+      }
+      return out;
+    },
+    transmittedBdfWeightsCloudOnly() {
+      const out = new Float64Array(SimStats.bdfTransBaseWeights.length);
+      if (SimStats._sidesIncluded()) {
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i] + SimStats.bdfTransSideCloudOnlyWeights[i] + SimStats.bdfSideEscDownWeights[i];
+      } else {
+        for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i];
+      }
+      return out;
+    },
+    // Domain-wide (bypass-inclusive) variants of the Reflected / Net-Transmitted
+    // mu/BDF views (v6.0, "Show entire-domain plots" toggle -- see TODO
+    // "Second round of live-UI feedback"). Deliberately independent of the
+    // Observation-geometry dropdown, exactly like domainReflectedCount()/
+    // domainTransmittedNetCount() above (same "always-shown, unconditional"
+    // design as the ENTIRE DOMAIN scalar block) -- always includes side exits
+    // AND surface bypass, regardless of which of the two dropdown options is
+    // selected. Reflected's bypass population (Lambertian-diffuse surface
+    // reflection) is smooth, not degenerate. Net Transmitted's domain-wide view
+    // legitimately includes the clear-direct population's true zero-path/exact-Θ₀
+    // spike (see TODO "3.B" -- that spike is real, not a bookkeeping artifact,
+    // and the terminal-event-only construction above means it no longer produces
+    // spurious negative bins elsewhere, just a large genuine count at one angle).
+    reflectedMuBinsDomainWide() {
+      const out = new Float64Array(MU_BINS);
+      for (let i = 0; i < MU_BINS; i++)
+        out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i] + SimStats.muBypassBins[i];
+      return out;
+    },
+    reflectedBdfWeightsDomainWide() {
+      const out = new Float64Array(SimStats.bdfReflWeights.length);
+      for (let i = 0; i < out.length; i++)
+        out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i] + SimStats.bdfBypassWeights[i];
+      return out;
+    },
+    transmittedMuBinsDomainWide() {
+      const out = new Float64Array(MU_BINS);
+      for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i] + SimStats.muTransSideBins[i] + SimStats.muSideEscDownBins[i];
+      return out;
+    },
+    transmittedBdfWeightsDomainWide() {
+      const out = new Float64Array(SimStats.bdfTransBaseWeights.length);
+      for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i] + SimStats.bdfTransSideWeights[i] + SimStats.bdfSideEscDownWeights[i];
+      return out;
+    },
+    // Cloud-only variants of the domain-wide Net Transmitted views (v6.0.1 --
+    // see TODO "3.A"/"3.B" follow-up). Unlike Reflected's domain-wide bypass
+    // population (Lambertian-diffuse escape angle -- smooth, not degenerate,
+    // verified via harness: max/median bin ratio 1.67), Net Transmitted's
+    // clear-direct population arrives at exactly Θ₀ (unscattered), a true
+    // delta function that dominates one bin by ~50x over its neighbors (same
+    // verification). No axis/display choice can show that spike proportionally
+    // alongside genuine structure (same conclusion as the path-length fix), so
+    // these exclude it from the bars; the caller reports the excluded count as
+    // text via tComponents().clearDirect, same pattern as the path-length
+    // panel's clear-sky text line. Always side/escDown-inclusive, independent
+    // of the Observation-geometry dropdown -- same "entire domain" contract as
+    // transmittedMuBinsDomainWide() above, just decontaminated.
+    transmittedMuBinsDomainWideCloudOnly() {
+      const out = new Float64Array(MU_BINS);
+      for (let i = 0; i < MU_BINS; i++) out[i] = SimStats.muTransBaseBins[i] + SimStats.muTransSideCloudOnlyBins[i] + SimStats.muSideEscDownBins[i];
+      return out;
+    },
+    transmittedBdfWeightsDomainWideCloudOnly() {
+      const out = new Float64Array(SimStats.bdfTransBaseWeights.length);
+      for (let i = 0; i < out.length; i++) out[i] = SimStats.bdfTransBaseWeights[i] + SimStats.bdfTransSideCloudOnlyWeights[i] + SimStats.bdfSideEscDownWeights[i];
       return out;
     },
     reflectedCount() {
@@ -282,6 +430,202 @@ export const SimStats = {
       const residual = s.side - s.sideEscapeUp - s.sideEscapeDown - s.surfaceBypassUp;
       return residual + (SimStats._bypassInReflected() ? 0 : s.surfaceBypassUp);
     },
+
+    // --- v6.0 "Uniform domain" domain-wide totals and component breakdowns ---
+    // (Phase 2). These do NOT read the Observation-geometry dropdown at all --
+    // per TODO "Illumination / Observation geometry naming", the domain-wide
+    // (a)+(b)+(c)+(d) total is an always-shown report, independent of and in
+    // parallel with the dropdown-driven cloud-normalized R/T/A/S above. The
+    // formulas are exactly today's "scene" combiner math (all upwelling -> R, all
+    // net-downward -> T), just applied unconditionally instead of gated behind a
+    // removed dropdown value.
+    domainReflectedCount() {
+      const s = SimStats.stats;
+      return s.reflected + s.sideEscapeUp + s.surfaceBypassUp;
+    },
+    domainTransmittedNetCount() {
+      const s = SimStats.stats;
+      return (s.transmitted - s.surfaceReflected) + s.sideEscapeDown;
+    },
+    domainAbsorbedCount() {
+      return SimStats.stats.absorbed;
+    },
+    // Net transmitted count for the cloud-only mu/BDF views (excludes the
+    // clear-direct (c) component) -- matches what transmittedMuBinsCloudOnly()/
+    // transmittedBdfWeightsCloudOnly() actually plot, for a consistent N label.
+    transmittedNetCountCloudOnly() {
+      const tc = SimStats.tComponents();
+      return tc.viaBase + tc.viaSide;
+    },
+
+    // R components (a) cloud top, (b) cloud side, (c) clear-direct, (d)
+    // clear-via-cloud. Sum = domainReflectedCount(). Scalar counts only (see TODO
+    // Handoff decision 8 -- no new per-component angular/path bins).
+    rComponents() {
+      const s = SimStats.stats;
+      return {
+        cloudTop: s.reflected,
+        cloudSide: s.sideEscapeUp,
+        clearDirect: s.bypassClearDirect,
+        clearViaCloud: s.bypassViaCloud
+      };
+    },
+    // T components: via cloud base, via cloud side (genuine, decontaminated),
+    // clear-direct. Each is a NET (arrivals - reflections) count, so they sum
+    // exactly to domainTransmittedNetCount(). Base/side each still mix
+    // directly-cloud-incident with clear-sky-recycled origins (see TODO -- that
+    // finer split isn't tracked for T, only for A_cloud below).
+    tComponents() {
+      const s = SimStats.stats;
+      const viaBase = (s.transmitted - s.transmittedSide) - (s.surfaceReflected - s.surfaceReflectedSide);
+      const viaSide = (s.transmittedSide - s.transmittedClearDirect) - (s.surfaceReflectedSide - s.surfaceReflectedClearDirect) + s.sideEscapeDown;
+      const clearDirect = s.transmittedClearDirect - s.surfaceReflectedClearDirect;
+      return { viaBase, viaSide, clearDirect };
+    },
+    // A_cloud components: cloud-incident vs. clear-sky recycled (by launch
+    // region, not touched-cloud -- see TODO "T and A component decomposition").
+    // Sum = stats.absorbed exactly.
+    aComponents() {
+      const s = SimStats.stats;
+      return { cloudIncident: s.absorbedCloudIncident, clearRecycled: s.absorbedClearRecycled };
+    },
+
+    // Build the "ENTIRE DOMAIN" stats-panel block text (only called when
+    // Illumination = "Uniform domain"; see updateDisplay). Collapsed by default;
+    // the component breakdown is appended when "Show domain components" is
+    // checked (UI.getShowDomainComponents()), same pattern as "Show surface
+    // heatmap". Domain boundary is hardcoded to "open" until Phase 3 adds the
+    // periodic option.
+    buildDomainBlockText(launched) {
+      const M = UI.getDomainFactor();
+      const fc = UI.getCloudFraction();
+      const RdCount = SimStats.domainReflectedCount();
+      const TdCount = SimStats.domainTransmittedNetCount();
+      const AdCount = SimStats.domainAbsorbedCount();
+      const Rd = RdCount / launched, Td = TdCount / launched, Ad = AdCount / launched;
+      const closure = Rd + Td + Ad;
+      // Indentation uses non-breaking spaces, and the header is broken into
+      // short explicit lines rather than one long one -- same reasoning/fix
+      // as buildComponentBreakdownText above: this panel's `white-space:
+      // pre-line` CSS trims plain leading spaces at the start of a rendered
+      // line, and a single long line auto-wraps wherever it happens to
+      // overflow rather than at a chosen point. Sub-item wording/labels also
+      // brought in line with buildComponentBreakdownText's "from cloud top:"
+      // / "clear-sky incident:" style for consistency between the two panels.
+      const IND = "  ";
+
+      let text =
+`<b>RADIATIVE COMPONENTS: ENTIRE DOMAIN</b>
+ (Uniform domain illumination; domain boundary: open;
+ domain factor M=${M.toFixed(2)}, cloud fraction f_c=${fc.toFixed(4)})
+
+R_domain (all upwelling): ${Rd.toFixed(3)} (${RdCount})`;
+
+      if (UI.getShowDomainComponents()) {
+        const rc = SimStats.rComponents();
+        text += `
+${IND}from cloud top: ${(rc.cloudTop/launched).toFixed(3)} (${rc.cloudTop})
+${IND}from cloud side: ${(rc.cloudSide/launched).toFixed(3)} (${rc.cloudSide})
+${IND}from clear sky, direct: ${(rc.clearDirect/launched).toFixed(3)} (${rc.clearDirect})
+${IND}from clear sky, via cloud: ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})`;
+      }
+
+      text += `
+${UI.getShowDomainComponents() ? "\n" : ""}T_domain (all surface-absorbed): ${Td.toFixed(3)} (${TdCount})`;
+
+      if (UI.getShowDomainComponents()) {
+        const tc = SimStats.tComponents();
+        text += `
+${IND}from cloud base: ${(tc.viaBase/launched).toFixed(3)} (${tc.viaBase.toFixed(0)})
+${IND}from cloud side: ${(tc.viaSide/launched).toFixed(3)} (${tc.viaSide.toFixed(0)})
+${IND}(base/side mix cloud- and clear-sky-incident photons)
+${IND}from clear sky, direct: ${(tc.clearDirect/launched).toFixed(3)} (${tc.clearDirect.toFixed(0)})`;
+      }
+
+      text += `
+${UI.getShowDomainComponents() ? "\n" : ""}A_cloud (domain-normalized): ${Ad.toFixed(3)} (${AdCount})`;
+
+      if (UI.getShowDomainComponents()) {
+        const ac = SimStats.aComponents();
+        text += `
+${IND}cloud-incident: ${(ac.cloudIncident/launched).toFixed(3)} (${ac.cloudIncident})
+${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearRecycled})`;
+      }
+
+      text += `
+${UI.getShowDomainComponents() ? "\n" : ""}R_domain + T_domain + A_cloud: ${closure.toFixed(3)}`;
+
+      return text;
+    },
+
+    // Build the R/T/A component-breakdown text appended under FINAL OUTCOMES
+    // for LEGACY illumination modes only (see updateDisplay() -- Uniform Domain
+    // already gets the equivalent breakdown via the ENTIRE DOMAIN block above,
+    // so this would just duplicate it there). Shown when "Show domain
+    // components" is checked (UI.getShowDomainComponents()).
+    //
+    // rComponents()/tComponents()/aComponents() are general-purpose: they just
+    // read raw counters populated by surfaceInteraction()'s Lambertian-bounce
+    // logic, which runs for any cloud-base crossing or downward side exit
+    // whenever A_s > 0, regardless of launch mode (verified: Illumination=top,
+    // A_s=0.5 gives clearDirect=0 (trivially, no clear-launched population is
+    // possible outside Uniform Domain) but clearViaCloud nonzero and meaningful
+    // -- see TODO "2.B/2.C" discussion). At A_s=0 every bypass/clear-recycled
+    // term is trivially zero (surfaceInteraction never triggers), which is
+    // harmless -- just uninformative.
+    //
+    // R and T are restated here because they differ from the dropdown-driven
+    // FINAL OUTCOMES R/T above whenever the Observation-geometry dropdown
+    // excludes some faces, or excludes the surface-bounce "bypass" channel (see
+    // TODO "2.A" -- "all_faces" keeps bypass in S; this breakdown always
+    // includes it in R, matching the old "scene" combiner). A is NOT restated
+    // (cloud absorption has no geometry dependence at all -- domainAbsorbedCount()
+    // is always identical to the A already shown above), only its origin split.
+    buildComponentBreakdownText(launched) {
+      const RdCount = SimStats.domainReflectedCount();
+      const TdCount = SimStats.domainTransmittedNetCount();
+      const rc = SimStats.rComponents();
+      const tc = SimStats.tComponents();
+      const ac = SimStats.aComponents();
+
+      // Indentation uses non-breaking spaces ( ), not plain ASCII spaces.
+      // This panel's CSS is `white-space: pre-line`, which preserves forced
+      // newlines but -- per ordinary CSS whitespace-collapsing rules --
+      // trims plain collapsible spaces at the start of every rendered line
+      // (wrapped or forced). A leading "  from cloud top:" therefore rendered
+      // flush-left with no visible indent.   is explicitly excluded from
+      // that collapsing/trimming behavior, so it survives and shows as a
+      // real indent. Line breaks in the header below are also placed at the
+      // user's own specified points (verified short enough per-line to avoid
+      // additional mid-phrase auto-wrap in the panel).
+      const IND = "  ";
+
+      // Title wrapped in <b> -- the stats panel now renders via innerHTML
+      // (see updateDisplay) specifically so this and the FINAL OUTCOMES/
+      // SURFACE FLUX DIAGNOSTICS titles can be bold-faced; this function's
+      // return value has no other consumer (only updateDisplay calls it),
+      // so embedding a literal HTML tag here is safe.
+      return `<b>RADIATIVE COMPONENTS</b>
+ (independent of Observation-geometry dropdown selection;
+ can differ from R/T above when dropdown excludes some
+ faces or surface-reflected terms):
+
+R (all upwelling): ${(RdCount/launched).toFixed(3)} (${RdCount})
+${IND}from cloud top: ${(rc.cloudTop/launched).toFixed(3)} (${rc.cloudTop})
+${IND}from cloud side: ${(rc.cloudSide/launched).toFixed(3)} (${rc.cloudSide})
+${IND}from clear sky, direct: ${(rc.clearDirect/launched).toFixed(3)} (${rc.clearDirect})
+${IND}from clear sky, via cloud: ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})
+
+T (surface-absorbed): ${(TdCount/launched).toFixed(3)} (${TdCount})
+${IND}from cloud base: ${(tc.viaBase/launched).toFixed(3)} (${tc.viaBase.toFixed(0)})
+${IND}from cloud side: ${(tc.viaSide/launched).toFixed(3)} (${tc.viaSide.toFixed(0)})
+${IND}from clear sky, direct: ${(tc.clearDirect/launched).toFixed(3)} (${tc.clearDirect.toFixed(0)})
+
+Cloud absorption, A (see above):
+${IND}cloud-incident: ${(ac.cloudIncident/launched).toFixed(3)} (${ac.cloudIncident})
+${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearRecycled})`;
+    },
+
     // Path-length constituent arrays for the active geometry (returned as a
     // list of segments so consumers iterate without allocating a concat copy).
     reflectedPathSegments() {
@@ -291,42 +635,79 @@ export const SimStats = {
       return segs;
     },
     transmittedPathSegments() {
+      // Uses the cloud-only decontaminated side array (v6.0.1, see TODO "3.B") so
+      // a clear-direct photon's trivial zero path (no optical depth in the
+      // clear-air gap) doesn't crash the reported mean. For legacy modes this is
+      // bit-identical (touchedCloud always true, so no entries are excluded).
       return SimStats._sidesIncluded()
-        ? [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths]
+        ? [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths]
         : [SimStats.netTransmittedPathLengths];
+    },
+    // Domain-wide (bypass-inclusive) path-segment variants for the "Show
+    // entire-domain plots" toggle (v6.0) -- same pattern as
+    // reflectedMuBinsDomainWide()/transmittedMuBinsDomainWide() above, added
+    // after the user noticed the path-length panel still tracked the
+    // Observation-geometry dropdown even with the toggle checked (bottomPanel.js's
+    // drawPathOverlay() wasn't wired up the first time around). Always includes
+    // side exits + bypass, independent of the dropdown, matching
+    // domainReflectedCount()/domainTransmittedNetCount() exactly. Transmitted's
+    // domain-wide list is identical in form to the existing sidesIncluded=true
+    // branch above (T-side handling has always been the same for all_faces and
+    // the old "scene" -- see _obsGeom() comment) -- called out as its own
+    // function anyway so it's independent of the dropdown, not just coincidentally
+    // matching one of its settings.
+    // NOTE (v6.0.1, TODO "3.B"): these deliberately return the RAW bypassPaths/
+    // sideTransmittedPathLengths arrays, including the clear-direct population's
+    // exact-zero-path entries -- unlike transmittedPathSegments() above, this is
+    // NOT decontaminated, because "entire domain" is supposed to show the true,
+    // complete population. That zero-path spike is a real physical fact (clear-
+    // sky photons genuinely travel zero optical path before reaching the
+    // surface), not a bookkeeping artifact, and it grows with the domain factor
+    // M. bottomPanel.js's drawPathOverlay() separates it from the plotted bars
+    // and reports its count as text instead, using SimStats.bypassPathsCloudOnly/
+    // sideTransmittedPathLengthsCloudOnly (length difference = clear-direct count).
+    reflectedPathSegmentsDomainWide() {
+      return [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPaths];
+    },
+    transmittedPathSegmentsDomainWide() {
+      return [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths];
     },
 
     // Record a downward arrival at the surface plane (independent of surface
     // outcome): a downward cloud-base crossing, or (A_s > 0) a downward
     // side-wall exit that proceeds through clear air to the infinite surface.
-    // Called once per arrival, even if the photon is reflected back up.
-    // Contributes weight +1 to the net-transmitted µ and BDF accumulators.
+    // Called once per arrival, even if the photon is reflected back up and
+    // arrives again later. Scalar counters only -- angular (mu/BDF) binning for
+    // the "Net Transmitted" plots is done ONLY at a photon's actual terminal
+    // downward arrival (see record()'s "transmitted"/"surface_absorbed"
+    // branches), not here, since a non-terminal arrival that goes on to be
+    // reflected was never actually "transmitted" (see TODO "3.A").
     registerCloudBaseTransmission(result) {
       SimStats.stats.transmitted++;
       SimStats._addFootprint(SimStats.footTrans, result.xExit, result.yExit);
-      const i = muBinIndex(Math.abs(result.dirZ ?? 0));
-      const b = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
-      SimStats.muNetTransBins[i] += 1;
-      SimStats.bdfNetWeights[b] += 1;
       if (result.viaSide) {
         SimStats.stats.transmittedSide++;
-        SimStats.muSideTransBins[i] += 1;
-        SimStats.bdfSideWeights[b] += 1;
+      }
+      // touchedCloud=false => this arrival is the "clear-direct" (c) component
+      // (see TODO "T and A component decomposition"), tagged viaSide=true above as
+      // a bookkeeping stand-in (physics.js has no other pre-existing slot for it)
+      // -- isolate it here so genuine "via cloud side" = transmittedSide -
+      // transmittedClearDirect.
+      if (!result.touchedCloud) {
+        SimStats.stats.transmittedClearDirect++;
       }
     },
 
-    // Record a Lambertian surface reflection direction: weight -1 in the
-    // net-transmitted µ and BDF accumulators (net = down - up). Side-derived
-    // reflections (d.viaSide) are also tracked in the side-derived subset.
+    // Record a Lambertian surface reflection direction. Scalar counters only --
+    // see registerCloudBaseTransmission above: reflections are never terminal
+    // downward arrivals, so they no longer touch the Net Transmitted mu/BDF bins
+    // at all (v6.0.1 -- see TODO "3.A").
     registerSurfaceReflection(d) {
-      const i = muBinIndex(Math.abs(d.z ?? 0));
-      const b = bdfBinIndex(d.x, d.y, d.z);
-      SimStats.muNetTransBins[i] -= 1;
-      SimStats.bdfNetWeights[b] -= 1;
       if (d.viaSide) {
         SimStats.stats.surfaceReflectedSide++;
-        SimStats.muSideTransBins[i] -= 1;
-        SimStats.bdfSideWeights[b] -= 1;
+      }
+      if (!d.touchedCloud) {
+        SimStats.stats.surfaceReflectedClearDirect++;
       }
     },
 
@@ -352,8 +733,13 @@ export const SimStats = {
         SimStats.bdfReflWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
         SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "transmitted") {
+        // Terminal at A_s = 0 only: a genuine cloud-base crossing (never
+        // clear-direct -- at A_s = 0, surfaceInteraction always returns
+        // "surface_absorbed" instead, since the albedo draw can never succeed).
         SimStats.stats.finalTransmitted++;
         SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+        SimStats.muTransBaseBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
+        SimStats.bdfTransBaseWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
       } else if (result.status === "side_escape") {
         SimStats.stats.side++;
         // Record the escape direction so geometry "b" can reassign it: upward
@@ -369,6 +755,15 @@ export const SimStats = {
             SimStats.muBypassBins[ei] += 1;
             SimStats.bdfBypassWeights[eb] += 1;
             SimStats.bypassPaths.push(result.totalPath ?? 0);
+            // R's (c)/(d) split (see TODO "Component / outcome bookkeeping"):
+            // touchedCloud=false => (c) clear-direct (never touched the cloud box
+            // at all); touchedCloud=true => (d) today's clear-via-cloud meaning.
+            if (result.touchedCloud) {
+              SimStats.stats.bypassViaCloud++;
+              SimStats.bypassPathsCloudOnly.push(result.totalPath ?? 0);
+            } else {
+              SimStats.stats.bypassClearDirect++;
+            }
           } else {
             SimStats.stats.sideEscapeUp++;
             SimStats.muSideEscUpBins[ei] += 1;
@@ -387,18 +782,45 @@ export const SimStats = {
         // per absorbed photon). Geometry-independent: all physical landings are
         // binned, including side-derived ones that land beyond the cloud.
         SimStats._addSurfaceFootprint(result.xExit, result.yExit);
-        // Route the path by terminal geometry: a surface absorption reached via
-        // a side wall belongs to S under geometry "a", not the transmitted path
-        // histogram. (At A_s = 0 there are no surface absorptions, so this path
-        // is never side-derived and the example cases are unaffected.)
-        if (result.viaSide) SimStats.sideTransmittedPathLengths.push(result.totalPath ?? 0);
-        else                SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+        // Route the path AND the angular bin by terminal geometry: a surface
+        // absorption reached via a side wall belongs to S under geometry "a",
+        // not the transmitted path/angle histograms. (At A_s = 0 there are no
+        // surface absorptions, so this branch is never reached there.)
+        // Terminal-event-only mu/BDF binning (v6.0.1 -- see TODO "3.A"): this IS
+        // the actual terminal downward arrival (the albedo draw failed, so no
+        // further reflection/continuation happens), so its incoming direction
+        // (result.dirZ/dirX/dirY, still the arrival direction -- physics.js only
+        // reassigns `dir` to the Lambertian direction in the reflection branch)
+        // is exactly what should be binned, weight +1, no subtraction ever.
+        const ai = muBinIndex(Math.abs(result.dirZ ?? 0));
+        const ab = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
+        if (result.viaSide) {
+          SimStats.sideTransmittedPathLengths.push(result.totalPath ?? 0);
+          SimStats.muTransSideBins[ai] += 1;
+          SimStats.bdfTransSideWeights[ab] += 1;
+          if (result.touchedCloud) {
+            SimStats.sideTransmittedPathLengthsCloudOnly.push(result.totalPath ?? 0);
+            SimStats.muTransSideCloudOnlyBins[ai] += 1;
+            SimStats.bdfTransSideCloudOnlyWeights[ab] += 1;
+          }
+        } else {
+          SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+          SimStats.muTransBaseBins[ai] += 1;
+          SimStats.bdfTransBaseWeights[ab] += 1;
+        }
       } else if (result.status === "terminated") {
         // Photon hit the maxEvents safety cap in physics.js. Counted
         // separately so it can never masquerade as cloud absorption.
         SimStats.stats.terminated++;
       } else {
         SimStats.stats.absorbed++;
+        // A_cloud origin split (see TODO "T and A component decomposition"): uses
+        // launchRegion (fixed at launch), not touchedCloud, since every A_cloud
+        // photon trivially has touchedCloud=true (it's absorbed inside the cloud
+        // box) -- the meaningful split is whether it got there directly or was a
+        // clear-sky photon recycled in via a surface reflection.
+        if (result.launchRegion === "clear") SimStats.stats.absorbedClearRecycled++;
+        else                                 SimStats.stats.absorbedCloudIncident++;
       }
     },
 
@@ -443,23 +865,68 @@ export const SimStats = {
       const endpointShown = Math.min(endpointCap, endpointStored);
       const bottomMode   = document.getElementById("bottomPanelMode")?.value ?? "mu";
 
-      document.getElementById("stats").textContent =
+      // "ENTIRE DOMAIN" block: only shown for "Uniform domain" illumination (see
+      // TODO "Draft: panel & export wording"), independent of the Observation
+      // geometry dropdown above.
+      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const domainSection = isUniformDomain
+        ? "\n" + SimStats.buildDomainBlockText(launched) + "\n\n"
+        : "\n";
+
+      // R/T/A component breakdown under FINAL OUTCOMES, for LEGACY illumination
+      // modes only (v6.0.1 -- see TODO "2.B/2.C" discussion; Uniform Domain gets
+      // the equivalent breakdown via the ENTIRE DOMAIN block above already, so
+      // this is skipped there to avoid showing the same numbers twice). Placed
+      // AFTER "SURFACE FLUX DIAGNOSTICS" (same slot as domainSection, which it
+      // is concatenated with below) so both illumination families order their
+      // sections identically: FINAL OUTCOMES -> SURFACE FLUX DIAGNOSTICS ->
+      // RADIATIVE COMPONENTS (legacy) / RADIATIVE COMPONENTS: ENTIRE DOMAIN
+      // (Uniform Domain) -- per user request, matching the order Uniform
+      // Domain already had.
+      const componentSection = (!isUniformDomain && UI.getShowDomainComponents())
+        ? "\n" + SimStats.buildComponentBreakdownText(launched) + "\n"
+        : "";
+
+      // Rendered via innerHTML (not textContent) so the section titles below
+      // can be bold-faced with <b>; every interpolated value here is a
+      // formatted number, fixed English label, or Greek/Unicode symbol --
+      // none can contain "<"/">"/"&", so this is safe without escaping.
+      // Indentation below uses non-breaking spaces (same reasoning as
+      // buildComponentBreakdownText/buildDomainBlockText -- plain leading
+      // spaces are trimmed by this panel's `white-space: pre-line` CSS), and
+      // each header's title/parenthetical-subtitle now sit on their own
+      // lines (matching the RADIATIVE COMPONENTS style) rather than sharing
+      // one line, per user request for visual consistency across sections.
+      const IND = "  ";
+      // Split across two persistent divs (statsTop / statsMain) with the
+      // "Show R/T/A components" checkbox as static HTML sitting between them
+      // in index.html (see .component-checkbox-row) -- per user request, so
+      // the checkbox lives next to the FINAL OUTCOMES/RADIATIVE COMPONENTS
+      // text it controls instead of buried in the Visualization section.
+      // Splitting this way (rather than string-embedding the checkbox inside
+      // one rebuilt innerHTML block) keeps the checkbox a single stable DOM
+      // node -- never destroyed/recreated -- so its checked state and
+      // keyboard focus survive every updateDisplay() call untouched.
+      document.getElementById("statsTop").innerHTML =
 `Launched: ${s.launched}
+${activeInfo}`;
 
-FINAL OUTCOMES (observation geometry: ${SimStats.observationGeometryLabel()})
-Reflected flux (albedo), R: ${Rfinal.toFixed(3)} (${Rcount})
-Net flux transmittance (surface absorption), T: ${Tnet.toFixed(3)} (${Tcount})
-Cloud absorption, A: ${Acloud.toFixed(3)} (${s.absorbed})
-Flux exiting cloud sides, S: ${Sfinal.toFixed(3)} (${Scount})
-Terminated (event cap): ${Tterm.toFixed(3)} (${s.terminated})
-R + T + A + S + Term: ${finalSumRTAS.toFixed(3)}
+      document.getElementById("statsMain").innerHTML =
+`<b>FINAL OUTCOMES</b>
+(observation geometry: ${SimStats.observationGeometryLabel()})
+${IND}Reflected flux (albedo), R: ${Rfinal.toFixed(3)} (${Rcount})
+${IND}Net flux transmittance (surface absorption), T: ${Tnet.toFixed(3)} (${Tcount})
+${IND}Cloud absorption, A: ${Acloud.toFixed(3)} (${s.absorbed})
+${IND}Flux exiting cloud sides, S: ${Sfinal.toFixed(3)} (${Scount})
+${IND}Terminated (event cap): ${Tterm.toFixed(3)} (${s.terminated})
+${IND}R + T + A + S + Term: ${finalSumRTAS.toFixed(3)}
 
-SURFACE FLUX DIAGNOSTICS (total, physical surface; geometry-independent)
-F_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
-F_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
-Net surface absorption (F_down_sfc - F_up_sfc): ${totalSfcAbs.toFixed(3)} (${totalSfcAbsCount})
-
-Mean scatterings / photon: ${meanScat.toFixed(2)}
+<b>SURFACE FLUX DIAGNOSTICS</b>
+(total, physical surface; geometry-independent)
+${IND}F_down_sfc: ${EdownSfc.toFixed(3)} (${s.transmitted})
+${IND}F_up_sfc: ${EupSfc.toFixed(3)} (${s.surfaceReflected})
+${IND}Net surface absorption (F_down_sfc - F_up_sfc): ${totalSfcAbs.toFixed(3)} (${totalSfcAbsCount})
+${componentSection}${domainSection}Mean scatterings / photon: ${meanScat.toFixed(2)}
 Mean optical path / photon: ${meanPath.toFixed(2)}
 
 τ: ${UI.getTauCloud().toFixed(2)}
@@ -475,9 +942,7 @@ Bottom panel: ${bottomMode}
 Animate: ${UI.getAnimatePaths() ? "on" : "off"}
 Speed: ${UI.getAnimSpeed().toFixed(1)}
 Tail length: ${UI.getTailLength()}
-Scatter flashes: ${UI.getScatterFlashes() ? "on" : "off"}
-
-${activeInfo}`;
+Scatter flashes: ${UI.getScatterFlashes() ? "on" : "off"}`;
     }
 
   };

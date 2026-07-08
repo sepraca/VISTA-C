@@ -4,6 +4,116 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — work in progress toward v6.0.0
+
+**Not yet tagged/released.** Direct clear-sky (surface) illumination for a non-black
+surface (Aₛ > 0), plus a general-purpose R/T/A component breakdown. Only the **open/
+isolated** domain boundary is implemented so far — periodic domain tiling and a rigorous
+sub-domain BRDF/observation-pixel treatment are planned but not yet built (see
+`TODO-direct-surface-illumination.md`), so any of the below is still subject to change
+before the v6.0.0 tag.
+
+### Added
+- **New "Uniform domain" illumination mode.** Every previous illumination mode (centered,
+  uniform cloud-top, uniform cloud-top + sunward side) launches photons only onto the
+  cloud itself. "Uniform domain" instead launches a TOA-uniform beam over a domain
+  **M times wider than the cloud** (new **domain factor M ≥ 1** input) and ray-casts each
+  photon to its first surface — cloud top, sunward side wall, or, new, the clear ground.
+  This is what lets a reflective surface (Aₛ > 0) be illuminated directly by the sun, not
+  only through the cloud, closing a real physics gap: R/T/A previously described only what
+  the cloud does to light that already hits the cloud, not what a satellite pixel or model
+  grid cell sees over cloud plus bright clear sky.
+- **Cloud fraction f_c = 1/M²**, reported alongside the domain factor. Note M is a **1D**
+  (linear) scaling and f_c is **2D** (areal) — M = 2 means f_c = 0.25, not "half the cloud
+  fraction."
+- **"ENTIRE DOMAIN" report block** (Uniform domain illumination only): an always-shown
+  domain-normalized R_domain/T_domain/A_cloud budget (fractions of the *entire* launched
+  domain, closing to 1.000), independent of the Observation-geometry dropdown. A **"Show
+  R/T/A components"** checkbox expands it to a full breakdown of each component's origin
+  (see below) — see the illumination × observation-geometry × outcome table below for how
+  this relates to the existing Observation-geometry-driven R/T/A/S numbers.
+- **R/T/A component breakdown**, under the same "Show R/T/A components" checkbox —
+  available for **every** illumination mode, not just Uniform domain: Reflected splits into
+  cloud-top / cloud-side / clear-sky-direct / clear-sky-via-cloud; Net transmitted splits
+  into cloud-base / cloud-side / clear-sky-direct; Cloud absorption splits into
+  cloud-incident vs. clear-sky-incident origins. (The clear-sky components are always zero
+  for legacy illumination modes, which have no clear-sky photon source; the breakdown is
+  otherwise identical for those modes and directly explains why, e.g., "cloud top/base/side
+  faces" R can exceed "cloud top/base faces only" R — see the table below.)
+- **"Show entire-domain plots" toggle** (bottom panel, Uniform domain only): swaps the
+  Reflected and Net Transmitted μ-histogram / BDF / path-length plots from the
+  cloud-element-only population to the domain-wide one. The domain-wide Net Transmitted
+  view excludes the clear-sky-direct population from the plotted bars/mean (it's a true
+  delta-function spike at exactly Θ₀ that no shared axis could show proportionally
+  alongside real structure) and reports its count as separate text instead.
+- **Domain-margin warning**: a live banner flags when the chosen M is smaller than the
+  minimum needed to fully capture direct sunward-wall illumination at the current
+  Θ₀/τ_cloud/horizontal-extent combination (M_min = 1 + 2·(τ_cloud/W)·tanΘ₀).
+- JSON export: `domain_factor`/`domain_boundary` inputs and `cloud_fraction`/
+  `uniform_domain_outputs` (nested R/T/A component breakdowns) outputs, present only for
+  Uniform domain runs. Schema version 1.0 → 1.1 (additive only; 1.0 readers unaffected).
+
+### Changed
+- **Net Transmitted μ-histogram/BDF now use terminal-event-only binning.** The previous
+  construction (an arrival/reflection running ledger) could show spurious negative bins
+  under Uniform domain, where the clear-sky-direct population's exit angle is a true delta
+  function; every mode and geometry is now guaranteed non-negative bins by construction.
+  Legacy-mode outputs are unchanged (bit-identical).
+- Path-length distributions decontaminate the clear-sky-direct (exactly-zero optical path)
+  population from the plotted bars and reported mean under Uniform domain, instead of
+  crushing the axis scale and biasing the mean toward zero; its count is reported as
+  separate text. Legacy-mode outputs are unchanged.
+- PNG exports: an entire-domain-plots export no longer shows Observation-geometry-driven
+  stats that don't describe what's actually plotted below them; the on-screen 3D-view
+  legend moved to a bottom-center band and widened (previously could overlap or clip past
+  the canvas edge at some export widths); parameter/stat/domain boxes now share symmetric
+  margins; BDF plot captions shortened so they no longer run off the canvas edges.
+- Stats panel: FINAL OUTCOMES, SURFACE FLUX DIAGNOSTICS, and the new RADIATIVE COMPONENTS /
+  ENTIRE DOMAIN sections reformatted with consistent indentation and bold section titles;
+  "Active photon" moved near the top of the panel (previously at the very bottom); "Show
+  R/T/A components" checkbox relocated next to the text it controls (previously grouped
+  with unrelated Visualization-only toggles).
+- 3D view: the rendered surface plane now scales with the Uniform domain's M-factor domain
+  width (previously always rendered at the cloud's own footprint size regardless of M), with
+  a thin outline marking the cloud's own footprint for scale reference at M > 1.
+
+### Fixed
+- `photonEntryLabel()` had no case for the new "uniform_domain" mode (silently fell back to
+  "centered" in exports).
+
+### New illumination × observation-geometry × outcome bookkeeping
+
+The table below summarizes which outcome bucket (R/T/S/A) each kind of photon exit is
+assigned to, for every combination now available — verified against the actual counter
+identities in `simstats.js` (`reflectedCount()`/`transmittedNetCount()`/`sideExitCount()`/
+`domain*Count()`), not just derived by inspection. "Bypass" is a surface-reflected photon
+that escapes upward without ever (re-)touching a cloud face (only possible for Aₛ > 0, any
+illumination mode); "clear-sky-direct" only exists under Uniform domain illumination.
+
+| Exit / event | Obs. geometry: top/base faces only | Obs. geometry: top/base/side faces | ENTIRE DOMAIN (Uniform domain only, dropdown-independent) |
+|---|---|---|---|
+| Cloud-top exit (upward) | R | R | R |
+| Cloud-side exit (upward) | S | R | R |
+| Cloud-base-derived net surface absorption | T | T | T |
+| Cloud-side-derived net surface absorption | S | T | T |
+| Clear-sky-direct net surface absorption (Uniform domain only) | S | T | T |
+| Surface bypass (reflects, escapes upward, never (re-)touches cloud) | S | S | R |
+| Cloud interior absorption | A | A | A |
+
+Two verified identities fall out of this: **R_domain = R(top/base/side faces) + bypass** —
+"entire domain" R exceeds "top/base/side faces" R by exactly the bypass count, nothing
+else — and **T(top/base/side faces) already equals T_domain exactly**; there is no
+further T gain from selecting "entire domain," because "top/base/side faces" already
+folds in cloud-side- *and* clear-sky-direct-derived surface absorption. Only "top/base
+faces only" excludes those two from T (folding both into S instead) — confirmed
+numerically (Θ₀=60°, Aₛ=0.5, M=3): S under "top/base/side faces" equals the bypass count
+exactly, with nothing else left in S. This is also why "top/base/side faces" R can be
+noticeably larger than "top/base faces only" R under Uniform domain illumination: the gap
+is exactly the cloud-side-exit population, now visible directly in the R/T/A component
+breakdown above. Full derivation (including the underlying per-crossing counters) is in
+`TODO-direct-surface-illumination.md`'s "Component / outcome bookkeeping" and "T and A
+component decomposition" sections.
+
 ## [5.4.0] — 2026-06-29
 
 Rendering-performance release. No change to the physics, statistics, or any exported

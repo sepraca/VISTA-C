@@ -107,6 +107,19 @@
     transform: scale(1.15);
   }
 
+  /* Native disabled-checkbox rendering is too subtle to notice at this scale
+     in some browsers/OS themes -- make it unambiguous. Labels for disabled
+     controls aren't natively dimmed (they're plain siblings, not <label for=>
+     bound), so JS toggles a matching class on the label directly (see
+     UI.onIlluminationChange -- #showEntireDomainPlots/-Label). */
+  input[type="checkbox"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .controls label.dimmed {
+    color: #64748b;
+  }
+
   input[type="range"] {
     width: 70px;
   }
@@ -147,12 +160,28 @@
     flex-wrap: wrap;
   }
 
-  #stats {
-    margin-top: 10px;
+  #statsTop, #statsMain {
     font-size: 12px;
     line-height: 1.45;
     color: #e2e8f0;
     white-space: pre-line;
+  }
+  #statsTop {
+    margin-top: 10px;
+  }
+
+  /* Standalone row for the "Show R/T/A components" checkbox: pulled out of
+     the .controls grid (see index.html body) and placed between #statsTop
+     and #statsMain instead, per user request -- it was buried in the
+     Visualization section, far from the FINAL OUTCOMES/RADIATIVE COMPONENTS
+     text it actually controls. This is a plain flex row, not a grid cell,
+     since it's no longer part of the .controls grid. */
+  .component-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 4px;
+    font-size: 13px;
   }
 
   #exportButtons {
@@ -295,6 +324,22 @@
     display: none;
   }
 
+  /* Persistent (not auto-hiding) inline warning inside the controls panel:
+     flags when the domain factor M is too small to fully capture direct
+     sunward-wall illumination at the current Θ₀/τ_cloud/W. */
+  #domainMarginWarning {
+    grid-column: 1 / -1;
+    display: none;
+    background: rgba(251, 191, 36, 0.16);
+    color: #fde68a;
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-size: 11.5px;
+    line-height: 1.35;
+    margin: -2px 0 2px;
+  }
+
   #errorBox {
     display: none;
     position: absolute;
@@ -345,26 +390,32 @@
     <input id="photonCount" type="number" value="400" min="1" max="10000000" onblur="UI.getPhotonCount()">
 
     <label>Cloud optical thickness τ</label>
-    <input id="tauCloud" type="number" value="10" min="0.01" max="100" step="0.01" onblur="UI.getTauCloud(); RunControl.resetScene()">
+    <input id="tauCloud" type="number" value="10" min="0.01" max="100" step="0.01" onblur="UI.getTauCloud(); RunControl.resetScene(); UI.updateDomainMarginWarning()">
 
     <label>Horizontal extent (optical path)</label>
-    <input id="hExtent" type="number" value="40" min="2" max="500" step="1" onblur="UI.getHorizontalExtent(); RunControl.resetScene()">
+    <input id="hExtent" type="number" value="40" min="2" max="500" step="1" onblur="UI.getHorizontalExtent(); RunControl.resetScene(); UI.updateDomainMarginWarning()">
 
     <label>Incident zenith Θ₀</label>
-    <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad()">
+    <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad(); UI.updateDomainMarginWarning()">
 
-    <label>Photon illumination</label>
-    <select id="photonEntry">
+    <label>Illumination geometry</label>
+    <select id="photonEntry" onchange="UI.onIlluminationChange(); BottomPanel.drawBottomPanel()">
       <option value="center" selected>Centered (point source)</option>
       <option value="top">Uniform cloud top</option>
       <option value="top_side">Uniform cloud top + sunward side</option>
+      <option value="uniform_domain">Uniform domain (cloud and clear sky)</option>
     </select>
+
+    <div id="domainFactorGroup" style="display:none">
+      <label>Domain factor M (domain width = M × cloud width)</label>
+      <input id="domainFactor" type="number" value="4" min="1" max="50" step="0.1" onblur="UI.getDomainFactor(); UI.updateDomainMarginWarning(); RunControl.resetScene()">
+      <div id="domainMarginWarning"></div>
+    </div>
 
     <label>Observation geometry</label>
     <select id="observationGeometry" onchange="SimStats.updateDisplay()">
       <option value="top-base_faces" selected>Cloud top/base faces only</option>
       <option value="all_faces">Cloud top/base/side faces (cloud element)</option>
-      <option value="scene">Entire scene</option>
     </select>
 
     <label>HG asymmetry parameter (g)</label>
@@ -397,6 +448,9 @@
       <option value="linear" selected>linear 0–1</option>
       <option value="log">log 0.01–1</option>
     </select>
+
+    <label id="showEntireDomainPlotsLabel">Show entire-domain plots</label>
+    <input id="showEntireDomainPlots" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
 
     <div class="group-head">Visualization</div>
 
@@ -440,7 +494,14 @@
     <button onclick="Scene.resetCamera()">Reset View</button>
   </div>
 
-  <div id="stats">Loading 3-D renderer...</div>
+  <div id="statsTop">Loading 3-D renderer...</div>
+
+  <div class="component-checkbox-row">
+    <label>Show R/T/A components</label>
+    <input id="showDomainComponents" type="checkbox" onchange="SimStats.updateDisplay()">
+  </div>
+
+  <div id="statsMain"></div>
 </div>
 
 <div id="exportButtons">

@@ -80,19 +80,70 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      // Bins are accumulated incrementally in SimStats. The net-transmitted
-      // bins carry signed weights (+1 per downward base/surface arrival,
-      // -1 per surface reflection), so the bars show net (down − up) energy
-      // per µ bin; identical to a gross histogram when A_s = 0.
-      const nNetTrans = SimStats.transmittedNetCount();
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.reflectedMuBins(), 70, 42, 260, 118, "#60a5fa", "Reflected", SimStats.reflectedCount());
-      BottomPanel.drawMuOverlayHistogram(ctx2, SimStats.transmittedMuBins(), 390, 42, 260, 118, "#86efac", "Transmitted (net downward)", nNetTrans);
+      // Bins are accumulated incrementally in SimStats via a terminal-event-only
+      // construction (v6.0.1 -- each photon contributes at most one +1, at the
+      // angle of its actual terminal downward arrival; reflections are never
+      // binned -- see TODO "3.A"). Under "Uniform domain" illumination, use the
+      // cloud-only subset (excludes the clear-direct component, which arrives
+      // unscattered at exactly Θ0 and would otherwise dominate this plot as a
+      // single degenerate spike). Bit-identical to the full count for legacy
+      // illumination modes (touchedCloud is always true there).
+      // "Show entire-domain plots" (v6.0) overrides both to the bypass-inclusive,
+      // domain-wide view -- independent of the Observation-geometry dropdown,
+      // same as the ENTIRE DOMAIN scalar block. Reflected's bypass population is
+      // smooth (Lambertian-diffuse escape angle, verified max/median bin ratio
+      // 1.67 -- no spike, no fix needed). Net Transmitted's clear-direct
+      // population IS a true delta function at Θ0 (verified ~50x the
+      // neighboring bins) that would otherwise dominate the bars regardless of
+      // scale, so it's excluded from the bars here too (same treatment as the
+      // path-length panel, TODO "3.B") and reported as a separate text count
+      // instead -- see the clear-direct annotation below.
+      const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const showEntireDomain = isDomain && UI.getShowEntireDomainPlots();
+      const reflMuBins = showEntireDomain ? SimStats.reflectedMuBinsDomainWide() : SimStats.reflectedMuBins();
+      const reflN = showEntireDomain ? SimStats.domainReflectedCount() : SimStats.reflectedCount();
+      // nNetTrans is always the TRUE total (matches the scalar T_domain count),
+      // even though the clear-direct spike isn't drawn as a bar under entire domain.
+      const nNetTrans = showEntireDomain ? SimStats.domainTransmittedNetCount()
+                      : isDomain ? SimStats.transmittedNetCountCloudOnly() : SimStats.transmittedNetCount();
+      const transMuBins = showEntireDomain ? SimStats.transmittedMuBinsDomainWideCloudOnly()
+                        : isDomain ? SimStats.transmittedMuBinsCloudOnly() : SimStats.transmittedMuBins();
+      // "(entire domain)"/"(cloud-only)" per-title suffixes were dropped for
+      // the entire-domain case: the exported PNG's domain box now states
+      // "Bottom-panel plots: entire domain" once (see getDomainOutputLines in
+      // exportUtils.js), so repeating it in both titles was redundant AND was
+      // the direct cause of a title-overlap bug the user reported (the two
+      // panels sit only 320px apart center-to-center; the longer suffixed
+      // titles were long enough to bridge that gap). Same titles now regardless
+      // of Observation geometry/entire-domain state, other than the pre-existing
+      // "(cloud-only)" note for the default uniform-domain-but-unchecked case.
+      const reflLabel = "Reflected";
+      const transMuLabel = (isDomain && !showEntireDomain) ? "Transmitted (net downward, cloud-only)" : "Transmitted (net downward)";
+      BottomPanel.drawMuOverlayHistogram(ctx2, reflMuBins, 70, 42, 260, 118, "#60a5fa", reflLabel, reflN);
+      BottomPanel.drawMuOverlayHistogram(ctx2, transMuBins, 390, 42, 260, 118, "#86efac", transMuLabel, nNetTrans);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "12px system-ui";
       ctx2.textAlign = "center";
-      ctx2.fillText("μ = 1: perpendicular / vertical exit", 200, 224);
-      ctx2.fillText("μ = 0: near-horizontal exit", 520, 224);
+      ctx2.fillText("μ = 1: perpendicular / vertical exit", 200, 222);
+      ctx2.fillText("μ = 0: near-horizontal exit", 520, 222);
+
+      // Clear-sky direct count, shown only when relevant (entire-domain view
+      // AND at least one such photon exists) -- see the comment above; same
+      // pattern as the path-length panel's clear-sky text line.
+      if (showEntireDomain) {
+        const clearDirectCount = SimStats.tComponents().clearDirect;
+        if (clearDirectCount > 0) {
+          const pct = nNetTrans ? (100 * clearDirectCount / nNetTrans).toFixed(1) : "0.0";
+          ctx2.font = "10px system-ui";
+          ctx2.fillStyle = "#94a3b8";
+          ctx2.fillText(
+            `Clear-sky direct (arrives at exactly Θ₀, excluded from Transmitted bars above): N=${clearDirectCount.toFixed(0)} (${pct}% of total)`,
+            w / 2,
+            236
+          );
+        }
+      }
     },
 
     // binCounts: pre-accumulated bin array (length MU_BINS), bin 0 = µ near 1
@@ -227,19 +278,43 @@ export const BottomPanel = {
         for (const arr of segs) { for (const v of arr) sum += v; n += arr.length; }
         return n ? sum / n : 0;
       }
-      const reflSegs  = SimStats.reflectedPathSegments();
-      const transSegs = SimStats.transmittedPathSegments();
-      const meanR = segMean(reflSegs);          // active-geometry means (drive the printed labels)
+      // "Show entire-domain plots" (v6.0) overrides the Observation-geometry
+      // dropdown here too, same as the mu-histogram/BDF panels -- always
+      // includes side exits + bypass, independent of which of the two dropdown
+      // options is selected. See TODO "Second round of live-UI feedback" /
+      // the follow-up note on drawPathOverlay() not being wired up initially.
+      const isDomainPath = UI.getPhotonEntryMode() === "uniform_domain";
+      const showEntireDomainPath = isDomainPath && UI.getShowEntireDomainPlots();
+      const reflSegs  = showEntireDomainPath ? SimStats.reflectedPathSegmentsDomainWide() : SimStats.reflectedPathSegments();
+      const transSegs = showEntireDomainPath ? SimStats.transmittedPathSegmentsDomainWide() : SimStats.transmittedPathSegments();
+      const meanR = segMean(reflSegs);          // TRUE total mean (includes the clear-sky zero-path spike when entire-domain)
       const meanT = segMean(transSegs);
 
-      // The x-axis scale is taken from the FULL, observation-geometry-INDEPENDENT
-      // path sets (all reflected-channel + all transmitted-channel paths), so the
-      // axis and bin edges are identical across a/b/c. Only the plotted bars and
-      // the printed means change with the geometry selection — this avoids the
-      // illusion of differing transmitted distributions when only the axis moved.
-      const allReflPaths  = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPaths];
-      const allTransPaths = [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths];
-      const scaleMean = Math.max(segMean(allReflPaths), segMean(allTransPaths));
+      // Clear-sky direct (touchedCloud=false) photons travel exactly zero
+      // optical path (no extinction in the clear-air gap), so under "entire
+      // domain" they show up as an exact-zero spike that's real, not a
+      // bookkeeping artifact -- and, per TODO "3.B", grows with the domain
+      // factor M to the point of eventually dominating the total count. No
+      // axis choice can show it proportionally alongside genuine structure, so
+      // it's reported as a separate count instead of being forced into the
+      // bars. bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly hold the
+      // touchedCloud=true (genuine) subset; the length difference from the raw
+      // arrays is exactly the clear-direct count (see TODO "3.B" verification).
+      const reflZeroCount  = showEntireDomainPath ? (SimStats.bypassPaths.length - SimStats.bypassPathsCloudOnly.length) : 0;
+      const transZeroCount = showEntireDomainPath ? (SimStats.sideTransmittedPathLengths.length - SimStats.sideTransmittedPathLengthsCloudOnly.length) : 0;
+      const reflTotalCount  = reflSegs.reduce((n, arr) => n + arr.length, 0);
+      const transTotalCount = transSegs.reduce((n, arr) => n + arr.length, 0);
+
+      // The x-axis scale is taken from the GENUINE (touchedCloud=true) path
+      // population only -- reflectedPathLengths/sideEscapeUpPaths/
+      // netTransmittedPathLengths/sideEscapeDownPaths are always clean by
+      // construction; bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly
+      // exclude the clear-direct zero-spike (see above). Scaling from the raw,
+      // contaminated arrays would crush the axis toward zero and clip most of
+      // the genuine population into the overflow bin (see TODO "3.B").
+      const allReflGenuine  = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPathsCloudOnly];
+      const allTransGenuine = [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths];
+      const scaleMean = Math.max(segMean(allReflGenuine), segMean(allTransGenuine));
 
       // Use a representative path-length scale rather than the rare-event maximum.
       // This keeps the bulk of the reflected/transmitted distributions visible.
@@ -249,16 +324,17 @@ export const BottomPanel = {
         Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10
       );
 
-      function drawPathHistogram(segs, x0, y0, width, height, color, title) {
+      function drawPathHistogram(segs, x0, y0, width, height, color, title, totalCount) {
         const nBins = 24;
         const counts = new Array(nBins).fill(0);
-        let total = 0;
 
         for (const arr of segs) for (const vRaw of arr) {
+          // Exact-zero entries are exclusively the clear-sky direct population
+          // (see above) -- reported separately as text, not binned as a bar.
+          if (vRaw === 0) continue;
           const v = Math.max(0, vRaw || 0);
           const idx = Math.min(nBins - 1, Math.floor((v / niceMax) * nBins));
           counts[idx] += 1; // current analog photons have W = 1
-          total++;
         }
 
         const maxC = Math.max(1, ...counts);
@@ -276,12 +352,13 @@ export const BottomPanel = {
           ctx2.fillRect(x0 + i * binW + 1, y0 + height - bh, Math.max(1, binW - 2), bh);
         }
 
-        // Title
+        // Title -- N is the TRUE total (matching the scalar R_domain/T_domain
+        // counts), even though zero-path entries aren't drawn as bars.
         ctx2.fillStyle = "#f8fafc";
         ctx2.font = "bold 13px system-ui";
         ctx2.textAlign = "center";
         ctx2.textBaseline = "alphabetic";
-        ctx2.fillText(`${title}  N=${total}`, x0 + width / 2, y0 - 12);
+        ctx2.fillText(`${title}  N=${totalCount}`, x0 + width / 2, y0 - 12);
 
         // Axis ticks and labels
         const yAxis = y0 + height;
@@ -307,17 +384,39 @@ export const BottomPanel = {
       // Per-photon paths of energy delivered to the surface: photons whose
       // terminal status is "transmitted" (A_s = 0) or "surface_absorbed"
       // (A_s > 0). Count equals the net-transmittance count exactly.
-      drawPathHistogram(reflSegs, 70, 42, 260, 118, "#60a5fa", "Reflected");
-      drawPathHistogram(transSegs, 390, 42, 260, 118, "#86efac", "Net transmitted (surface-deposited)");
+      // No "(entire domain)" suffix here (see the mu-histogram's reflLabel
+      // comment above): the exported PNG's domain box states it once now, so
+      // the titles are the same regardless of the toggle -- this also removes
+      // the title-overlap risk entirely, rather than just shrinking it (the
+      // two panels are centered only 320px apart).
+      const reflPathTitle = "Reflected";
+      const transPathTitle = "Net transmitted (surface-deposited)";
+      drawPathHistogram(reflSegs, 70, 42, 260, 118, "#60a5fa", reflPathTitle, reflTotalCount);
+      drawPathHistogram(transSegs, 390, 42, 260, 118, "#86efac", transPathTitle, transTotalCount);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
       ctx2.fillText(
-        `Mean reflected path=${meanR.toFixed(2)}   |   Mean surface-deposited path=${meanT.toFixed(2)}   |   W=1 per photon`,
+        `Mean reflected path=${meanR.toFixed(2)}   |   Mean surface-deposited path=${meanT.toFixed(2)}`,
         w / 2,
-        224
+        222
       );
+
+      // Clear-sky direct count, shown only when relevant (entire-domain view
+      // AND at least one such photon exists) -- see the comment above on why
+      // this is reported as text rather than forced into the bars.
+      if (showEntireDomainPath && (reflZeroCount > 0 || transZeroCount > 0)) {
+        const reflPct  = reflTotalCount  ? (100 * reflZeroCount  / reflTotalCount).toFixed(1)  : "0.0";
+        const transPct = transTotalCount ? (100 * transZeroCount / transTotalCount).toFixed(1) : "0.0";
+        ctx2.font = "10px system-ui";
+        ctx2.fillStyle = "#94a3b8";
+        ctx2.fillText(
+          `Clear-sky direct (path=0, excluded from bars above): Reflected N=${reflZeroCount} (${reflPct}%)   |   Transmitted N=${transZeroCount} (${transPct}%)`,
+          w / 2,
+          236
+        );
+      }
     },
 
     drawBdfOverlay: function() {
@@ -331,18 +430,67 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights()));
-      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeights()));
+      // Under "Uniform domain" illumination, plot the cloud-only subset (see the
+      // mu-histogram comment above for why) -- bit-identical to the full weights
+      // for legacy illumination modes. "Show entire-domain plots" (v6.0)
+      // overrides both Reflected and Net Transmitted to the bypass-inclusive,
+      // domain-wide view. Reflected's bypass population is smooth (Lambertian-
+      // diffuse escape angle -- verified, no spike); Net Transmitted's
+      // clear-direct population IS a true delta function at Θ0 that would
+      // otherwise saturate one bin (verified ~50x its neighbors), so it's
+      // excluded from the plotted grid here too (same treatment as the mu-
+      // histogram and path-length panels, TODO "3.A"/"3.B") and reported as a
+      // separate text count instead.
+      const isDomainBdf = UI.getPhotonEntryMode() === "uniform_domain";
+      const showEntireDomainBdf = isDomainBdf && UI.getShowEntireDomainPlots();
+      const reflectedWeights = showEntireDomainBdf ? SimStats.reflectedBdfWeightsDomainWide() : SimStats.reflectedBdfWeights();
+      // No "(entire domain)" suffix (see the mu-histogram's reflLabel comment):
+      // the exported PNG's domain box states it once now.
+      const reflectedTitle = "Reflected";
+      const transmittedWeights = showEntireDomainBdf ? SimStats.transmittedBdfWeightsDomainWideCloudOnly()
+                               : isDomainBdf ? SimStats.transmittedBdfWeightsCloudOnly() : SimStats.transmittedBdfWeights();
+      const transmittedTitle = (isDomainBdf && !showEntireDomainBdf) ? "Net Transmitted (cloud-only)" : "Net Transmitted";
 
-      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Reflected");
-      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, "Net Transmitted");
+      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(reflectedWeights));
+      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(transmittedWeights));
+
+      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflectedTitle);
+      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, transmittedTitle);
       BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, "BDF");
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
       ctx2.textAlign = "center";
-      const scaleTxt = UI.getBdfColorScaleMode() === "log" ? "log BDF scale: 0.01–1" : "linear BDF scale: 0–1";
-      ctx2.fillText(`Transmitted panel is net down−up at surface; ${scaleTxt}; near-nadir φ averaged.`, w / 2, 212);
+      // Scale text ("linear/log BDF scale: 0-1") dropped (v6.0.1) -- it ran the
+      // combined caption off both edges of the export canvas at 700px width,
+      // and it's redundant with the color bar's own labeled ticks (0, 0.25,
+      // 0.5, 0.75, 1) drawn right next to it. Caption also shortened ("Net
+      // down-up at surface..." rather than "Transmitted panel is net
+      // down-up...") -- the panel title directly above already says "Net
+      // Transmitted", so restating "Transmitted panel is" was redundant too.
+      const transCaption = showEntireDomainBdf
+        ? "Net down−up at surface (entire domain; excludes clear-direct, see below)"
+        : isDomainBdf
+        ? "Net down−up at surface (cloud-touched only; excludes clear-direct)"
+        : "Net down−up at surface";
+      ctx2.fillText(`${transCaption}; near-nadir φ averaged.`, w / 2, 212);
+
+      // Clear-sky direct count, shown only when relevant -- same pattern as the
+      // mu-histogram and path-length panels (TODO "3.A"/"3.B").
+      if (showEntireDomainBdf) {
+        const clearDirectCount = SimStats.tComponents().clearDirect;
+        if (clearDirectCount > 0) {
+          const total = SimStats.domainTransmittedNetCount();
+          const pct = total ? (100 * clearDirectCount / total).toFixed(1) : "0.0";
+          ctx2.font = "10px system-ui";
+          ctx2.fillStyle = "#94a3b8";
+          ctx2.fillText(
+            `Clear-sky direct (arrives at exactly Θ₀, excluded from Transmitted grid above): N=${clearDirectCount.toFixed(0)} (${pct}% of total)`,
+            w / 2,
+            226
+          );
+        }
+      }
     },
 
     // Build the displayable BDF grid from a flat incremental weight array

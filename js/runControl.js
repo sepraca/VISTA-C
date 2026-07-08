@@ -36,6 +36,7 @@ export const RunControl = {
 
     init: function() {
       RunControl.applyUiScale();
+      UI.onIlluminationChange(); // sync domain-factor row visibility + warning to the loaded illumination selection
       state.scene = new THREE.Scene();
       state.scene.background = new THREE.Color(0x0f172a);
 
@@ -128,7 +129,8 @@ export const RunControl = {
         surfaceAlbedo:     UI.getSurfaceAlbedo(),
         betaExt:           UI.getCloudBetaExt(),
         surfaceDistanceKm: UI.getSurfaceDistanceKm(),
-        entryMode:         UI.getPhotonEntryMode()
+        entryMode:         UI.getPhotonEntryMode(),
+        domainFactor:      UI.getDomainFactor()
       };
     },
 

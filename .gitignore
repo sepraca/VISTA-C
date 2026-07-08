@@ -16,3 +16,6 @@ __pycache__/
 
 # Node (if bundler added later)
 node_modules/
+
+# Local working/session notes -- internal dev-journal style, not project docs
+TODO-*.md
