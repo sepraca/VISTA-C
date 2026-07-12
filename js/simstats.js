@@ -584,14 +584,20 @@ ${UI.getShowDomainComponents() ? "\n" : ""}R_domain + T_domain + A_cloud: ${clos
     // term is trivially zero (surfaceInteraction never triggers), which is
     // harmless -- just uninformative.
     //
-    // Label note (review E9): rc.clearViaCloud is rendered here as "surface
-    // bypass (no cloud re-entry)" rather than the Uniform-Domain panel's "from
-    // clear sky, via cloud" -- under legacy illumination every photon is
-    // cloud-launched (no clear-sky source exists), so an origin-style "from
-    // clear sky" label would be wrong; what the bucket actually means here is
-    // a pathway: reflected at the surface and escaped upward without
-    // re-entering the cloud. buildDomainBlockText keeps the clear-sky wording,
-    // where a genuine clear-sky source population exists.
+    // Label note (review E9, RESOLVED 2026-07-14 -- user decision): the
+    // rc.clearViaCloud bucket is labeled "from clear sky, via cloud" here,
+    // matching buildDomainBlockText, so the same physical bucket has ONE name
+    // in both panels. The review briefly renamed it "surface bypass (no cloud
+    // re-entry)" out of concern that "from clear sky" reads as a LAUNCH-origin
+    // claim (wrong under legacy modes, which have no clear-sky source) -- but
+    // in this panel's parallel structure ("from cloud top / from cloud side /
+    // from clear sky, direct / from clear sky, via cloud") "from" denotes the
+    // FINAL EXIT PATHWAY, consistent with the TODO's rule that components are
+    // defined by final exit location. Mechanism, for the record: a photon
+    // whose last event is a surface reflection that escapes to space through
+    // the clear sky WITHOUT re-entering the cloud (its energy reached the
+    // surface via the cloud). Do not read "from clear sky" as launch origin;
+    // origin-based labels exist only in the A_cloud split below.
     //
     // R and T are restated here because they differ from the dropdown-driven
     // FINAL OUTCOMES R/T above whenever the Observation-geometry dropdown
@@ -633,7 +639,7 @@ R (all upwelling): ${(RdCount/launched).toFixed(3)} (${RdCount})
 ${IND}from cloud top: ${(rc.cloudTop/launched).toFixed(3)} (${rc.cloudTop})
 ${IND}from cloud side: ${(rc.cloudSide/launched).toFixed(3)} (${rc.cloudSide})
 ${IND}from clear sky, direct: ${(rc.clearDirect/launched).toFixed(3)} (${rc.clearDirect})
-${IND}surface bypass (no cloud re-entry): ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})
+${IND}from clear sky, via cloud: ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})
 
 T (surface-absorbed): ${(TdCount/launched).toFixed(3)} (${TdCount})
 ${IND}from cloud base: ${(tc.viaBase/launched).toFixed(3)} (${tc.viaBase.toFixed(0)})

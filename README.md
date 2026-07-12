@@ -11,7 +11,10 @@ Originally developed as an intuitive educational tool for students, scientists, 
 ## Live Demo
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
-A hosted version is available at: https://sepraca.github.io/VISTA-C/
+A hosted version is available at: https://sepraca.github.io/VISTA-C/  
+*(The hosted version tracks `main`, which currently carries the in-development v6.0.0
+feature set — see Version History below. The latest tagged release is available from the
+[Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
 ---
 
@@ -137,8 +140,11 @@ domain:
 
 - **R** splits into: cloud-top exit, cloud-side exit (upward), clear-sky-direct bypass
   (Uniform domain only), and clear-sky-via-cloud bypass (a surface-reflected photon that
-  re-enters the cloud and then escapes upward — possible under any illumination mode
-  whenever Aₛ > 0).
+  escapes upward through the clear sky **without** re-entering the cloud — its energy
+  reached the surface via the cloud; possible under any illumination mode whenever
+  Aₛ > 0). Component labels denote the **final exit pathway**, not the launch origin —
+  a photon that re-enters the cloud after a surface bounce and then escapes lands in the
+  cloud-top or cloud-side component, not here.
 - **T** splits into: cloud-base-derived, cloud-side-derived, and clear-sky-direct
   (Uniform domain only) net surface absorption.
 - **A** splits into: cloud-incident (the photon's very first ray-cast hit the cloud) vs.
@@ -429,7 +435,8 @@ tagged versions.
 
 Latest tagged release: **v5.4.0** (2026-06-29). Uniform domain illumination and the R/T/A
 component breakdown (marked *WIP* above) are in progress toward **v6.0.0** — see
-CHANGELOG.md's `[Unreleased]` section — and not yet tagged or pushed.
+CHANGELOG.md's `[Unreleased]` section. This development work is present on `main` (and
+therefore in the hosted demo) but has not been tagged as a release.
 
 ---
 
@@ -453,4 +460,3 @@ by the project author.
 If you use this simulator in teaching or research, please cite as:
 
 > Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.4.0). GitHub. https://github.com/sepraca/VISTA-C
-

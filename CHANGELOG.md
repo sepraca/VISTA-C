@@ -13,7 +13,11 @@ sub-domain BRDF/observation-pixel treatment are planned but not yet built (see
 `TODO-direct-surface-illumination.md`), so any of the below is still subject to change
 before the v6.0.0 tag.
 
-### Fixed / changed (2026-07-12 code-review session — see CODE-REVIEW-v6.0-handoff.md)
+### Fixed / changed (2026-07-12 code-review session)
+
+*(The E#/R#/P# identifiers below refer to a local development review document not tracked
+in the repository, same as the TODO dev journals; the substantive content of each fix is
+summarized here.)*
 - **μ-histogram N label** (Net Transmitted, Uniform domain + "cloud top/base faces only"):
   the displayed N overstated the plotted-bin population (it ignored the Observation-
   geometry dropdown); now matches the plotted bins exactly under both geometries. (E1)
@@ -48,9 +52,14 @@ before the v6.0.0 tag.
   a dev-machine absolute path, breaking the regression gate everywhere else). (E6)
 - Stale comments corrected (clear-direct photons DO reach `surface_absorbed` at Aₛ = 0
   under Uniform domain; the albedo RNG draw there is deliberate — do not optimize away). (E5)
-- Legacy stats panel: the R component formerly labeled "from clear sky, via cloud" is now
-  "surface bypass (no cloud re-entry)" — under legacy illumination no clear-sky source
-  exists, so an origin-style label was misleading. Uniform-domain wording unchanged. (E9)
+- Legacy stats panel (d)-component label: briefly renamed "surface bypass (no cloud
+  re-entry)" during the review, then REVERTED to the original "from clear sky, via cloud"
+  (user decision, 2026-07-14): in the panel's parallel "from X" structure, "from" denotes
+  the final exit pathway (per the component-definition rule), and one bucket should have
+  one name in both panels. The origin-ambiguity concern is addressed in the README
+  instead — whose (d) description was found to be outright wrong ("re-enters the cloud
+  and then escapes upward" — that photon belongs to the cloud-top/side components) and is
+  now corrected. (E9)
 - PNG 3D-view export legend: added the surface-reflected (purple) and surface-absorbed
   (brown) marker entries that were drawn in Aₛ > 0 exports but missing from the legend. (E10)
 - Batch of small consistency fixes: `generator` string renamed to VISTA-C; bottom-panel
@@ -59,8 +68,11 @@ before the v6.0.0 tag.
   click-bound via `for=`; `units.domain_factor` documented in the JSON. (E11)
 - Default photon count raised 400 → 10,000 (`index.html` input default, `ui.js` fallback,
   README Controls table).
-- New review artifacts: `CODE-REVIEW-v6.0-handoff.md`, `tests/review-harness/`
-  (`verify_review_findings.mjs` — post-fix assertions; `gen_export_roundtrip.mjs`).
+- New verification tooling in `tests/review-harness/` (`verify_review_findings.mjs` —
+  post-fix assertions; `gen_export_roundtrip.mjs` — JSON export/reader round-trip;
+  `diff_golden.mjs`, `golden_one.mjs`). The review write-up itself is kept as a local
+  dev document (untracked, like the TODO journals).
+- Repo hygiene: removed a stray zero-byte file named `git` from the repository root.
 - **Uniform-domain golden snapshot (pre-Phase-3 regression lock)**:
   `tests/golden-snapshots/gen_golden_ud.mjs` + `golden_ud_v6.0-phase2.json` (+ `.md`
   summary) — 18 runs (M∈{1,2,4} × Θ₀∈{0°,60°} × Aₛ∈{0,0.5,1}, 500k photons each, seed 42)

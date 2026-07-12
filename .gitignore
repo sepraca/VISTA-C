@@ -19,3 +19,4 @@ node_modules/
 
 # Local working/session notes -- internal dev-journal style, not project docs
 TODO-*.md
+CODE-REVIEW-*.md
