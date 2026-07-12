@@ -86,6 +86,29 @@ where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-o
   boundary is currently **open/isolated** only (far clear sky beyond the launch margin is
   unilluminated); periodic tiling is planned but not yet implemented.
 
+#### Planned: periodic domain boundary (v6.0.0, in development)
+
+A selectable **periodic** domain boundary will tile the M·W × M·W domain infinitely in
+both horizontal directions — an infinite *regular field* of identical clouds at cloud
+fraction f_c = 1/M², rather than the single isolated cloud of the open boundary. This is
+a **physically different scene**, not merely a numerical option: a photon that escapes
+sideways under the open boundary instead travels on to illuminate a neighboring cloud
+(implemented by wrapping its coordinates back into the fundamental cell, the same
+minimum-image technique used for periodic boundaries in molecular dynamics), so
+R_domain, surface absorption, and the cloud-interaction components all genuinely change
+at moderate M; the two boundaries converge only as M → ∞. Because every tile is
+statistically identical, tallying each photon's ultimate fate in its launch cell yields
+the exact per-unit-cell energy budget of the infinite field — R_domain then represents
+the areal-mean albedo of the broken-cloud field. This also carries a large
+variance-reduction economy: one simulated cell delivers infinite-cloud-field statistics
+that would otherwise require explicitly simulating a many-cloud domain (and, per photon,
+the side-escape sink vanishes, so more terminal events populate the R/T/A components
+being analyzed). Caveat: the tiling is a perfectly regular lattice of identical clouds —
+no clumping or size distribution, and at particular Θ₀ the sun alignment with lattice
+rows can produce structured artifacts — the standard idealization for regular/broken
+cloud fields in the 3-D cloud RT literature, but not "statistically realistic broken
+cloudiness."
+
 The centered launch draws no extra random numbers, so it leaves the RNG stream
 unchanged; the uniform modes consume entry draws. Note that at Θ₀ = 0 the *top* and
 *top + side* modes are statistically identical but **not** bit-identical — *top +
@@ -227,7 +250,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 
 | Parameter | Description | Default |
 |---|---|---|
-| Photons | Number of photons to simulate | 400 |
+| Photons | Number of photons to simulate | 10000 |
 | Cloud optical thickness τ | Total cloud optical thickness (0.01-100) | 10 |
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |

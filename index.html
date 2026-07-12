@@ -387,7 +387,7 @@
     <div class="group-head">Photon / Model</div>
 
     <label>Photons</label>
-    <input id="photonCount" type="number" value="400" min="1" max="10000000" onblur="UI.getPhotonCount()">
+    <input id="photonCount" type="number" value="10000" min="1" max="10000000" onblur="UI.getPhotonCount()">
 
     <label>Cloud optical thickness τ</label>
     <input id="tauCloud" type="number" value="10" min="0.01" max="100" step="0.01" onblur="UI.getTauCloud(); RunControl.resetScene(); UI.updateDomainMarginWarning()">
@@ -399,7 +399,13 @@
     <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad(); UI.updateDomainMarginWarning()">
 
     <label>Illumination geometry</label>
-    <select id="photonEntry" onchange="UI.onIlluminationChange(); BottomPanel.drawBottomPanel()">
+    <!-- resetScene on change (review E7): matches the tauCloud/hExtent/domainFactor
+         convention -- rebuilds the scene (surface plane resizes to/from the M-factor
+         domain immediately) and resets statistics, so photons from different
+         illumination modes can no longer be mixed into one statistics set via
+         successive "Launch One" clicks. resetScene also redraws the bottom panel,
+         which is why the previous explicit drawBottomPanel() call is gone. -->
+    <select id="photonEntry" onchange="UI.onIlluminationChange(); RunControl.resetScene()">
       <option value="center" selected>Centered (point source)</option>
       <option value="top">Uniform cloud top</option>
       <option value="top_side">Uniform cloud top + sunward side</option>
@@ -449,7 +455,7 @@
       <option value="log">log 0.01–1</option>
     </select>
 
-    <label id="showEntireDomainPlotsLabel">Show entire-domain plots</label>
+    <label id="showEntireDomainPlotsLabel" for="showEntireDomainPlots">Show entire-domain plots</label>
     <input id="showEntireDomainPlots" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
 
     <div class="group-head">Visualization</div>
@@ -463,16 +469,16 @@
       <input id="endpointCap" type="range" value="6000" min="0" max="20000" step="500" oninput="RunControl.refreshEndpointDisplay()">
     </div>
 
-    <label>Fade older endpoints</label>
+    <label for="fadeEndpoints">Fade older endpoints</label>
     <input id="fadeEndpoints" type="checkbox" checked onchange="RunControl.refreshEndpointDisplay()">
 
     <label>Footprint grid size</label>
     <input id="footprintGrid" type="number" value="28" min="8" max="60" step="2" onblur="UI.getFootprintGrid(); BottomPanel.drawBottomPanel()">
 
-    <label>Show surface heatmap</label>
+    <label for="showSurfaceHeatmap">Show surface heatmap</label>
     <input id="showSurfaceHeatmap" type="checkbox" checked onchange="Scene.rebuildHistograms()">
 
-    <label>Animate paths</label>
+    <label for="animatePaths">Animate paths</label>
     <input id="animatePaths" type="checkbox">
 
     <label>Animation speed</label>
@@ -481,7 +487,7 @@
     <label>Tail length</label>
     <input id="tailLength" type="number" value="18" min="2" max="80" step="1" onblur="UI.getTailLength()">
 
-    <label>Scatter flashes</label>
+    <label for="scatterFlashes">Scatter flashes</label>
     <input id="scatterFlashes" type="checkbox" checked title="Show bright flashes at scattering events">
   </div>
 
@@ -497,7 +503,7 @@
   <div id="statsTop">Loading 3-D renderer...</div>
 
   <div class="component-checkbox-row">
-    <label>Show R/T/A components</label>
+    <label for="showDomainComponents">Show R/T/A components</label>
     <input id="showDomainComponents" type="checkbox" onchange="SimStats.updateDisplay()">
   </div>
 

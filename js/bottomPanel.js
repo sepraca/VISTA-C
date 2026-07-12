@@ -273,11 +273,9 @@ export const BottomPanel = {
       // Path arrays are kept per-photon; the active observation geometry returns
       // them as a list of segments (e.g. base-surface paths + downward side
       // escapes under "b"), iterated without allocating a concatenated copy.
-      function segMean(segs) {
-        let sum = 0, n = 0;
-        for (const arr of segs) { for (const v of arr) sum += v; n += arr.length; }
-        return n ? sum / n : 0;
-      }
+      // segMean/axis/binning live in SimStats (shared with the JSON export --
+      // review R2), so figure and export can never disagree on the histogram spec.
+      const segMean = SimStats.segMean;
       // "Show entire-domain plots" (v6.0) overrides the Observation-geometry
       // dropdown here too, same as the mu-histogram/BDF panels -- always
       // includes side exits + bypass, independent of which of the two dropdown
@@ -305,37 +303,16 @@ export const BottomPanel = {
       const reflTotalCount  = reflSegs.reduce((n, arr) => n + arr.length, 0);
       const transTotalCount = transSegs.reduce((n, arr) => n + arr.length, 0);
 
-      // The x-axis scale is taken from the GENUINE (touchedCloud=true) path
-      // population only -- reflectedPathLengths/sideEscapeUpPaths/
-      // netTransmittedPathLengths/sideEscapeDownPaths are always clean by
-      // construction; bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly
-      // exclude the clear-direct zero-spike (see above). Scaling from the raw,
-      // contaminated arrays would crush the axis toward zero and clip most of
-      // the genuine population into the overflow bin (see TODO "3.B").
-      const allReflGenuine  = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPathsCloudOnly];
-      const allTransGenuine = [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths];
-      const scaleMean = Math.max(segMean(allReflGenuine), segMean(allTransGenuine));
-
-      // Use a representative path-length scale rather than the rare-event maximum.
-      // This keeps the bulk of the reflected/transmitted distributions visible.
-      // Long-tail photons are clipped into the last bin.
-      const niceMax = Math.max(
-        10,
-        Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10
-      );
+      // The x-axis scale comes from SimStats.pathAxisMax() -- the GENUINE
+      // (touchedCloud=true) population, shared with the JSON export (review
+      // E2/R2); see that function for the full rationale (TODO "3.B").
+      const niceMax = SimStats.pathAxisMax();
 
       function drawPathHistogram(segs, x0, y0, width, height, color, title, totalCount) {
         const nBins = 24;
-        const counts = new Array(nBins).fill(0);
-
-        for (const arr of segs) for (const vRaw of arr) {
-          // Exact-zero entries are exclusively the clear-sky direct population
-          // (see above) -- reported separately as text, not binned as a bar.
-          if (vRaw === 0) continue;
-          const v = Math.max(0, vRaw || 0);
-          const idx = Math.min(nBins - 1, Math.floor((v / niceMax) * nBins));
-          counts[idx] += 1; // current analog photons have W = 1
-        }
+        // Shared binning (zero-path entries skipped -- clear-sky direct
+        // population, reported separately as text below, not drawn as a bar).
+        const counts = SimStats.pathHistogramCounts(segs, niceMax, nBins);
 
         const maxC = Math.max(1, ...counts);
         const binW = width / nBins;

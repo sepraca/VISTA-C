@@ -183,9 +183,12 @@ export const RunControl = {
         // Animate up to "Max paths drawn" visible paths sequentially.
         // Additional photons, if requested, are simulated statistically after the visible sequence.
         const nAnimated = Math.min(n, maxPaths);
+        // Parameter snapshot for the whole animated sequence (review R4) --
+        // same reproducibility contract as runInstantBatch below.
+        const simParams = RunControl.getSimParams();
 
         for (let i = 0; i < nAnimated; i++) {
-          const result = Physics.simulatePhoton(RunControl.getSimParams(), true);
+          const result = Physics.simulatePhoton(simParams, true);
           result.photonId = state.nextPhotonId++;
           SimStats.record(result);
           for (const t of result.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);
@@ -220,6 +223,17 @@ export const RunControl = {
       // per chunk so the marker pool never grows far past the cap.
       let chunksDone = 0;
 
+      // Snapshot the simulation parameters and path cap ONCE per batch
+      // (review R4): getSimParams()/getMaxPaths() cascade through ~12 DOM
+      // reads + clamp logic each, which used to run once PER PHOTON (10^6-10^7
+      // times for large runs). Beyond the cost, per-photon reads meant a user
+      // edit mid-run silently changed the physics mid-ensemble, so the
+      // exported "inputs" no longer described the whole run — a
+      // reproducibility hazard. Edits made while a run is in flight (or
+      // paused) now take effect at the NEXT launch, by design.
+      const simParams = RunControl.getSimParams();
+      const maxPaths = UI.getMaxPaths();
+
       function chunk() {
         // Honor Pause/Step in instant mode: while paused, idle until Resume
         // or a single Step request (Step advances exactly one photon).
@@ -233,8 +247,8 @@ export const RunControl = {
         const m = steppingOnce ? Math.min(1, remaining) : Math.min(CHUNK_SIZE, remaining);
 
         for (let i = 0; i < m; i++) {
-          const drawPath = allowPaths && state.pathGroup.children.length < UI.getMaxPaths();
-          const result = Physics.simulatePhoton(RunControl.getSimParams(), drawPath);
+          const drawPath = allowPaths && state.pathGroup.children.length < maxPaths;
+          const result = Physics.simulatePhoton(simParams, drawPath);
           result.photonId = state.nextPhotonId++;
           SimStats.record(result);
           for (const t of result.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);

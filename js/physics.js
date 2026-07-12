@@ -234,8 +234,17 @@ export const Physics = {
       // countDownArrival: side-wall exits did not cross the cloud base, so
       // their downward arrival at the surface plane is registered here to keep
       // the identity T_net = F_down - F_up = surface absorption, exact.
-      // For A_s = 0 this handler is not used and behavior is unchanged
-      // (photons terminate at the cloud base / side walls).
+      // For A_s = 0 this handler is not used by the LEGACY paths (base/side
+      // exits are gated on surfaceAlbedo > 0 and terminate at the cloud
+      // boundary as before). EXCEPTION (v6.0): the "uniform_domain" clear-miss
+      // launch branch below calls this with no A_s gate, so at A_s = 0 every
+      // clear-direct photon still arrives here and terminates
+      // "surface_absorbed" (the albedo draw below can never succeed). Note
+      // that draw consumes one RNG number even at A_s = 0 -- deliberate and
+      // stream-consistent within uniform_domain runs; do NOT "optimize" it
+      // away later, as that would silently shift every uniform_domain RNG
+      // stream while leaving legacy modes untouched (golden-snapshot trap --
+      // see review finding E5).
       const surfaceInteraction = (cx, cy, ctau, countDownArrival) => {
         const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
         const tDown = (tauSurface - ctau) / Math.max(dir.z, 1e-12);

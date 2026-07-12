@@ -13,6 +13,61 @@ sub-domain BRDF/observation-pixel treatment are planned but not yet built (see
 `TODO-direct-surface-illumination.md`), so any of the below is still subject to change
 before the v6.0.0 tag.
 
+### Fixed / changed (2026-07-12 code-review session — see CODE-REVIEW-v6.0-handoff.md)
+- **μ-histogram N label** (Net Transmitted, Uniform domain + "cloud top/base faces only"):
+  the displayed N overstated the plotted-bin population (it ignored the Observation-
+  geometry dropdown); now matches the plotted bins exactly under both geometries. (E1)
+- **JSON path-length histograms match the on-screen panel again**: the exported `bin_max`
+  now comes from the same shared axis logic the figure uses (genuine, cloud-touched
+  population), fixing a divergence introduced when the panel's axis was decontaminated —
+  which had silently affected legacy-mode exports too. Shared helpers
+  (`SimStats.segMean/pathAxisMax/pathHistogramCounts`) are now the single owner of the
+  histogram spec for both figure and file. (E2/R2)
+- **JSON schema 1.1 → 1.2 (additive)**: stale "signed ±1 ledger" descriptions rewritten
+  for the terminal-event-only bin construction; Uniform-domain runs now also export the
+  decontaminated `net_transmitted_counts_cloud_only`/`_domain_wide_cloud_only` μ arrays,
+  the matching BDF weight grids, and `clear_direct_count`/`clear_direct_mu_bin_index`, so
+  the clear-sky-direct delta spike in the raw arrays is documented and removable by any
+  reader. (E3/E4)
+- **`mc_export_reader.py` updated for schemas 1.1/1.2**: reads `uniform_domain_outputs`,
+  domain inputs, cloud fraction, and the new arrays; prints an ENTIRE DOMAIN summary block
+  with exact component-sum consistency checks; passes an end-to-end round-trip test driven
+  by the real browser export pipeline (`tests/review-harness/gen_export_roundtrip.mjs`). (E8)
+- **Green base-crossing footprint is now structurally 1:1 with the green 3D markers**
+  (both skip `viaSide` surface arrivals). For legacy modes this is bit-identical (verified:
+  0 in-grid viaSide landings). For Uniform-domain runs at oblique sun it fixes a real
+  contamination: clear-sky-direct rays steep enough to cross the footprint edge below cloud
+  base traverse the sub-cloud clear gap and land under the cloud (e.g. 2,834 of 105,873
+  viaSide arrivals in-grid at Θ₀=60°, M=3) — these were wrongly binned into the
+  base-crossing footprint despite never crossing the base. (E12)
+- **Changing the Illumination geometry now resets the scene and statistics** (same
+  convention as τ/extent/M changes): the surface plane resizes to/from the M-factor domain
+  immediately, and photons from different illumination modes can no longer be mixed into
+  one statistics set via successive "Launch One" clicks. (E7)
+- `tests/golden-snapshots/gen_golden.mjs`: portable relative import path (was hardcoded to
+  a dev-machine absolute path, breaking the regression gate everywhere else). (E6)
+- Stale comments corrected (clear-direct photons DO reach `surface_absorbed` at Aₛ = 0
+  under Uniform domain; the albedo RNG draw there is deliberate — do not optimize away). (E5)
+- Legacy stats panel: the R component formerly labeled "from clear sky, via cloud" is now
+  "surface bypass (no cloud re-entry)" — under legacy illumination no clear-sky source
+  exists, so an origin-style label was misleading. Uniform-domain wording unchanged. (E9)
+- PNG 3D-view export legend: added the surface-reflected (purple) and surface-absorbed
+  (brown) marker entries that were drawn in Aₛ > 0 exports but missing from the legend. (E10)
+- Batch of small consistency fixes: `generator` string renamed to VISTA-C; bottom-panel
+  export mode fallback aligned; combiners now always return copies (never the live
+  accumulator); `world.domainW/domainD` declared in `state.js`; checkbox labels
+  click-bound via `for=`; `units.domain_factor` documented in the JSON. (E11)
+- Default photon count raised 400 → 10,000 (`index.html` input default, `ui.js` fallback,
+  README Controls table).
+- New review artifacts: `CODE-REVIEW-v6.0-handoff.md`, `tests/review-harness/`
+  (`verify_review_findings.mjs` — post-fix assertions; `gen_export_roundtrip.mjs`).
+- **Uniform-domain golden snapshot (pre-Phase-3 regression lock)**:
+  `tests/golden-snapshots/gen_golden_ud.mjs` + `golden_ud_v6.0-phase2.json` (+ `.md`
+  summary) — 18 runs (M∈{1,2,4} × Θ₀∈{0°,60°} × Aₛ∈{0,0.5,1}, 500k photons each, seed 42)
+  locking all v6.0 counters, the domain budget, and component breakdowns bit-for-bit;
+  M=1 verified to reproduce legacy "top" exactly (240/240 fields vs `golden_v5.4.0.json`).
+  Re-verify anytime with `node tests/golden-snapshots/check_golden_ud.mjs`.
+
 ### Added
 - **New "Uniform domain" illumination mode.** Every previous illumination mode (centered,
   uniform cloud-top, uniform cloud-top + sunward side) launches photons only onto the

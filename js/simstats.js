@@ -291,7 +291,10 @@ export const SimStats = {
     },
 
     reflectedMuBins() {
-      if (!SimStats._sidesIncluded()) return SimStats.muReflBins;
+      // Copy (not the live accumulator) in both branches, matching every
+      // sibling combiner -- a caller mutating the returned array must never be
+      // able to corrupt the accumulator (review E11).
+      if (!SimStats._sidesIncluded()) return Float64Array.from(SimStats.muReflBins);
       const byp = SimStats._bypassInReflected();
       const out = new Float64Array(MU_BINS);
       for (let i = 0; i < MU_BINS; i++)
@@ -308,7 +311,8 @@ export const SimStats = {
       return out;
     },
     reflectedBdfWeights() {
-      if (!SimStats._sidesIncluded()) return SimStats.bdfReflWeights;
+      // Copy, not the live accumulator -- see reflectedMuBins (review E11).
+      if (!SimStats._sidesIncluded()) return Float64Array.from(SimStats.bdfReflWeights);
       const byp = SimStats._bypassInReflected();
       const out = new Float64Array(SimStats.bdfReflWeights.length);
       for (let i = 0; i < out.length; i++)
@@ -453,9 +457,15 @@ export const SimStats = {
     // Net transmitted count for the cloud-only mu/BDF views (excludes the
     // clear-direct (c) component) -- matches what transmittedMuBinsCloudOnly()/
     // transmittedBdfWeightsCloudOnly() actually plot, for a consistent N label.
+    // Must respect the Observation-geometry dropdown exactly like the bin
+    // functions it labels: under "top-base_faces" the plotted bins are
+    // base-only, so the label must be viaBase only (v6.0.1 fix -- review
+    // finding E1: the label previously returned viaBase + viaSide
+    // unconditionally, overstating N vs. the plotted-bin sum whenever
+    // Illumination = "Uniform domain" with the default dropdown selection).
     transmittedNetCountCloudOnly() {
       const tc = SimStats.tComponents();
-      return tc.viaBase + tc.viaSide;
+      return SimStats._sidesIncluded() ? tc.viaBase + tc.viaSide : tc.viaBase;
     },
 
     // R components (a) cloud top, (b) cloud side, (c) clear-direct, (d)
@@ -574,6 +584,15 @@ ${UI.getShowDomainComponents() ? "\n" : ""}R_domain + T_domain + A_cloud: ${clos
     // term is trivially zero (surfaceInteraction never triggers), which is
     // harmless -- just uninformative.
     //
+    // Label note (review E9): rc.clearViaCloud is rendered here as "surface
+    // bypass (no cloud re-entry)" rather than the Uniform-Domain panel's "from
+    // clear sky, via cloud" -- under legacy illumination every photon is
+    // cloud-launched (no clear-sky source exists), so an origin-style "from
+    // clear sky" label would be wrong; what the bucket actually means here is
+    // a pathway: reflected at the surface and escaped upward without
+    // re-entering the cloud. buildDomainBlockText keeps the clear-sky wording,
+    // where a genuine clear-sky source population exists.
+    //
     // R and T are restated here because they differ from the dropdown-driven
     // FINAL OUTCOMES R/T above whenever the Observation-geometry dropdown
     // excludes some faces, or excludes the surface-bounce "bypass" channel (see
@@ -614,7 +633,7 @@ R (all upwelling): ${(RdCount/launched).toFixed(3)} (${RdCount})
 ${IND}from cloud top: ${(rc.cloudTop/launched).toFixed(3)} (${rc.cloudTop})
 ${IND}from cloud side: ${(rc.cloudSide/launched).toFixed(3)} (${rc.cloudSide})
 ${IND}from clear sky, direct: ${(rc.clearDirect/launched).toFixed(3)} (${rc.clearDirect})
-${IND}from clear sky, via cloud: ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})
+${IND}surface bypass (no cloud re-entry): ${(rc.clearViaCloud/launched).toFixed(3)} (${rc.clearViaCloud})
 
 T (surface-absorbed): ${(TdCount/launched).toFixed(3)} (${TdCount})
 ${IND}from cloud base: ${(tc.viaBase/launched).toFixed(3)} (${tc.viaBase.toFixed(0)})
@@ -673,6 +692,56 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       return [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths];
     },
 
+    // --- Shared path-histogram spec (v6.0.1, review R2) -------------------
+    // Single owner of the path-length histogram construction, used by BOTH
+    // bottomPanel.drawPathOverlay() (the figure) and exportUtils.
+    // getExportDataObject() (the JSON), so the two can never drift apart
+    // again. (Review finding E2: the 3.B axis fix changed the panel's scale
+    // to the genuine-population mean but exportUtils kept the old
+    // dropdown-segment-mean scale, so every exported path histogram at
+    // A_s > 0 -- legacy modes included -- used a different bin_max than the
+    // on-screen figure it documents.)
+
+    // Mean over a list of per-photon path arrays (segments), no concat copy.
+    segMean(segs) {
+      let sum = 0, n = 0;
+      for (const arr of segs) { for (const v of arr) sum += v; n += arr.length; }
+      return n ? sum / n : 0;
+    },
+
+    // Histogram x-axis maximum. Scaled from the GENUINE (touchedCloud=true)
+    // path population only, independent of the Observation-geometry dropdown
+    // and the entire-domain toggle: reflectedPathLengths/sideEscapeUpPaths/
+    // netTransmittedPathLengths/sideEscapeDownPaths are always clean by
+    // construction; bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly
+    // exclude the clear-direct zero-path spike (see TODO "3.B"). Scaling from
+    // the raw, contaminated arrays would crush the axis toward zero and clip
+    // most of the genuine population into the overflow bin.
+    pathAxisMax() {
+      const scaleMean = Math.max(
+        SimStats.segMean([SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPathsCloudOnly]),
+        SimStats.segMean([SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths]));
+      // Representative scale rather than the rare-event maximum: keeps the bulk
+      // of the distributions visible; long-tail photons clip into the last bin.
+      return Math.max(10, Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10);
+    },
+
+    // Fill fixed-width bins on [0, niceMax], overflow into the last bin.
+    // Exact-zero entries are skipped: they are exclusively the clear-direct
+    // population (a genuine photon cannot have zero optical path -- free paths
+    // are strictly positive), reported as a separate text count by the panel
+    // rather than drawn as a bar (TODO "3.B"). For every segment list in use
+    // today except the *DomainWide() ones, zeros cannot occur at all.
+    pathHistogramCounts(segs, niceMax, nBins = 24) {
+      const counts = new Array(nBins).fill(0);
+      for (const arr of segs) for (const vRaw of arr) {
+        if (vRaw === 0) continue;
+        const v = Math.max(0, vRaw || 0);
+        counts[Math.min(nBins - 1, Math.floor((v / niceMax) * nBins))] += 1;
+      }
+      return counts;
+    },
+
     // Record a downward arrival at the surface plane (independent of surface
     // outcome): a downward cloud-base crossing, or (A_s > 0) a downward
     // side-wall exit that proceeds through clear air to the infinite surface.
@@ -684,7 +753,19 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
     // reflected was never actually "transmitted" (see TODO "3.A").
     registerCloudBaseTransmission(result) {
       SimStats.stats.transmitted++;
-      SimStats._addFootprint(SimStats.footTrans, result.xExit, result.yExit);
+      // Footprint: genuine cloud-base crossings only (viaSide=false), keeping
+      // the green footprint 1:1 with the green 3D base-crossing markers
+      // STRUCTURALLY (photons.js skips viaSide the same way). Previously this
+      // binned every surface arrival and relied on geometry to keep
+      // side-derived/clear-direct landings out of the cloud-extent grid
+      // (side exits move outward in their exit axis; clear-direct launches
+      // are outside the footprint by construction) -- true today, but fragile:
+      // Phase 3's periodic wrap can put a viaSide arrival inside the
+      // footprint, which would have silently broken the 1:1 claim (review
+      // finding E12). Legacy output is bit-identical either way.
+      if (!result.viaSide) {
+        SimStats._addFootprint(SimStats.footTrans, result.xExit, result.yExit);
+      }
       if (result.viaSide) {
         SimStats.stats.transmittedSide++;
       }
@@ -784,8 +865,12 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
         SimStats._addSurfaceFootprint(result.xExit, result.yExit);
         // Route the path AND the angular bin by terminal geometry: a surface
         // absorption reached via a side wall belongs to S under geometry "a",
-        // not the transmitted path/angle histograms. (At A_s = 0 there are no
-        // surface absorptions, so this branch is never reached there.)
+        // not the transmitted path/angle histograms. (At A_s = 0 this branch
+        // is unreachable for the legacy illumination modes -- but NOT for
+        // "Uniform domain": clear-direct photons reach surfaceInteraction with
+        // no A_s gate, so at A_s = 0 every clear-launched, cloud-missing
+        // photon terminates here (verified: ~(1-1/M²)·N of them at Θ₀=0).
+        // See review finding E5.)
         // Terminal-event-only mu/BDF binning (v6.0.1 -- see TODO "3.A"): this IS
         // the actual terminal downward arrival (the albedo draw failed, so no
         // further reflection/continuation happens), so its incoming direction
@@ -863,7 +948,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       // "shown" count is what's actually drawn = min(cap, stored).
       const endpointStored = state.endpointData ? state.endpointData.length : 0;
       const endpointShown = Math.min(endpointCap, endpointStored);
-      const bottomMode   = document.getElementById("bottomPanelMode")?.value ?? "mu";
+      const bottomMode   = UI.getBottomPanelMode();
 
       // "ENTIRE DOMAIN" block: only shown for "Uniform domain" illumination (see
       // TODO "Draft: panel & export wording"), independent of the Observation

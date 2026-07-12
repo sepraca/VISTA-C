@@ -23,7 +23,7 @@ import { BottomPanel } from './bottomPanel.js';
 const LEGEND_COL_W = 560;
 const LEGEND_ROW_H = 32;
 const LEGEND_PAD = 10;
-const LEGEND_ROWS = 6;   // 12 entries / 2 columns
+const LEGEND_ROWS = 7;   // 14 entries / 2 columns (review E10: surface-event dots added)
 const LEGEND_BOX_W = LEGEND_COL_W * 2 + 2 * LEGEND_PAD;
 const LEGEND_BOX_H = LEGEND_ROWS * LEGEND_ROW_H + 2 * LEGEND_PAD;
 
@@ -209,7 +209,13 @@ export const Export = {
         ["#86efac", "Downward cloud-base crossings footprint", "square"],
         ["#c8a27a", "Surface-absorbed footprint", "square"],
         ["#fff700", "Photon tracer", "line"],
-        ["#fef08a", "Scattering flash", "star"]
+        ["#fef08a", "Scattering flash", "star"],
+        // Review E10: these two marker types were drawn in A_s>0 exports but
+        // missing from the export legend (present in the on-screen #legend).
+        // The screen-only "last scatter marker while paused" note is
+        // deliberately not exported (pause state doesn't apply to a PNG).
+        ["#a855f7", "Surface reflected events", "dot"],
+        ["#7c2d12", "Surface absorbed endpoints", "dot"]
       ];
 
       const colW = LEGEND_COL_W;
@@ -443,7 +449,7 @@ export const Export = {
           return;
         }
 
-        const mode = document.getElementById("bottomPanelMode")?.value ?? "panel";
+        const mode = document.getElementById("bottomPanelMode")?.value ?? "mu";   // same fallback as drawBottomPanel (review E11)
 
         // Export at the panel's high-DPI native resolution.
         // Header is large enough for key settings plus outcome diagnostics.
@@ -555,7 +561,16 @@ export const Export = {
     // outputs.cloud_fraction/uniform_domain_outputs, all conditional on
     // Illumination = "Uniform domain" -- purely additive, no existing field
     // removed or renamed, so 1.0 readers remain compatible.
-    SCHEMA_VERSION: "1.1",
+    // 1.2 (v6.0.1, review E2-E4): path-length bin_max now shared with the
+    // panel's axis logic (SimStats.pathAxisMax -- genuine-population scale,
+    // matching the figure again); mu/BDF descriptions rewritten for the
+    // terminal-event-only (non-negative) bin construction; for "Uniform
+    // domain" runs only, added mu_histograms.net_transmitted_counts_cloud_only
+    // /_domain_wide_cloud_only/_N_cloud_only/clear_direct_count/
+    // clear_direct_mu_bin_index and bdf.net_transmitted_weights_cloud_only/
+    // _domain_wide_cloud_only/clear_direct_count. Purely additive; 1.0/1.1
+    // readers remain compatible.
+    SCHEMA_VERSION: "1.2",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -590,6 +605,7 @@ export const Export = {
       if (isDomain) {
         inputs.domain_factor = UI.getDomainFactor();
         inputs.domain_boundary = "open";   // Phase 3 adds "periodic"
+        inputs.units.domain_factor = "dimensionless (domain width = M × cloud width; cloud fraction f_c = 1/M²)";
       }
 
       // --- Outputs (counts + normalized fluxes; mirrors the stats panel) ---
@@ -693,8 +709,19 @@ export const Export = {
       const mu_histograms = {
         description: "Exit-angle histograms in |µ| = |cos Θ|. Reversed axis: " +
                      "bin 0 is near-vertical (µ→1), last bin near-horizontal (µ→0). " +
-                     "net_transmitted_counts are signed (+1 downward arrival at " +
-                     "surface, −1 surface reflection); identical to gross when A_s=0.",
+                     "net_transmitted_counts are terminal-event-only, non-negative " +
+                     "counts (v6.0.1): each photon contributes +1 at the angle of its " +
+                     "terminal downward surface arrival ('transmitted' at A_s=0, " +
+                     "'surface_absorbed' at A_s>0); surface reflections are never " +
+                     "binned. The bin totals equal the net (down−up) counts by " +
+                     "construction. Under 'Uniform domain' illumination AND " +
+                     "observation_geometry='all_faces' (sides included), these raw " +
+                     "counts include the clear-sky-direct population -- an unscattered " +
+                     "delta function at exactly Θ₀ confined to one bin (under " +
+                     "'top-base_faces' the raw counts are base-derived only, so the " +
+                     "spike is absent). See the *_cloud_only variants and " +
+                     "clear_direct_* fields (present only for Uniform-domain runs) " +
+                     "for the decontaminated views the panels plot.",
         n_bins: MU_BINS,
         mu_bin_edges: muEdges,           // length n_bins+1, descending 1→0
         mu_bin_centers: muCenters,       // length n_bins
@@ -703,6 +730,28 @@ export const Export = {
         reflected_N: SimStats.reflectedCount(),
         net_transmitted_N: netTransCount
       };
+
+      // Uniform-domain-only additions (schema 1.2, review E4): the on-screen
+      // panels never plot the raw transmitted arrays for these runs (default
+      // view is cloud-only; the entire-domain toggle plots domain-wide
+      // cloud-only), so export those views too, plus enough clear-direct
+      // information for a reader to locate/remove the delta spike from the raw
+      // arrays. Purely additive -- 1.0/1.1 readers unaffected.
+      if (isDomain) {
+        const tcMu = SimStats.tComponents();
+        // Same arithmetic path as the accumulator: clear-direct arrivals have
+        // dirZ = cos(theta0) exactly (never scattered), so this reproduces the
+        // bin index bit-for-bit (FP-sensitive at bin edges, e.g. Θ₀=60°).
+        const muClearDirect = Math.max(0, Math.min(1, Math.abs(Math.cos(theta0Rad))));
+        mu_histograms.net_transmitted_counts_cloud_only =
+          Array.from(SimStats.transmittedMuBinsCloudOnly());          // matches default panel view
+        mu_histograms.net_transmitted_counts_domain_wide_cloud_only =
+          Array.from(SimStats.transmittedMuBinsDomainWideCloudOnly()); // matches entire-domain toggle bars
+        mu_histograms.net_transmitted_N_cloud_only = SimStats.transmittedNetCountCloudOnly();
+        mu_histograms.clear_direct_count = tcMu.clearDirect;
+        mu_histograms.clear_direct_mu_bin_index =
+          Math.min(MU_BINS - 1, Math.floor((1 - muClearDirect) * MU_BINS));
+      }
 
       // --- BDF (bidirectional distribution function) ---
       // Reuse the display grid builder to guarantee identical normalization,
@@ -723,11 +772,22 @@ export const Export = {
       const bdf = {
         description: "Bidirectional distribution function BDF = (W/N)·π/(µ·Δµ·Δφ). " +
                      "Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ " +
-                     "bins (0,5,…,355°). 'weights' are raw signed bin tallies W; " +
-                     "'bdf' is the normalized function. Transmitted panels are net " +
-                     "(down−up) at the surface. These values are raw/unsmoothed; the " +
-                     "PNG figure φ-averages the innermost near-nadir ring (θ<5°) for " +
-                     "display only, so the PNG and this JSON differ at that ring.",
+                     "bins (0,5,…,355°). 'weights' are raw, non-negative " +
+                     "terminal-event bin tallies W (v6.0.1: each photon +1 at its " +
+                     "terminal exit/arrival direction; surface reflections are never " +
+                     "binned); 'bdf' is the normalized function. Transmitted grids " +
+                     "count terminal downward surface arrivals (equal to net down−up " +
+                     "by construction). Under 'Uniform domain' illumination with " +
+                     "observation_geometry='all_faces', the raw transmitted grids " +
+                     "include the clear-sky-direct delta spike at " +
+                     "exactly Θ₀ -- see net_transmitted_weights_cloud_only / " +
+                     "_domain_wide_cloud_only (present only for such runs) for the " +
+                     "decontaminated tallies the panels plot; normalized BDF is " +
+                     "exported for the raw grid only (renormalize the cloud-only " +
+                     "weights with the same (W/N)·π/(µ·Δµ·Δφ) if needed). These " +
+                     "values are raw/unsmoothed; the PNG figure φ-averages the " +
+                     "innermost near-nadir ring (θ<5°) for display only, so the PNG " +
+                     "and this JSON differ at that ring.",
         n_theta_bins: BDF_THETA_BINS,
         n_phi_bins: BDF_PHI_BINS,
         theta_centers_deg: thetaCentersDeg,   // length n_theta_bins
@@ -742,41 +802,51 @@ export const Export = {
         net_transmitted_bdf: netGrid.bdf              // [n_theta][n_phi]
       };
 
+      // Uniform-domain-only additions (schema 1.2, review E4) -- the raw weight
+      // tallies for the two decontaminated views the panels actually plot.
+      if (isDomain) {
+        bdf.net_transmitted_weights_cloud_only =
+          BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeightsCloudOnly()).weights;
+        bdf.net_transmitted_weights_domain_wide_cloud_only =
+          BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeightsDomainWideCloudOnly()).weights;
+        bdf.clear_direct_count = SimStats.tComponents().clearDirect;
+      }
+
       // --- Optical path-length histograms (binned + true means) ---
       // Reproduce the bottom-panel computation exactly so the file matches the
       // figure: 24 bins on [0, niceMax], values ≥ niceMax clipped into bin 23.
+      // Axis (niceMax) and binning come from the SAME SimStats helpers the
+      // panel uses (review E2/R2): the axis is scaled from the genuine
+      // (touchedCloud=true) path population, independent of the Observation-
+      // geometry dropdown -- it is NOT derived from the exported segments'
+      // own means, so it always matches the on-screen figure's axis.
       // Path arrays as observation-geometry segments (iterated, not concatenated).
       const reflSegs  = SimStats.reflectedPathSegments();
       const netSegs   = SimStats.transmittedPathSegments();
-      const segMean = segs => { let sum=0,n=0; for (const a of segs){for (const v of a) sum+=v; n+=a.length;} return n?sum/n:0; };
       const segLen  = segs => { let n=0; for (const a of segs) n+=a.length; return n; };
-      const meanR = segMean(reflSegs), meanT = segMean(netSegs);
-      const scaleMean = Math.max(meanR, meanT);
-      const niceMax = Math.max(10, Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10);
+      const meanR = SimStats.segMean(reflSegs), meanT = SimStats.segMean(netSegs);
+      const niceMax = SimStats.pathAxisMax();
       const PATH_BINS = 24;
-      function pathHist(segs) {
-        const counts = new Array(PATH_BINS).fill(0);
-        for (const arr of segs) for (const vRaw of arr) {
-          const v = Math.max(0, vRaw || 0);
-          counts[Math.min(PATH_BINS - 1, Math.floor((v / niceMax) * PATH_BINS))] += 1;
-        }
-        return counts;
-      }
       const pathEdges = [];
       for (let i = 0; i <= PATH_BINS; i++) pathEdges.push(i * niceMax / PATH_BINS);
       const path_length_histograms = {
         description: "Optical path-length distributions (units of optical depth). " +
                      "Photons with path ≥ bin_max are accumulated in the final " +
-                     "(overflow) bin, matching the on-screen panel. *_mean are the " +
-                     "true means over all photons (not affected by clipping).",
+                     "(overflow) bin, matching the on-screen panel. bin_max is " +
+                     "scaled from the genuine (cloud-touched) path population, " +
+                     "matching the on-screen axis exactly; exact-zero paths " +
+                     "(clear-sky-direct photons, Uniform domain only) are not " +
+                     "binned (none occur in the segment lists exported here). " +
+                     "*_mean are the true means over the exported photons (not " +
+                     "affected by clipping).",
         n_bins: PATH_BINS,
         bin_max: niceMax,
         bin_edges: pathEdges,            // length n_bins+1; last bin is overflow
         overflow_in_last_bin: true,
-        reflected_counts: pathHist(reflSegs),
+        reflected_counts: SimStats.pathHistogramCounts(reflSegs, niceMax, PATH_BINS),
         reflected_N: segLen(reflSegs),
         reflected_mean: meanR,
-        net_transmitted_counts: pathHist(netSegs),
+        net_transmitted_counts: SimStats.pathHistogramCounts(netSegs, niceMax, PATH_BINS),
         net_transmitted_N: segLen(netSegs),
         net_transmitted_mean: meanT
       };
@@ -785,7 +855,7 @@ export const Export = {
         format: "mc_cloud_rt_export",
         schema_version: Export.SCHEMA_VERSION,
         generated: new Date().toISOString(),
-        generator: "mc_cloud_rt_v4 — browser Monte Carlo cloud radiative transfer",
+        generator: "VISTA-C — browser Monte Carlo cloud radiative transfer",
         inputs,
         outputs,
         mu_histograms,

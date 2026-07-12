@@ -11,10 +11,13 @@ globalThis.document = {
   }
 };
 
-const BASE = "/sessions/serene-brave-brahmagupta/mnt/VISTA-C/js";
-const { RNG } = await import(`${BASE}/rng.js`);
-const { Physics } = await import(`${BASE}/physics.js`);
-const { SimStats } = await import(`${BASE}/simstats.js`);
+// Portable import path (relative to this file), so the harness runs on any
+// machine/checkout — an earlier version hardcoded an absolute path from a
+// specific dev sandbox and silently broke everywhere else (review finding E6).
+const BASE = new URL("../../js/", import.meta.url).href;
+const { RNG } = await import(`${BASE}rng.js`);
+const { Physics } = await import(`${BASE}physics.js`);
+const { SimStats } = await import(`${BASE}simstats.js`);
 
 const ILLUM_MODES = ["center", "top", "top_side"];
 const THETA0_DEG = [0, 60];

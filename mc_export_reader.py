@@ -84,6 +84,28 @@ class MCExport:
     def counts(self) -> dict[str, int]:
         return self.raw["outputs"]["counts"]
 
+    # ---- Uniform-domain outputs (schema >= 1.1; absent for legacy runs) ----
+    @property
+    def is_uniform_domain(self) -> bool:
+        return self.inputs.get("photon_illumination") == "uniform_domain"
+
+    @property
+    def domain_factor(self) -> float | None:
+        return self.inputs.get("domain_factor")
+
+    @property
+    def domain_boundary(self) -> str | None:
+        return self.inputs.get("domain_boundary")
+
+    @property
+    def cloud_fraction(self) -> float | None:
+        return self.outputs.get("cloud_fraction")
+
+    @property
+    def uniform_domain_outputs(self) -> dict[str, Any] | None:
+        """Domain-wide R/T/A budget + component breakdowns (None for legacy runs)."""
+        return self.outputs.get("uniform_domain_outputs")
+
     # ---- µ histograms -----------------------------------------------------
     @property
     def mu_bin_centers(self) -> np.ndarray:
@@ -100,6 +122,30 @@ class MCExport:
     @property
     def mu_net_transmitted(self) -> np.ndarray:
         return np.asarray(self.raw["mu_histograms"]["net_transmitted_counts"], float)
+
+    # Schema >= 1.2, Uniform-domain runs only (None otherwise). The raw
+    # net_transmitted_counts for such runs include the clear-sky-direct delta
+    # spike (one bin at exactly Theta0); these are the decontaminated views the
+    # on-screen panels actually plot.
+    def _opt_mu(self, key: str) -> np.ndarray | None:
+        v = self.raw["mu_histograms"].get(key)
+        return None if v is None else np.asarray(v, float)
+
+    @property
+    def mu_net_transmitted_cloud_only(self) -> np.ndarray | None:
+        return self._opt_mu("net_transmitted_counts_cloud_only")
+
+    @property
+    def mu_net_transmitted_domain_wide_cloud_only(self) -> np.ndarray | None:
+        return self._opt_mu("net_transmitted_counts_domain_wide_cloud_only")
+
+    @property
+    def clear_direct_count(self) -> int | None:
+        return self.raw["mu_histograms"].get("clear_direct_count")
+
+    @property
+    def clear_direct_mu_bin_index(self) -> int | None:
+        return self.raw["mu_histograms"].get("clear_direct_mu_bin_index")
 
     # ---- BDF --------------------------------------------------------------
     @property
@@ -129,6 +175,21 @@ class MCExport:
     @property
     def net_transmitted_bdf_weights(self) -> np.ndarray:
         return np.asarray(self.raw["bdf"]["net_transmitted_weights"], float)
+
+    # Schema >= 1.2, Uniform-domain runs only (None otherwise) -- raw weight
+    # tallies for the decontaminated (clear-direct-excluded) views the panels
+    # plot. Renormalize with (W/N)*pi/(mu*dmu*dphi) if a BDF is needed.
+    def _opt_bdf(self, key: str) -> np.ndarray | None:
+        v = self.raw["bdf"].get(key)
+        return None if v is None else np.asarray(v, float)
+
+    @property
+    def net_transmitted_bdf_weights_cloud_only(self) -> np.ndarray | None:
+        return self._opt_bdf("net_transmitted_weights_cloud_only")
+
+    @property
+    def net_transmitted_bdf_weights_domain_wide_cloud_only(self) -> np.ndarray | None:
+        return self._opt_bdf("net_transmitted_weights_domain_wide_cloud_only")
 
     # ---- path-length histograms ------------------------------------------
     @property
@@ -199,6 +260,38 @@ class MCExport:
         )
         ds["reflected_bdf"].attrs["long_name"] = "reflected BDF = (W/N) pi / (mu dmu dphi)"
         ds["net_transmitted_bdf"].attrs["long_name"] = "net-transmitted (down-up) BDF at surface"
+
+        # Uniform-domain additions (schema >= 1.1/1.2) -- attached only when present.
+        if self.mu_net_transmitted_cloud_only is not None:
+            ds["mu_net_transmitted_cloud_only"] = (("mu",), self.mu_net_transmitted_cloud_only)
+            ds["mu_net_transmitted_cloud_only"].attrs["long_name"] = (
+                "terminal surface arrivals, cloud-touched photons only "
+                "(clear-sky-direct delta spike excluded; matches the on-screen panel)")
+        if self.mu_net_transmitted_domain_wide_cloud_only is not None:
+            ds["mu_net_transmitted_domain_wide_cloud_only"] = (
+                ("mu",), self.mu_net_transmitted_domain_wide_cloud_only)
+        if self.net_transmitted_bdf_weights_cloud_only is not None:
+            ds["net_transmitted_bdf_weights_cloud_only"] = (
+                ("theta", "phi"), self.net_transmitted_bdf_weights_cloud_only)
+        if self.net_transmitted_bdf_weights_domain_wide_cloud_only is not None:
+            ds["net_transmitted_bdf_weights_domain_wide_cloud_only"] = (
+                ("theta", "phi"), self.net_transmitted_bdf_weights_domain_wide_cloud_only)
+        udo = self.uniform_domain_outputs
+        if udo is not None:
+            ds.attrs["cloud_fraction"] = self.cloud_fraction
+            ds.attrs["domain_boundary"] = udo.get("domain_boundary", "open")
+            for key in ("R_domain", "T_domain", "A_cloud_domain"):
+                if key in udo:
+                    ds.attrs[f"domain_{key}_flux"] = udo[key]["flux"]
+                    ds.attrs[f"domain_{key}_count"] = udo[key]["count"]
+            if "closure_R_T_Acloud" in udo:
+                ds.attrs["domain_closure_R_T_Acloud"] = udo["closure_R_T_Acloud"]
+            # Component breakdowns flattened as attrs (flux only; counts in JSON).
+            for group in ("R_components", "T_components", "A_cloud_components"):
+                for name, val in (udo.get(group) or {}).items():
+                    ds.attrs[f"domain_{group}_{name}_flux"] = val["flux"]
+        if self.clear_direct_count is not None:
+            ds.attrs["clear_direct_count"] = self.clear_direct_count
         return ds
 
     def to_netcdf(self, path: str) -> None:
@@ -227,6 +320,11 @@ def print_summary(exp: MCExport) -> None:
     print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")
     print(f"  surface albedo A_s : {inp['surface_albedo']:.4g}")
     print(f"  photon illumination: {inp.get('photon_illumination', 'center')}")
+    if exp.is_uniform_domain:
+        fc = exp.cloud_fraction
+        print(f"  domain factor M    : {exp.domain_factor:.4g}"
+              + (f"  (cloud fraction f_c = {fc:.4g})" if fc is not None else ""))
+        print(f"  domain boundary    : {exp.domain_boundary}")
     print(f"  RNG seed           : {inp['rng_seed']}")
     print("-" * 64)
     print(f"ENERGY BUDGET (per launched photon; observation geometry: {exp.outputs.get('observation_geometry', 'n/a')})")
@@ -237,6 +335,31 @@ def print_summary(exp: MCExport) -> None:
     print(f"  closure R+T+A+S+Term       : {flux['closure_R_T_A_S_Term']:.5f}  (should be 1)")
     print(f"  mean scatterings/phot : {exp.outputs['mean_scatterings_per_photon']:.3f}")
     print(f"  mean optical path/phot: {exp.outputs['mean_optical_path_per_photon']:.3f}")
+
+    # ENTIRE DOMAIN block (Uniform-domain runs, schema >= 1.1): domain-wide
+    # budget, independent of the observation-geometry dropdown above.
+    udo = exp.uniform_domain_outputs
+    if udo is not None:
+        print("-" * 64)
+        print("ENTIRE DOMAIN (domain-normalized; independent of observation geometry)")
+        for key, label in (("R_domain", "R_domain (all upwelling)      "),
+                           ("T_domain", "T_domain (all surface-absorbed)"),
+                           ("A_cloud_domain", "A_cloud (domain-normalized)   ")):
+            if key in udo:
+                print(f"  {label}: {udo[key]['flux']:.5f}  ({udo[key]['count']:,})")
+        if "closure_R_T_Acloud" in udo:
+            print(f"  closure R+T+A_cloud            : {udo['closure_R_T_Acloud']:.5f}  (should be 1)")
+        for group, title in (("R_components", "R components"),
+                             ("T_components", "T components"),
+                             ("A_cloud_components", "A_cloud components")):
+            comps = udo.get(group)
+            if comps:
+                parts = ", ".join(f"{k}={v['flux']:.4f}" for k, v in comps.items())
+                print(f"    {title}: {parts}")
+        if exp.clear_direct_count is not None:
+            print(f"  clear-sky-direct photons: {exp.clear_direct_count:,} "
+                  f"(delta spike at Theta0, mu bin {exp.clear_direct_mu_bin_index}; "
+                  "excluded from the *_cloud_only arrays)")
     print("-" * 64)
 
     # Example derived quantity: integrate the reflected µ histogram and compare
@@ -244,6 +367,24 @@ def print_summary(exp: MCExport) -> None:
     mu_refl_sum = exp.mu_reflected.sum()
     print("CONSISTENCY CHECKS")
     print(f"  sum(mu reflected counts) = {mu_refl_sum:,.0f}  vs  reflected N = {cnt['reflected']:,}")
+
+    # Uniform-domain: components must sum exactly to their domain totals.
+    udo = exp.uniform_domain_outputs
+    if udo is not None:
+        for group, total_key in (("R_components", "R_domain"),
+                                 ("T_components", "T_domain"),
+                                 ("A_cloud_components", "A_cloud_domain")):
+            comps, tot = udo.get(group), udo.get(total_key)
+            if comps and tot:
+                csum = sum(v["count"] for v in comps.values())
+                ok = "OK" if csum == tot["count"] else "MISMATCH"
+                print(f"  sum({group}) = {csum:,}  vs  {total_key} N = {tot['count']:,}  [{ok}]")
+        if exp.mu_net_transmitted_cloud_only is not None and exp.clear_direct_count is not None:
+            raw_sum = exp.mu_net_transmitted.sum()
+            sides = exp.outputs.get("observation_geometry") == "all_faces"
+            spike = ("includes the clear-direct spike"
+                     if sides else "base-derived only (no clear-direct spike)")
+            print(f"  raw mu net-transmitted is {spike}; raw sum = {raw_sum:,.0f}")
 
     # Peak of each BDF and the zenith/azimuth where it occurs.
     for name, grid in (("reflected", exp.reflected_bdf),
