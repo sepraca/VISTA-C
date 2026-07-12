@@ -747,6 +747,12 @@ export const Export = {
           Array.from(SimStats.transmittedMuBinsCloudOnly());          // matches default panel view
         mu_histograms.net_transmitted_counts_domain_wide_cloud_only =
           Array.from(SimStats.transmittedMuBinsDomainWideCloudOnly()); // matches entire-domain toggle bars
+        // Domain-wide REFLECTED (side exits + surface bypass, dropdown-independent)
+        // -- what the "Show entire-domain plots" toggle plots for the Reflected
+        // panel (no cloud-only variant needed: the bypass population is
+        // Lambertian-diffuse, no delta spike -- see TODO "3.A" follow-up).
+        mu_histograms.reflected_counts_domain_wide =
+          Array.from(SimStats.reflectedMuBinsDomainWide());
         mu_histograms.net_transmitted_N_cloud_only = SimStats.transmittedNetCountCloudOnly();
         mu_histograms.clear_direct_count = tcMu.clearDirect;
         mu_histograms.clear_direct_mu_bin_index =
@@ -809,6 +815,8 @@ export const Export = {
           BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeightsCloudOnly()).weights;
         bdf.net_transmitted_weights_domain_wide_cloud_only =
           BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeightsDomainWideCloudOnly()).weights;
+        bdf.reflected_weights_domain_wide =
+          BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeightsDomainWide()).weights;
         bdf.clear_direct_count = SimStats.tComponents().clearDirect;
       }
 

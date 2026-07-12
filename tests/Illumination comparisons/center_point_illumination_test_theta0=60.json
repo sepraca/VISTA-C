@@ -1,8 +1,8 @@
 {
   "format": "mc_cloud_rt_export",
-  "schema_version": "1.0",
-  "generated": "2026-06-15T15:53:13.049Z",
-  "generator": "mc_cloud_rt_v4 — browser Monte Carlo cloud radiative transfer",
+  "schema_version": "1.2",
+  "generated": "2026-07-12T21:05:58.596Z",
+  "generator": "VISTA-C — browser Monte Carlo cloud radiative transfer",
   "inputs": {
     "photons": 2000000,
     "tau_cloud": 10,
@@ -26,6 +26,7 @@
     }
   },
   "outputs": {
+    "observation_geometry": "top-base_faces",
     "counts": {
       "launched": 2000000,
       "reflected": 1128678,
@@ -50,10 +51,10 @@
     },
     "mean_scatterings_per_photon": 18.5691525,
     "mean_optical_path_per_photon": 18.581029956925505,
-    "notes": "Fluxes are normalized per launched photon (analog MC, weight 1). T_net_transmitted = (F_down_surface − upward surface reflection) and equals the surface absorption for a non-absorbing-cloud case by flux closure."
+    "notes": "Fluxes are normalized per launched photon (analog MC, weight 1). 'observation_geometry' sets how exits are bucketed: 'top-base_faces' = R/T from the cloud top/base faces only (side exits, surface-reflected upward bypass, and side-derived surface absorption all go to S); 'all_faces' = the cloud element (top/base/side faces → R/T), with only the surface-reflected upward bypass in S. Under 'Uniform domain' illumination this budget is still cloud-normalized (same denominator, all launched photons) -- see 'uniform_domain_outputs' below for the always-on, geometry-independent domain-wide total."
   },
   "mu_histograms": {
-    "description": "Exit-angle histograms in |µ| = |cos Θ|. Reversed axis: bin 0 is near-vertical (µ→1), last bin near-horizontal (µ→0). net_transmitted_counts are signed (+1 downward arrival at surface, −1 surface reflection); identical to gross when A_s=0.",
+    "description": "Exit-angle histograms in |µ| = |cos Θ|. Reversed axis: bin 0 is near-vertical (µ→1), last bin near-horizontal (µ→0). net_transmitted_counts are terminal-event-only, non-negative counts (v6.0.1): each photon contributes +1 at the angle of its terminal downward surface arrival ('transmitted' at A_s=0, 'surface_absorbed' at A_s>0); surface reflections are never binned. The bin totals equal the net (down−up) counts by construction. Under 'Uniform domain' illumination AND observation_geometry='all_faces' (sides included), these raw counts include the clear-sky-direct population -- an unscattered delta function at exactly Θ₀ confined to one bin (under 'top-base_faces' the raw counts are base-derived only, so the spike is absent). See the *_cloud_only variants and clear_direct_* fields (present only for Uniform-domain runs) for the decontaminated views the panels plot.",
     "n_bins": 20,
     "mu_bin_edges": [
       1,
@@ -148,7 +149,7 @@
     "net_transmitted_N": 708218
   },
   "bdf": {
-    "description": "Bidirectional distribution function BDF = (W/N)·π/(µ·Δµ·Δφ). Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ bins (0,5,…,355°). 'weights' are raw signed bin tallies W; 'bdf' is the normalized function. Transmitted panels are net (down−up) at the surface. Unsmoothed (display near-nadir averaging not applied).",
+    "description": "Bidirectional distribution function BDF = (W/N)·π/(µ·Δµ·Δφ). Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ bins (0,5,…,355°). 'weights' are raw, non-negative terminal-event bin tallies W (v6.0.1: each photon +1 at its terminal exit/arrival direction; surface reflections are never binned); 'bdf' is the normalized function. Transmitted grids count terminal downward surface arrivals (equal to net down−up by construction). Under 'Uniform domain' illumination with observation_geometry='all_faces', the raw transmitted grids include the clear-sky-direct delta spike at exactly Θ₀ -- see net_transmitted_weights_cloud_only / _domain_wide_cloud_only (present only for such runs) for the decontaminated tallies the panels plot; normalized BDF is exported for the raw grid only (renormalize the cloud-only weights with the same (W/N)·π/(µ·Δµ·Δφ) if needed). These values are raw/unsmoothed; the PNG figure φ-averages the innermost near-nadir ring (θ<5°) for display only, so the PNG and this JSON differ at that ring.",
     "n_theta_bins": 19,
     "n_phi_bins": 72,
     "theta_centers_deg": [
@@ -5924,7 +5925,7 @@
     ]
   },
   "path_length_histograms": {
-    "description": "Optical path-length distributions (units of optical depth). Photons with path ≥ bin_max are accumulated in the final (overflow) bin, matching the on-screen panel. *_mean are the true means over all photons (not affected by clipping).",
+    "description": "Optical path-length distributions (units of optical depth). Photons with path ≥ bin_max are accumulated in the final (overflow) bin, matching the on-screen panel. bin_max is scaled from the genuine (cloud-touched) path population, matching the on-screen axis exactly; exact-zero paths (clear-sky-direct photons, Uniform domain only) are not binned (none occur in the segment lists exported here). *_mean are the true means over the exported photons (not affected by clipping).",
     "n_bins": 24,
     "bin_max": 60,
     "bin_edges": [

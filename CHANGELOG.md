@@ -73,6 +73,39 @@ summarized here.)*
   `diff_golden.mjs`, `golden_one.mjs`). The review write-up itself is kept as a local
   dev document (untracked, like the TODO journals).
 - Repo hygiene: removed a stray zero-byte file named `git` from the repository root.
+- **`tests/Illumination comparisons/` regenerated with the v6.0.1 code** (2026-07-14):
+  all 12 legacy JSON exports rebuilt at schema 1.2 via the real export pipeline in Node
+  (`tests/review-harness/gen_export.mjs`, new parametrized generator; 2×10⁶ photons,
+  seed 42, same parameters as the originals). Verified against the committed originals:
+  physics-level counts bit-identical; expected differences only — schema 1.0→1.2,
+  net-transmitted μ arrays now terminal-event-only (a residual negative bin in one old
+  export is gone), and geomB R/S counts shifted by exactly the surface-bypass population
+  (the documented v6.0 Observation-geometry redesign: old geomB ≡ "scene" with S≡0; new
+  "all_faces" keeps bypass in S). All 6 comparison PNGs regenerated, plus **2 new
+  Uniform-domain figures** (`illumination_comparison_UD_M4_As0.5_geomB_theta0={0,60}.png`,
+  uniform-top vs uniform-domain M=4) with net-transmitted shown cloud-only.
+- `illumination_comparison.py`: optional CLI arguments (`--file-a/-b`, `--label-a/-b`,
+  `--outfile`, `--suptitle`, `--transmitted-cloud-only`) for batch figure generation —
+  fully backward-compatible (no arguments = the CONFIG block, as before). The
+  `--transmitted-cloud-only` flag uses the schema-1.2 cloud-only arrays (and renormalizes
+  the cloud-only BDF), matching what the in-app panels plot for Uniform-domain runs;
+  polar-plot short titles now use two words (fixes "uniform" vs "uniform" ambiguity).
+  Axis-label corrections (all 8 figures regenerated): the BDF row was tagged
+  "(radiance)" as if a unit — BDF = (W/N)·π/(μΔμΔφ) is dimensionless (π·L/F₀, a
+  reflectance-factor-type quantity), now "(dimensionless, ∝ radiance)"; the flux rows
+  now state "(area-normalized: shape only)" so absolute-total differences between runs
+  (side-leakage R deficit) are read from the BDF rows, not row 1. Consistency of the
+  flux and BDF rows verified to machine epsilon via (1/N)·dN/dμ = 2μ·B̄DF; the mid-range
+  BDF offset between illumination modes equals the total-R ratio (e.g. 1.35 at Θ₀=0).
+- JSON export (still schema 1.2, additive): Uniform-domain runs now also carry the
+  domain-wide REFLECTED arrays (`mu_histograms.reflected_counts_domain_wide`,
+  `bdf.reflected_weights_domain_wide` — side exits + surface bypass), completing export
+  parity with the in-app "Show entire-domain plots" toggle. New `--entire-domain` flag in
+  `illumination_comparison.py` uses them (and the domain-wide cloud-only transmitted
+  arrays), and two new figures were added:
+  `illumination_comparison_UD_M4_As0.5_entireDomain_theta0={0,60}.png`. The Θ₀=0 one
+  shows the expected whole-domain-FOV signature: near-flat UD reflected BDF ≈ R_domain
+  (quasi-Lambertian bright-surface-dominated scene).
 - **Uniform-domain golden snapshot (pre-Phase-3 regression lock)**:
   `tests/golden-snapshots/gen_golden_ud.mjs` + `golden_ud_v6.0-phase2.json` (+ `.md`
   summary) — 18 runs (M∈{1,2,4} × Θ₀∈{0°,60°} × Aₛ∈{0,0.5,1}, 500k photons each, seed 42)

@@ -5,14 +5,17 @@ plot_mc_comparison.py — 4x2 comparison figure for two mc_cloud_rt_v4 JSON expo
 Rows:
   (1) exit-angle |mu| histogram          (flux/energy: fraction of photons per bin)
   (2) optical path-length distribution   (flux/energy: fraction of photons per bin)
-  (3) BDF vs exit zenith, phi-averaged    (radiance, absolute)
-  (4) BDF polar heatmap                    (radiance; zenith=radius, azimuth=angle),
-                                           shown for BOTH runs per channel,
-                                           matching the browser BDF panel style.
+  (3) BDF vs exit zenith, phi-averaged    (dimensionless BDF, ∝ radiance; absolute)
+  (4) BDF polar heatmap                    (dimensionless BDF, ∝ radiance;
+                                           zenith=radius, azimuth=angle), shown for
+                                           BOTH runs per channel, matching the
+                                           browser BDF panel style.
 Columns (rows 1-3): (left) Reflected, (right) Net transmitted (surface-deposited).
 
-NOTE on units: rows 1-2 are FLUX (photon-count) distributions; rows 3-4 are
-RADIANCE. The two are consistent but not identical representations of the same
+NOTE on units: rows 1-2 are FLUX (photon-count) distributions; rows 3-4 are the
+dimensionless BDF, a reflectance-factor-type quantity PROPORTIONAL to radiance
+(pi*L/F0) -- not radiance itself, so no radiance unit is implied.
+The two are consistent but not identical representations of the same
 exit directions, related by (1/N) dN/dmu = 2*mu*BDF_avg(theta) (mu=cosTheta) —
 the cosTheta is a y-axis flux<->radiance weighting, not an x-axis change.
 The mu/path rows are area-normalized (shape comparison); the BDF rows are kept
@@ -52,7 +55,74 @@ SUPTITLE = ('Pencil vs uniform-top illumination\n'
             'COT τ=10,  g=0.85,  ω₀=1.00,  A$_s$=0,  extent=40,  Θ₀=0°,  N=2×10⁶,  seed 42')
 # ===============================================================
 
+# Optional CLI overrides (v6.0.1): with no arguments the CONFIG block above is
+# used unchanged, so historical invocation still works. With arguments, every
+# figure variant can be batch-generated without editing the file:
+#   python illumination_comparison.py --file-a a.json --file-b b.json \
+#     --label-a "uniform top" --label-b "uniform domain M=4" \
+#     --outfile out.png --suptitle "..." [--transmitted-cloud-only]
+import argparse
+_p = argparse.ArgumentParser(add_help=True)
+_p.add_argument('--file-a');  _p.add_argument('--file-b')
+_p.add_argument('--label-a'); _p.add_argument('--label-b')
+_p.add_argument('--outfile'); _p.add_argument('--suptitle')
+_p.add_argument('--transmitted-cloud-only', action='store_true',
+                help='Use the *_cloud_only net-transmitted arrays (schema >= 1.2, '
+                     'Uniform-domain runs): excludes the clear-sky-direct delta '
+                     'spike, matching what the in-app panels plot.')
+_p.add_argument('--entire-domain', action='store_true',
+                help='Match the in-app "Show entire-domain plots" toggle (schema '
+                     '>= 1.2, Uniform-domain runs): Reflected uses the domain-wide '
+                     'arrays (side exits + surface bypass, dropdown-independent); '
+                     'Net transmitted uses the domain-wide cloud-only arrays. '
+                     'Legacy exports carry no such arrays and pass through unchanged.')
+_args = _p.parse_args()
+FILE_A   = _args.file_a   or FILE_A
+FILE_B   = _args.file_b   or FILE_B
+LABEL_A  = _args.label_a  or LABEL_A
+LABEL_B  = _args.label_b  or LABEL_B
+OUTFILE  = _args.outfile  or OUTFILE
+SUPTITLE = _args.suptitle.replace('\\n', '\n') if _args.suptitle else SUPTITLE
+
 A = MCExport.load(FILE_A); B = MCExport.load(FILE_B)
+
+# --transmitted-cloud-only: swap the net-transmitted mu histogram and BDF grid
+# for their cloud-only (clear-direct-excluded) variants where the export
+# carries them (Uniform-domain runs, schema >= 1.2). The raw arrays include the
+# unscattered clear-sky-direct population -- a delta function at exactly Theta0
+# confined to one bin -- which no shared axis/color scale can display
+# proportionally; the in-app panels plot the cloud-only view for the same
+# reason. Legacy exports carry no such arrays and are passed through unchanged
+# (their raw arrays ARE the cloud-only population). The BDF is renormalized
+# from the cloud-only weights with the same (W/N)*pi/(mu*dmu*dphi) formula.
+def _bdf_from_weights(bd, W):
+    """Renormalize a raw weight grid with the export's own BDF formula."""
+    W = np.asarray(W, float)
+    mu_c = np.asarray(bd['mu_centers'], float)[:, None]
+    dmu  = np.asarray(bd['delta_mu'], float)[:, None]
+    return (W / bd['N_incident']) * np.pi / (mu_c * dmu * bd['delta_phi_rad'])
+
+if _args.transmitted_cloud_only or _args.entire_domain:
+    for exp in (A, B):
+        mh, bd = exp.raw['mu_histograms'], exp.raw['bdf']
+        # Net transmitted: cloud-only (default view) or domain-wide cloud-only
+        # (entire-domain view) -- both exclude the clear-sky-direct delta spike,
+        # exactly as the in-app panels do.
+        t_key = ('net_transmitted_counts_domain_wide_cloud_only' if _args.entire_domain
+                 else 'net_transmitted_counts_cloud_only')
+        w_key = ('net_transmitted_weights_domain_wide_cloud_only' if _args.entire_domain
+                 else 'net_transmitted_weights_cloud_only')
+        if t_key in mh:
+            mh['net_transmitted_counts'] = mh[t_key]
+        if w_key in bd:
+            bd['net_transmitted_bdf'] = _bdf_from_weights(bd, bd[w_key])
+        # Reflected (entire-domain only): domain-wide arrays including the
+        # surface bypass (Lambertian-diffuse -- no spike, no cloud-only needed).
+        if _args.entire_domain:
+            if 'reflected_counts_domain_wide' in mh:
+                mh['reflected_counts'] = mh['reflected_counts_domain_wide']
+            if 'reflected_weights_domain_wide' in bd:
+                bd['reflected_bdf'] = _bdf_from_weights(bd, bd['reflected_weights_domain_wide'])
 
 def frac(c):
     c = np.maximum(0, np.asarray(c, float)); s = c.sum()
@@ -77,7 +147,11 @@ for ci, (key, ttl) in enumerate([('mu_reflected','Reflected'),
     for exp, col_ in [(A, COLOR_A), (B, COLOR_B)]:
         a.axvline((1 - mean_mu(exp, key)) * nmu - 0.5, color=col_, ls='--', lw=1.2, alpha=0.9)
     a.set_title(ttl, fontsize=12); a.set_xlabel('|μ| = |cos Θ|')
-    a.set_ylabel('fraction of photons / bin  (flux)')
+    # Area-normalized by construction (each run divided by its own total), so
+    # this row compares SHAPE only — absolute differences between the runs
+    # (e.g. the total-R deficit from side leakage) appear in the BDF rows
+    # below, which are absolute per launched photon.
+    a.set_ylabel('fraction of photons / bin  (flux)\n(area-normalized: shape only)')
     a.set_xticks([-0.5, nmu/2-0.5, nmu-0.5]); a.set_xticklabels(['1','0.5','0'])
     a.set_xlim(-0.8, nmu-0.2); a.grid(axis='y', alpha=0.25)
 
@@ -93,7 +167,11 @@ for ci, (key, ttl) in enumerate([('reflected','Reflected'),
     a.axvline(PHa[f'{key}_mean']/bmax*npath-0.5, color=COLOR_A, ls='--', lw=1.2, alpha=0.9)
     a.axvline(PHb[f'{key}_mean']/bmax*npath-0.5, color=COLOR_B, ls='--', lw=1.2, alpha=0.9)
     a.set_title(ttl, fontsize=12); a.set_xlabel('optical path length')
-    a.set_ylabel('fraction of photons / bin  (flux)')
+    # Area-normalized by construction (each run divided by its own total), so
+    # this row compares SHAPE only — absolute differences between the runs
+    # (e.g. the total-R deficit from side leakage) appear in the BDF rows
+    # below, which are absolute per launched photon.
+    a.set_ylabel('fraction of photons / bin  (flux)\n(area-normalized: shape only)')
     a.set_xticks([-0.5, npath/2-0.5, npath-0.5]); a.set_xticklabels(['0', f'{bmax/2:.0f}', f'>{bmax:.0f}'])
     a.set_xlim(-0.8, npath-0.2); a.grid(axis='y', alpha=0.25)
 
@@ -107,7 +185,14 @@ for ci, (which, ttl) in enumerate([('refl','Reflected'),('net','Net transmitted 
     a.bar(th, gA, width=4.2, color=COLOR_A, alpha=ALPHA, edgecolor=COLOR_A, linewidth=0.4)
     a.bar(th, gB, width=4.2, color=COLOR_B, alpha=ALPHA, edgecolor=COLOR_B, linewidth=0.4)
     a.set_title(ttl, fontsize=12); a.set_xlabel('exit zenith Θ (deg)')
-    a.set_ylabel('BDF (φ-avg, absolute)  (radiance)')
+    # BDF = (W/N)·π/(μΔμΔφ) is DIMENSIONLESS (a reflectance-factor-type
+    # quantity, π·L/F₀) — proportional to radiance, not radiance itself, so
+    # it must not be tagged as a unit (README: "a quantity proportional to
+    # radiance"). The 1/μ factor is why this row rises toward grazing Θ while
+    # the flux rows above fall: e.g. a last ring holding ~0.1% of the photons
+    # has μ̄≈0.022, amplifying its BDF ~46×. Rows 1-3 are mutually consistent
+    # to machine epsilon via (1/N)·dN/dμ = 2μ·B̄DF (verified 2026-07-14).
+    a.set_ylabel('BDF (φ-avg, absolute)\n(dimensionless, ∝ radiance)')
     a.set_xticks([0,30,60,90]); a.set_xlim(-3, 93); a.grid(axis='y', alpha=0.25)
 
 # ---------- Row 4: BDF polar heatmaps (radiance) ----------
@@ -171,7 +256,10 @@ cax_r = fig.add_subplot(sub[0, 2])
 ax_cn = fig.add_subplot(sub[0, 4], projection='polar')
 ax_un = fig.add_subplot(sub[0, 5], projection='polar')
 cax_n = fig.add_subplot(sub[0, 6])
-sa, sb = LABEL_A.split()[0], LABEL_B.split()[0]   # short run tags for polar titles
+# Short run tags for polar titles: first word alone is ambiguous when both
+# labels share it (e.g. "uniform top" vs "uniform domain M=4"), so use up to
+# the first two words.
+sa = ' '.join(LABEL_A.split()[:2]); sb = ' '.join(LABEL_B.split()[:2])
 draw_polar(ax_cr, A, 'refl', f'{sa}\nReflected',       vmax_refl)
 draw_polar(ax_ur, B, 'refl', f'{sb}\nReflected',       vmax_refl)
 draw_polar(ax_cn, A, 'net',  f'{sa}\nNet transmitted', vmax_net)
