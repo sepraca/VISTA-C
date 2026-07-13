@@ -4,7 +4,9 @@
 import { readFileSync } from "node:fs";
 
 const NEW_FIELDS = ["bypassClearDirect", "bypassViaCloud", "transmittedClearDirect",
-                    "surfaceReflectedClearDirect", "absorbedCloudIncident", "absorbedClearRecycled"];
+                    "surfaceReflectedClearDirect", "absorbedCloudIncident", "absorbedClearRecycled",
+                    // Phase 4 additive first-hit tallies:
+                    "launchedCloudTop", "launchedCloudWall", "launchedClear"];
 
 function normalize(obj) {
   const o = JSON.parse(JSON.stringify(obj));
@@ -17,6 +19,13 @@ function normalize(obj) {
         if (f === "bypassViaCloud") {
           if (r.rawStats[f] !== r.rawStats.surfaceBypassUp)
             console.error(`MISMATCH: ${r.illum}/${r.theta0_deg}/${r.As}: bypassViaCloud ${r.rawStats[f]} != surfaceBypassUp ${r.rawStats.surfaceBypassUp}`);
+        } else if (f === "launchedCloudTop") {
+          // Legacy modes: top + wall must sum to launched (wall > 0 only for
+          // top_side at theta0 > 0); launchedClear must be 0 (else branch).
+          if (r.rawStats.launchedCloudTop + r.rawStats.launchedCloudWall !== r.rawStats.launched)
+            console.error(`MISMATCH: ${r.illum}/${r.theta0_deg}/${r.As}: top+wall != launched`);
+        } else if (f === "launchedCloudWall") {
+          // checked via launchedCloudTop above; nonzero is expected for top_side
         } else if (r.rawStats[f] !== 0) {
           console.error(`NONZERO additive field ${f}=${r.rawStats[f]} in ${r.illum}/${r.theta0_deg}/${r.As}`);
         }

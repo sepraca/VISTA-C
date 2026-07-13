@@ -2,6 +2,7 @@
 // window.* globals for HTML event attributes, and starts the simulation.
 
 import { setDrawPanelCallback } from './simstats.js';
+import { world } from './state.js';
 import { BottomPanel } from './bottomPanel.js';
 import { RunControl } from './runControl.js';
 import { Scene } from './scene.js';
@@ -15,6 +16,10 @@ try {
   setDrawPanelCallback(() => BottomPanel.drawBottomPanel());
 
   // Expose namespaces globally so HTML onchange/onclick/onblur attributes work.
+  // `world` is exposed for the change-detection guards on the τ/extent/M
+  // inputs (compare the input against the APPLIED value so a mere
+  // focus-in/focus-out doesn't reset a finished run -- 2026-07-16).
+  window.world       = world;
   window.UI          = UI;
   window.Scene       = Scene;
   window.Photons     = Photons;

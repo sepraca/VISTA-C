@@ -70,6 +70,13 @@ _p.add_argument('--transmitted-cloud-only', action='store_true',
                 help='Use the *_cloud_only net-transmitted arrays (schema >= 1.2, '
                      'Uniform-domain runs): excludes the clear-sky-direct delta '
                      'spike, matching what the in-app panels plot.')
+_p.add_argument('--brf', action='store_true',
+                help='Plot the rigorous BRF/BTF grids (schema >= 1.3, Phase 4: '
+                     'normalized by realized N_top and, under side-inclusive '
+                     'observation, A_proj) in rows 3-4 instead of the N-normalized '
+                     'BDF. Matches the in-app panels. Ignored (with a warning) if '
+                     'combined with --entire-domain, whose domain-mean view is '
+                     'deliberately N-normalized.')
 _p.add_argument('--entire-domain', action='store_true',
                 help='Match the in-app "Show entire-domain plots" toggle (schema '
                      '>= 1.2, Uniform-domain runs): Reflected uses the domain-wide '
@@ -123,6 +130,26 @@ if _args.transmitted_cloud_only or _args.entire_domain:
                 mh['reflected_counts'] = mh['reflected_counts_domain_wide']
             if 'reflected_weights_domain_wide' in bd:
                 bd['reflected_bdf'] = _bdf_from_weights(bd, bd['reflected_weights_domain_wide'])
+
+# --brf (schema >= 1.3): swap rows 3-4 to the rigorous BRF/BTF grids the app
+# panels display. Applied AFTER the cloud-only swap above -- for Uniform-domain
+# exports the BRF/BTF grids are already built from the cloud-only weights, so
+# this override is the final word for the radiance rows (the mu row keeps
+# whatever --transmitted-cloud-only selected). Not meaningful for the
+# N-normalized entire-domain view.
+USE_BRF = _args.brf and not _args.entire_domain
+if _args.brf and _args.entire_domain:
+    print('WARNING: --brf ignored with --entire-domain (domain-mean view is N-normalized by design).')
+if USE_BRF:
+    for exp, tag in ((A, 'A'), (B, 'B')):
+        bd = exp.raw['bdf']
+        if 'reflected_brf' in bd and 'net_transmitted_brf' in bd:
+            bd['reflected_bdf'] = bd['reflected_brf']
+            bd['net_transmitted_bdf'] = bd['net_transmitted_brf']
+        else:
+            print(f'WARNING: file {tag} has no BRF grids (schema < 1.3?); plotting its N-normalized BDF.')
+QTY_R = 'BRF' if USE_BRF else 'BDF'
+QTY_T = 'BTF' if USE_BRF else 'BDF'
 
 def frac(c):
     c = np.maximum(0, np.asarray(c, float)); s = c.sum()
@@ -192,7 +219,7 @@ for ci, (which, ttl) in enumerate([('refl','Reflected'),('net','Net transmitted 
     # the flux rows above fall: e.g. a last ring holding ~0.1% of the photons
     # has μ̄≈0.022, amplifying its BDF ~46×. Rows 1-3 are mutually consistent
     # to machine epsilon via (1/N)·dN/dμ = 2μ·B̄DF (verified 2026-07-14).
-    a.set_ylabel('BDF (φ-avg, absolute)\n(dimensionless, ∝ radiance)')
+    a.set_ylabel(f'{QTY_R if ci == 0 else QTY_T} (φ-avg, absolute)\n(dimensionless, ∝ radiance)')
     a.set_xticks([0,30,60,90]); a.set_xlim(-3, 93); a.grid(axis='y', alpha=0.25)
 
 # ---------- Row 4: BDF polar heatmaps (radiance) ----------
@@ -264,7 +291,7 @@ draw_polar(ax_cr, A, 'refl', f'{sa}\nReflected',       vmax_refl)
 draw_polar(ax_ur, B, 'refl', f'{sb}\nReflected',       vmax_refl)
 draw_polar(ax_cn, A, 'net',  f'{sa}\nNet transmitted', vmax_net)
 draw_polar(ax_un, B, 'net',  f'{sb}\nNet transmitted', vmax_net)
-for cax, vmax, lab in [(cax_r, vmax_refl, 'BDF (reflected)'), (cax_n, vmax_net, 'BDF (net transmitted)')]:
+for cax, vmax, lab in [(cax_r, vmax_refl, f'{QTY_R} (reflected)'), (cax_n, vmax_net, f'{QTY_T} (net transmitted)')]:
     cb = fig.colorbar(ScalarMappable(Normalize(0, vmax), POLAR_CMAP), cax=cax, extend='max')
     cb.set_label(lab, fontsize=7)        # smaller label
     cb.ax.tick_params(labelsize=6)       # smaller tick numbers

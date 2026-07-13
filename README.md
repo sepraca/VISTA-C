@@ -29,7 +29,14 @@ feature set — see Version History below. The latest tagged release is availabl
 - **R/T/A component breakdown**: an optional expanded view (any illumination mode) splitting each of R, T, and A into its constituent exit/origin populations — see *Illumination and observation-geometry bookkeeping* below
 - **Surface-absorption heatmap** (Aₛ > 0): toggleable 2-D map of where photons are absorbed at the Lambertian surface, on a grid 2× the cloud extent to capture finite-cloud side leakage
 - **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
-- **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BDF polar plots (linear/log scale), optical path-length distributions
+- **Rigorous BRF/BTF polar plots** *(v6.0-dev, Phase 4)*: bidirectional reflectance/
+  transmittance factors normalized by the **realized top-face-incident flux**
+  (N_top·A_proj/W²), for **every** illumination mode — the domain-mean, N-normalized BDF
+  remains available as the entire-domain view; see *Diagnostic plots* below
+- **Sub-cloud observation pixel** *(v6.0-dev, Phase 4)*: restrict the Reflected μ/BRF
+  statistics to a centered pixel of width f_pix × cloud width (fixed per run), with
+  N_pixel = N_top·f_pix² normalization — an imager-style effective-pixel view
+- **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BRF/BTF polar plots (linear/log scale), optical path-length distributions
 - **PNG plot export**: 3D view and bottom panel with diagnostic parameter headers
 - **Quantitative data export (JSON)**: full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts the JSON file to NetCDF
 - **Fully modular ES module architecture**: 12 focused JavaScript files, no bundler required
@@ -203,6 +210,27 @@ The bottom-panel plots/diagnostics of the histograms and BDFs contain two physic
   μ or path-length interval.
 - The **BDF** is a quantity proportional to **radiance**: BDF = (W/N)·π/(μ·Δμ·Δφ), which is normalized per unit projected solid angle. In particular, this introduces an explicit 1/μ factor relative to the photon count in the µ histograms.
 
+**BRF/BTF normalization (v6.0-dev, Phase 4).** The polar panels display the rigorous
+bidirectional reflectance factor (BRF) / transmittance factor (BTF):
+
+$$\mathrm{BRF}(\mu_i,\varphi_j) = \frac{\pi}{\mu_i\,\Delta\mu_i\,\Delta\varphi_j}\cdot\frac{N_{ij}}{N_{\mathrm{top}}\cdot A_{\mathrm{proj}}(\theta_v,\varphi_v)/W^2}$$
+
+where **N_top is the realized count of photons whose first ray-cast hit the cloud-top
+face** (a ratio-estimator choice that cancels common-mode Monte Carlo noise), and
+A_proj/W² = 1 + (τ_cloud/W)·tanθᵥ·(|cosφᵥ|+|sinφᵥ|) is the cloud element's ground-projected
+silhouette under side-inclusive observation (≡ 1 for "top/base faces only" — a flat top's
+footprint is W² from any view angle). No cap is applied (equivalent-uniform-beam
+convention). Consequences worth knowing: for *uniform cloud top* and *centered*
+illumination under top-face observation this reduces **exactly** to the historical BDF
+(the DISORT-validated cases are unchanged); for *top+side* it supplies the
+horizontal-equivalent µ₀F₀ correction 1/(1−p_side); for *Uniform domain* it removes the
+cloud-fraction dilution — e.g. at M = 4, Θ₀ = 0, Aₛ = 0.5 the cloud's BRF is ~1.4× the
+uniform-top value, the real brightening from surface-recycled illumination. The
+**entire-domain view keeps the N-normalized BDF** deliberately: for a whole-domain FOV
+the f_c-diluted value *is* the domain-mean quantity a coarse pixel measures. If
+N_top = 0 (possible at tiny N with large M), the panel falls back to the N-normalized
+BDF with a caption note.
+
 As a result the BDF and µ histograms are *consistent but not identical* representations of the same exit-direction data. Azimuthally averaging the BDF and converting back to
 the flux (count) density recovers the μ histogram exactly:
 
@@ -263,6 +291,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain *(WIP, see above)* | Centered |
 | Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination *(WIP)* | 4 |
 | Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), or top/base/side faces / cloud element (b) | Cloud top/base faces only |
+| Reflected observation pixel fraction (f_pix) | Centered observation pixel width = f_pix × cloud width; at f_pix < 1 the **Reflected** μ/BRF panels restrict to top-face exits inside the pixel (transmitted panels unaffected; disabled for Centered illumination; a sparse-statistics warning appears below ~2 counts/bin). **Deferred application**: the pixel is fixed per run, so editing the input never clears a finished run — the new value is marked *pending* in the stats panel and takes effect at the next Launch Ensemble/Reset; panels and exports always describe the value the run was accumulated with. The pixel **view** renders only under Obs geometry "cloud top/base faces only" — a planar pixel is well-posed on the flat top face only; under "top/base/side faces" the standard side-inclusive view shows instead, and toggling the dropdown swaps between the two without a re-run (the pixel accumulators fill regardless) | 1.00 (whole face) |
 | HG asymmetry parameter (g) | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
 | Single-scattering albedo (ω₀) | SSA (0 = fully absorbing, 1 = conservative) | 1.0 |
 | Surface albedo (Aₛ) | Lambertian surface albedo (0 = black, 1 = non-absorbing) | 0.0 |

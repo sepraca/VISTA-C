@@ -13,6 +13,88 @@ sub-domain BRDF/observation-pixel treatment are planned but not yet built (see
 `TODO-direct-surface-illumination.md`), so any of the below is still subject to change
 before the v6.0.0 tag.
 
+### Added (2026-07-16 session — Phase 4: rigorous BRF/BTF + sub-cloud observation pixel)
+
+- **Rigorous BRF/BTF normalization, all illumination modes** (user decision: not limited
+  to Uniform domain). The BDF polar panels now display BRF (reflected) / BTF (net
+  transmitted) = π·N_ij/(N_top·A_proj/W²·µΔµΔφ), where **N_top is the realized
+  top-face-incident photon count** (new first-hit tallies, ratio-estimator design) and
+  **A_proj(θᵥ,φᵥ)/W² = 1 + (τ_cloud/W)·tanθᵥ·(|cosφᵥ|+|sinφᵥ|)** is the view-projected
+  cloud-element footprint, applied under side-inclusive observation and ≡ 1 for top-face
+  observation. **Uncapped** (equivalent-uniform-beam convention; reverses the TODO's
+  earlier cap-at-A_domain note — preserves UD(M=1) ≡ legacy-top bit-identity and cross-M
+  comparability). The **entire-domain view keeps N-normalization** — the f_c-diluted
+  value is the correct domain-mean BDF for a whole-domain FOV. Verified gates: legacy
+  top/centered under top-face observation are **bit-identical to the historical BDF**
+  (DISORT-validated cases unchanged by construction); UD(M=1) ≡ top; and the headline
+  physics: UD M=4, Θ₀=0, Aₛ=0.5 reflected BRF exceeds uniform-top by **1.375×** — the
+  surface-recycling brightening, previously hidden under the 16× f_c dilution.
+- **First-hit launch tallies**: `launchedCloudTop`/`launchedCloudWall`/`launchedClear`
+  (sum = launched; physics.js now reports the first-hit face top/wall/clear). Verified:
+  wall counts match the sunward-reservoir expectation within 1σ; both golden snapshots
+  regenerated with pre-existing fields byte-identical.
+- **Sub-cloud observation pixel**: new "Obs pixel fraction (f_pix)" input (0.05–1,
+  default 1 = whole face; changing it resets the run, like τ/extent/M). At f_pix < 1 the
+  Reflected μ/BRF panels restrict to cloud-top-face exits inside the centered pixel
+  |x|,|y| ≤ f_pix·W/2 (fixed pixel per run; Obs-geometry dropdown not applied — a pixel
+  is only well-posed on the flat top face), normalized by N_pixel = N_top·f_pix².
+  Verified: f_pix = 1 is bit-identical to the whole-face view; at f_pix = 0.5, Θ₀=0,
+  extent 40 the central pixel is ~1.29× brighter than the face average (edge darkening).
+- **JSON schema 1.2 → 1.3 (additive)**: `outputs.counts.launched_cloud_top/_wall/_clear`,
+  `bdf.n_top_incident`, `bdf.reflected_brf`/`net_transmitted_brf` (panel-matching
+  normalization; omitted with a note when N_top = 0), and — when f_pix < 1 —
+  `inputs.pixel_fraction`, `mu_histograms.reflected_counts_pixel`,
+  `bdf.reflected_weights_pixel`/`reflected_brf_pixel`/`n_pixel_incident`. The historical
+  N-normalized `*_bdf` grids are unchanged (domain-mean quantity). `mc_export_reader.py`
+  updated (summary lines, properties, xarray variables); round-trip tested for
+  uniform-domain, legacy, and pixel runs. PNG headers carry f_pix on the Obs-geometry
+  line. New gate suite: `tests/review-harness/verify_phase4.mjs` (13 gates, all passing).
+- **Pixel follow-ups from live-browser review** (user's 2M-photon UD M=4, f_pix=0.10 run):
+  (i) confirmed NOT a normalization bug — the reproduced run gives pixel BRF = 1.09× the
+  whole-face BRF, exactly as expected; the speckled map is pure sparseness (640 exits
+  over 1,368 bins → ~⅔ empty, occupied single-count bins clip at ≥1). A
+  **sparse-statistics warning** now appears in the BRF caption when the pixel holds
+  < 2 counts/bin on average. (ii) f_pix is now **disabled (and reset to 1) under
+  Centered illumination** — N_pixel = N_top·f_pix² requires uniform top-face
+  illumination, which holds for uniform-top, top+side, and uniform-domain but not for a
+  point source. Same disable/dim pattern as the entire-domain checkbox. (iii) control
+  renamed "Reflected observation pixel fraction (f_pix)" (and the stats-panel line to
+  match) — the pixel applies to the Reflected channel only, so the BTF panel remains
+  dropdown-aware, which is why it shifts when toggling the Observation geometry while
+  the pixel view does not. (iv) **Pixel view now renders only under Obs geometry "cloud
+  top/base faces only"** (user-caught disconnect: the pixel view previously overrode a
+  side-inclusive dropdown selection silently). A planar pixel is geometrically well-posed
+  on the flat top face only (the TODO's original scoping); under "top/base/side faces"
+  the Reflected panel shows the standard side-inclusive view with a caption pointing at
+  the dropdown setting that exposes the pixel. The accumulators remain dropdown-
+  independent (f_pix is an acquisition setting, the dropdown a display-time choice), so
+  one run serves both views with no re-run. (v) Pixel panel titles reworded "Reflected
+  (for f_pix=…)" / "Reflected (for f_pix)". (vi) **Deferred f_pix application** (second
+  iteration after live testing — a change-detection guard still wiped the run on any
+  genuine edit): editing f_pix now NEVER resets anything. The input is a request; the
+  value governing accumulators, panels, stats line, PNG headers, and JSON export is the
+  one cached at run start (`SimStats._pixelFrac`); an edited value is shown as
+  "pending … (applies at next Launch Ensemble/Reset)" in the stats panel until then.
+  Unlike τ/extent/M (which invalidate the whole scene), f_pix only governs an auxiliary
+  accumulator set, so the destructive-reset convention was the wrong fit. (vii) The
+  **τ / horizontal-extent / domain-factor-M inputs got change-detection guards**: a
+  genuine edit still resets (required — the scene geometry is baked into every
+  trajectory), but focus-in/focus-out with no change no longer wipes a finished run.
+  Guards compare against the applied values in `world` (synced at every run start;
+  `world` now exposed on `window` for the inline handlers).
+- **`tests/` regenerated for Phase 4**: golden snapshots re-confirmed exact (54 legacy
+  rows via strip-diff; 36 uniform-domain rows, refreshed in P4.2 with the additive
+  tallies). All 14 `tests/Illumination comparisons/` JSONs regenerated at schema 1.3;
+  `illumination_comparison.py` gained a `--brf` flag (rows 3–4 plot the rigorous
+  BRF/BTF grids, axis/colorbar labels follow; ignored with a warning under
+  `--entire-domain`, whose domain-mean view is N-normalized by design). All 10 figures
+  regenerated: the 8 cloud-element figures with `--brf` (geomA/test values unchanged by
+  construction, labels now BRF/BTF; geomB figures gain the A_proj correction — the old
+  grazing radiance spike is gone, as a finite-target reflectance factor should behave);
+  the 2 UD figures now display the dilution-free comparison (UD ≈ 1.4× uniform-top,
+  the surface-recycling brightening); the 2 entire-domain figures keep the domain-mean
+  BDF with suptitles saying so.
+
 ### Fixed / changed (2026-07-12 code-review session)
 
 *(The E#/R#/P# identifiers below refer to a local development review document not tracked

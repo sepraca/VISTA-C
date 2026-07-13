@@ -129,7 +129,13 @@ export const Export = {
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
         `RNG seed: ${RNG.currentSeed()}`,
         `Photon illumination: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`,
-        `Obs geometry: ${SimStats.observationGeometryLabel()}`
+        // f_pix appended to this line (not its own row) so the header stays at
+        // 12 lines -- downloadBottomPanel slices rows in fixed groups of 3.
+        // APPLIED value (SimStats._pixelFrac), not the live input: the header
+        // must describe the run as accumulated (deferred-application design).
+        `Obs geometry: ${SimStats.observationGeometryLabel()}` +
+          ((SimStats._pixelFrac ?? 1) < 1
+            ? `; f_pix=${SimStats._pixelFrac.toFixed(2)}` : "")
       ];
     },
 
@@ -570,7 +576,17 @@ export const Export = {
     // clear_direct_mu_bin_index and bdf.net_transmitted_weights_cloud_only/
     // _domain_wide_cloud_only/clear_direct_count. Purely additive; 1.0/1.1
     // readers remain compatible.
-    SCHEMA_VERSION: "1.2",
+    // 1.3 (Phase 4): rigorous BRF/BTF. Added outputs.counts.launched_cloud_top/
+    // _wall/_clear (realized first-hit tallies; top is the BRF reference
+    // N_top), bdf.reflected_brf/net_transmitted_brf (normalized by
+    // N_top·A_proj/W² -- matches the on-screen panels for every illumination
+    // mode; omitted with a note when N_top=0), bdf.n_top_incident, and -- when
+    // the sub-cloud pixel is active (f_pix < 1) -- inputs.pixel_fraction,
+    // bdf.reflected_weights_pixel/reflected_brf_pixel/n_pixel_incident and
+    // mu_histograms.reflected_counts_pixel. Purely additive; 1.0-1.2 readers
+    // remain compatible (the historical N-normalized *_bdf grids are
+    // unchanged -- they remain the correct domain-mean quantity).
+    SCHEMA_VERSION: "1.3",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -625,6 +641,11 @@ export const Export = {
         observation_geometry: SimStats.observationGeometryKey(),   // "top-base_faces" (a) or "all_faces" (b)
         counts: {
           launched: s.launched,
+          // Phase 4: realized first-hit tallies (sum to launched). "top" is
+          // the rigorous-BRF reference count N_top.
+          launched_cloud_top: s.launchedCloudTop,
+          launched_cloud_wall: s.launchedCloudWall,
+          launched_clear: s.launchedClear,
           reflected: SimStats.reflectedCount(),
           transmitted_down_at_surface: s.transmitted,
           final_transmitted_black_surface: s.finalTransmitted,
@@ -818,6 +839,45 @@ export const Export = {
         bdf.reflected_weights_domain_wide =
           BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeightsDomainWide()).weights;
         bdf.clear_direct_count = SimStats.tComponents().clearDirect;
+      }
+
+      // --- Rigorous BRF/BTF grids (schema 1.3, Phase 4) ---
+      // Same weights the panels plot (dropdown-aware; cloud-only transmitted
+      // for Uniform-domain runs), normalized by N_top·A_proj(θᵥ,φᵥ)/W² with
+      // the realized top-face-incident reference count. A_proj/W² = 1 +
+      // (τ_cloud/W)·tanθᵥ·(|cosφᵥ|+|sinφᵥ|) under side-inclusive observation
+      // ('all_faces'), and ≡ 1 under 'top-base_faces' (flat-top footprint) --
+      // uncapped, equivalent-uniform-beam convention. Omitted (with note) if
+      // N_top = 0.
+      const nTop = SimStats.nTopIncident();
+      if (nTop > 0) {
+        const brfOpts = { nRef: nTop, sidesIncluded: SimStats._sidesIncluded() };
+        bdf.n_top_incident = nTop;
+        bdf.reflected_brf =
+          BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(), brfOpts).bdf;
+        bdf.net_transmitted_brf =
+          BottomPanel.computeBdfGrid(
+            isDomain ? SimStats.transmittedBdfWeightsCloudOnly() : SimStats.transmittedBdfWeights(),
+            brfOpts).bdf;
+      } else {
+        bdf.brf_note = "N_top = 0 (no top-face-incident photons realized) -- BRF/BTF undefined for this run.";
+      }
+
+      // --- Sub-cloud observation pixel (schema 1.3, Phase 4; f_pix < 1 only) ---
+      // APPLIED value (cached at run start), not the live input -- the export
+      // must describe the data as accumulated (deferred-application design).
+      const fPix = SimStats._pixelFrac ?? 1;
+      if (fPix < 1) {
+        inputs.pixel_fraction = fPix;   // pixel width = f_pix × cloud width, centered
+        mu_histograms.reflected_counts_pixel = Array.from(SimStats.muReflPixelBins);
+        bdf.reflected_weights_pixel =
+          BottomPanel.computeBdfGrid(SimStats.bdfReflPixelWeights).weights;
+        bdf.n_pixel_incident = SimStats.nPixelIncident();
+        if (SimStats.nPixelIncident() > 0) {
+          bdf.reflected_brf_pixel =
+            BottomPanel.computeBdfGrid(SimStats.bdfReflPixelWeights,
+              { nRef: SimStats.nPixelIncident(), sidesIncluded: false }).bdf;
+        }
       }
 
       // --- Optical path-length histograms (binned + true means) ---

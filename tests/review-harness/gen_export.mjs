@@ -3,7 +3,7 @@
 // gen_export_roundtrip.mjs so the tests/Illumination comparisons exports can
 // be regenerated from the current code at any version.
 //
-//   node gen_export.mjs <mode> <theta0_deg> <As> <obsGeom> [M] [N] > out.json
+//   node gen_export.mjs <mode> <theta0_deg> <As> <obsGeom> [M] [N] [f_pix] > out.json
 //
 //   mode    : center | top | top_side | uniform_domain
 //   obsGeom : top-base_faces | all_faces
@@ -11,7 +11,7 @@
 //   N       : photons (default 2000000, matching the historical test exports)
 // Seed is fixed at 42 (matching every reference export in tests/).
 
-const [mode, th0s, Ass, obsGeom, Ms, Ns] = process.argv.slice(2);
+const [mode, th0s, Ass, obsGeom, Ms, Ns, fPixS] = process.argv.slice(2);
 if (!mode || !th0s || Ass === undefined || !obsGeom) {
   console.error("usage: node gen_export.mjs <mode> <theta0_deg> <As> <obsGeom> [M] [N]");
   process.exit(1);
@@ -25,7 +25,8 @@ const domValues = {
   photonEntry: mode,
   theta0: String(th0), surfaceAlbedo: String(As), tauCloud: "10", hExtent: "40",
   gValue: "0.85", omega0: "1.0", cloudBetaExt: "10.0", surfaceDistanceKm: "0.5",
-  domainFactor: String(M), photonCount: String(N)
+  domainFactor: String(M), photonCount: String(N),
+  pixelFraction: fPixS ?? "1.0"
 };
 globalThis.document = {
   getElementById(id) {

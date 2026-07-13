@@ -149,6 +149,23 @@ export const UI = {
       // rendering was also too subtle on its own (see index.html CSS comment).
       const entireDomainLabel = document.getElementById("showEntireDomainPlotsLabel");
       if (entireDomainLabel) entireDomainLabel.classList.toggle("dimmed", !isUniformDomain);
+
+      // Sub-cloud pixel (Phase 4): N_pixel = N_top·f_pix² requires UNIFORM
+      // illumination of the top face -- true for "top", "top_side" (its
+      // top-face portion is uniform in area), and "uniform_domain"
+      // (TOA-uniform); false only for "center" (a point source has no
+      // per-area flux to apportion to a pixel). Disable + reset to 1 for
+      // centered illumination (same disable/dim pattern as
+      // showEntireDomainPlots above). The paired resetScene() on this
+      // dropdown's onchange refreshes the record-time cache.
+      const pixelOk = UI.getPhotonEntryMode() !== "center";
+      const pixelInput = document.getElementById("pixelFraction");
+      if (pixelInput) {
+        if (!pixelOk) pixelInput.value = "1.00";
+        pixelInput.disabled = !pixelOk;
+      }
+      const pixelLabel = document.getElementById("pixelFractionLabel");
+      if (pixelLabel) pixelLabel.classList.toggle("dimmed", !pixelOk);
     },
 
     // Observation geometry: how exits are aggregated into the R/T/S budget and
@@ -162,6 +179,18 @@ export const UI = {
     //   "all_faces"      (b) — cloud element: top/base/side faces → R/T; surface-
     //                          reflected upward bypass (no cloud face) stays in S
     getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "top-base_faces"; },
+
+    // Sub-cloud observation pixel fraction f_pix (Phase 4): the Reflected
+    // μ/BRF panels restrict to cloud-TOP-face exits within the centered pixel
+    // |x|,|y| ≤ f_pix·W/2 when f_pix < 1 (pixel area fraction = f_pix²; same
+    // 1D-linear/2D-areal relationship as domain factor M / cloud fraction
+    // f_c). 1.0 = whole face (bit-identical to the unpixelated view). A pure
+    // post-processing-style filter in principle, but the accumulators are
+    // gated at record time (fixed pixel size per run -- TODO decision), so
+    // changing it resets the run like the other geometry inputs. Available
+    // under EVERY illumination mode; BRF normalization uses
+    // N_pixel = N_top·f_pix² (approximate for "center", as documented).
+    getPixelFraction: function() { return UI._getClampedInput("pixelFraction", 0.05, 1, 1, "Obs pixel fraction f_pix"); },
 
     // --- Display / visualization inputs ---
     getMaxPaths:      function() { return UI._getClampedInput("maxPaths", 0, 1000, 250, "Max paths drawn", true); },

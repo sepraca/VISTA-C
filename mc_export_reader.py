@@ -191,6 +191,40 @@ class MCExport:
     def net_transmitted_bdf_weights_domain_wide_cloud_only(self) -> np.ndarray | None:
         return self._opt_bdf("net_transmitted_weights_domain_wide_cloud_only")
 
+    # ---- Rigorous BRF/BTF (schema >= 1.3, Phase 4) --------------------------
+    # Normalized by the realized top-face-incident count N_top and (under
+    # side-inclusive observation) the view-projected element area A_proj(th,phi)
+    # -- these match the on-screen panels for every illumination mode. The
+    # historical *_bdf grids remain the N-normalized domain-mean quantity.
+    @property
+    def n_top_incident(self) -> int | None:
+        return self.raw["bdf"].get("n_top_incident")
+
+    @property
+    def reflected_brf(self) -> np.ndarray | None:
+        return self._opt_bdf("reflected_brf")
+
+    @property
+    def net_transmitted_brf(self) -> np.ndarray | None:
+        return self._opt_bdf("net_transmitted_brf")
+
+    # ---- Sub-cloud observation pixel (schema >= 1.3; f_pix < 1 only) --------
+    @property
+    def pixel_fraction(self) -> float | None:
+        return self.inputs.get("pixel_fraction")
+
+    @property
+    def n_pixel_incident(self) -> float | None:
+        return self.raw["bdf"].get("n_pixel_incident")
+
+    @property
+    def reflected_brf_pixel(self) -> np.ndarray | None:
+        return self._opt_bdf("reflected_brf_pixel")
+
+    @property
+    def mu_reflected_pixel(self) -> np.ndarray | None:
+        return self._opt_mu("reflected_counts_pixel")
+
     # ---- path-length histograms ------------------------------------------
     @property
     def path_bin_edges(self) -> np.ndarray:
@@ -276,6 +310,21 @@ class MCExport:
         if self.net_transmitted_bdf_weights_domain_wide_cloud_only is not None:
             ds["net_transmitted_bdf_weights_domain_wide_cloud_only"] = (
                 ("theta", "phi"), self.net_transmitted_bdf_weights_domain_wide_cloud_only)
+        # Rigorous BRF/BTF grids (schema >= 1.3) -- attached only when present.
+        if self.reflected_brf is not None:
+            ds["reflected_brf"] = (("theta", "phi"), self.reflected_brf)
+            ds["reflected_brf"].attrs["long_name"] = (
+                "reflected BRF = pi*N_ij/(N_top*A_proj/W^2 * mu dmu dphi); "
+                "realized top-face-incident reference (matches on-screen panel)")
+        if self.net_transmitted_brf is not None:
+            ds["net_transmitted_brf"] = (("theta", "phi"), self.net_transmitted_brf)
+        if self.n_top_incident is not None:
+            ds.attrs["n_top_incident"] = self.n_top_incident
+        if self.reflected_brf_pixel is not None:
+            ds["reflected_brf_pixel"] = (("theta", "phi"), self.reflected_brf_pixel)
+            ds.attrs["pixel_fraction"] = self.pixel_fraction
+            ds.attrs["n_pixel_incident"] = self.n_pixel_incident
+
         udo = self.uniform_domain_outputs
         if udo is not None:
             ds.attrs["cloud_fraction"] = self.cloud_fraction
@@ -320,6 +369,13 @@ def print_summary(exp: MCExport) -> None:
     print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")
     print(f"  surface albedo A_s : {inp['surface_albedo']:.4g}")
     print(f"  photon illumination: {inp.get('photon_illumination', 'center')}")
+    if "launched_cloud_top" in cnt:   # schema >= 1.3
+        print(f"  first-hit tallies  : top={cnt['launched_cloud_top']:,}  "
+              f"wall={cnt['launched_cloud_wall']:,}  clear={cnt['launched_clear']:,}"
+              f"  (N_top is the BRF reference)")
+    if exp.pixel_fraction is not None:
+        print(f"  obs pixel f_pix    : {exp.pixel_fraction:.3g}  "
+              f"(N_pixel = N_top*f_pix^2 = {exp.n_pixel_incident:,.0f})")
     if exp.is_uniform_domain:
         fc = exp.cloud_fraction
         print(f"  domain factor M    : {exp.domain_factor:.4g}"

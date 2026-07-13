@@ -58,7 +58,12 @@ export const BottomPanel = {
       panel.style.display = "block";
 
       if (mode === "bdf") {
-        title.textContent = "BDF polar plots: exit zenith angle Θ and azimuth φ";
+        // Panel header tracks the active quantity: rigorous BRF/BTF (Phase 4,
+        // all illumination modes) vs the domain-mean BDF (entire-domain view).
+        const entire = UI.getPhotonEntryMode() === "uniform_domain" && UI.getShowEntireDomainPlots();
+        title.textContent = entire
+          ? "Domain-mean BDF polar plots: exit zenith angle Θ and azimuth φ"
+          : "BRF / BTF polar plots: exit zenith angle Θ and azimuth φ";
         BottomPanel.drawBdfOverlay();
       } else if (mode === "path") {
         title.textContent = "Optical path-length distributions";
@@ -100,8 +105,30 @@ export const BottomPanel = {
       // instead -- see the clear-direct annotation below.
       const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
       const showEntireDomain = isDomain && UI.getShowEntireDomainPlots();
-      const reflMuBins = showEntireDomain ? SimStats.reflectedMuBinsDomainWide() : SimStats.reflectedMuBins();
-      const reflN = showEntireDomain ? SimStats.domainReflectedCount() : SimStats.reflectedCount();
+      // Sub-cloud pixel (Phase 4): when f_pix < 1 the Reflected panel
+      // restricts to top-face exits inside the centered pixel (the
+      // Observation-geometry dropdown does not apply -- a pixel is only
+      // geometrically well-posed on the flat top face). Inert under the
+      // entire-domain view.
+      // APPLIED pixel fraction (SimStats._pixelFrac, cached at run start) --
+      // NOT the live input value, which is only a request until the next
+      // Launch Ensemble/Reset (deferred application; editing the input must
+      // never invalidate or misdescribe a finished run).
+      const fPix = SimStats._pixelFrac ?? 1;
+      // Pixel VIEW renders only under "cloud top/base faces only" observation
+      // -- a planar pixel is only geometrically well-posed on the flat top
+      // face (user feedback 2026-07-16; the TODO's original scoping). The
+      // pixel ACCUMULATORS fill whenever f_pix < 1 regardless of the
+      // dropdown (f_pix is an acquisition setting; the dropdown is a
+      // display-time choice), so toggling the dropdown swaps between the
+      // pixel view and the standard side-inclusive view with no re-run.
+      const pixelActive = fPix < 1 && !showEntireDomain && !SimStats._sidesIncluded();
+      let reflMuBins = showEntireDomain ? SimStats.reflectedMuBinsDomainWide() : SimStats.reflectedMuBins();
+      let reflN = showEntireDomain ? SimStats.domainReflectedCount() : SimStats.reflectedCount();
+      if (pixelActive) {
+        reflMuBins = SimStats.muReflPixelBins;
+        reflN = SimStats.pixelReflectedCount();
+      }
       // nNetTrans is always the TRUE total (matches the scalar T_domain count),
       // even though the clear-direct spike isn't drawn as a bar under entire domain.
       const nNetTrans = showEntireDomain ? SimStats.domainTransmittedNetCount()
@@ -117,7 +144,7 @@ export const BottomPanel = {
       // titles were long enough to bridge that gap). Same titles now regardless
       // of Observation geometry/entire-domain state, other than the pre-existing
       // "(cloud-only)" note for the default uniform-domain-but-unchecked case.
-      const reflLabel = "Reflected";
+      const reflLabel = pixelActive ? `Reflected (for f_pix=${fPix.toFixed(2)})` : "Reflected";
       const transMuLabel = (isDomain && !showEntireDomain) ? "Transmitted (net downward, cloud-only)" : "Transmitted (net downward)";
       BottomPanel.drawMuOverlayHistogram(ctx2, reflMuBins, 70, 42, 260, 118, "#60a5fa", reflLabel, reflN);
       BottomPanel.drawMuOverlayHistogram(ctx2, transMuBins, 390, 42, 260, 118, "#86efac", transMuLabel, nNetTrans);
@@ -143,6 +170,25 @@ export const BottomPanel = {
             236
           );
         }
+      } else if (pixelActive) {
+        // (mutually exclusive with the entire-domain note above)
+        ctx2.font = "10px system-ui";
+        ctx2.fillStyle = "#94a3b8";
+        ctx2.fillText(
+          `Pixel: cloud-top-face exits with |x|,|y| ≤ f_pix·W/2`,
+          w / 2,
+          236
+        );
+      } else if (fPix < 1 && !showEntireDomain) {
+        // f_pix accumulated but the side-inclusive observation is selected:
+        // point the user at the dropdown setting that shows the pixel view.
+        ctx2.font = "10px system-ui";
+        ctx2.fillStyle = "#94a3b8";
+        ctx2.fillText(
+          `f_pix=${fPix.toFixed(2)} accumulated — pixel view shows under Obs geometry "cloud top/base faces only"`,
+          w / 2,
+          236
+        );
       }
     },
 
@@ -428,12 +474,53 @@ export const BottomPanel = {
                                : isDomainBdf ? SimStats.transmittedBdfWeightsCloudOnly() : SimStats.transmittedBdfWeights();
       const transmittedTitle = (isDomainBdf && !showEntireDomainBdf) ? "Net Transmitted (cloud-only)" : "Net Transmitted";
 
-      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(reflectedWeights));
-      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(transmittedWeights));
+      // Rigorous BRF/BTF normalization (Phase 4, ALL illumination modes):
+      // reference = realized top-face-incident count N_top; side-inclusive
+      // observation additionally gets the per-bin A_proj(θᵥ,φᵥ) projection
+      // correction. The ENTIRE-DOMAIN view deliberately keeps the historical
+      // N-normalization -- for a whole-domain FOV the f_c-diluted value IS the
+      // correct domain-mean BDF (see TODO "PHASE ORDER CHANGE" note). For
+      // center/top illumination under top-face observation, N_top === N and
+      // A_proj ≡ W², so BRF/BTF are bit-identical to the historical BDF (the
+      // DISORT-validated cases are unchanged by construction). Guard: N_top
+      // can be 0 (pathological but possible at tiny N with large M) -- fall
+      // back to the N-normalized BDF with a caption note.
+      const nTop = SimStats.nTopIncident();
+      const rigorous = !showEntireDomainBdf && nTop > 0;
+      const qtyLabel = rigorous ? "BRF / BTF" : "BDF";
 
-      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflectedTitle);
+      // Sub-cloud pixel (Phase 4): when f_pix < 1, the REFLECTED panel swaps
+      // to the pixel-gated weights with N_pixel = N_top·f_pix² as its BRF
+      // reference and top-face observation (A_proj ≡ W², sidesIncluded false
+      // -- a pixel is only well-posed on the flat top face, so the dropdown
+      // does not apply). The transmitted panel is unaffected. Inert under the
+      // entire-domain view.
+      // APPLIED pixel fraction (see drawMuOverlay) -- not the live input.
+      const fPixBdf = SimStats._pixelFrac ?? 1;
+      // Same view-gating as drawMuOverlay: pixel view only under top-base
+      // observation (planar pixel well-posed on the flat top face only);
+      // accumulators are dropdown-independent, so no re-run to toggle.
+      const pixelActiveBdf = fPixBdf < 1 && !showEntireDomainBdf && !SimStats._sidesIncluded();
+      let reflWeightsUsed = reflectedWeights;
+      let reflTitleUsed = reflectedTitle;
+      let reflOpts = rigorous
+        ? { nRef: nTop, sidesIncluded: SimStats._sidesIncluded() }
+        : {};
+      if (pixelActiveBdf) {
+        reflWeightsUsed = SimStats.bdfReflPixelWeights;
+        reflTitleUsed = "Reflected (for f_pix)";
+        reflOpts = rigorous ? { nRef: SimStats.nPixelIncident(), sidesIncluded: false } : {};
+      }
+      const transOpts = rigorous
+        ? { nRef: nTop, sidesIncluded: SimStats._sidesIncluded() }
+        : {};
+
+      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(reflWeightsUsed, reflOpts));
+      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(transmittedWeights, transOpts));
+
+      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflTitleUsed);
       BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, transmittedTitle);
-      BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, "BDF");
+      BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, qtyLabel);
 
       ctx2.fillStyle = "#e2e8f0";
       ctx2.font = "11px system-ui";
@@ -451,6 +538,37 @@ export const BottomPanel = {
         ? "Net down−up at surface (cloud-touched only; excludes clear-direct)"
         : "Net down−up at surface";
       ctx2.fillText(`${transCaption}; near-nadir φ averaged.`, w / 2, 212);
+
+      // Normalization note (Phase 4). The 226-line is free in the rigorous
+      // case (the clear-direct note below only draws for entire-domain views).
+      if (rigorous) {
+        const sideNote = SimStats._sidesIncluded()
+          ? "A_proj(θᵥ,φᵥ) side-view corrected"
+          : "top-face obs: A_proj=W²";
+        ctx2.font = "10px system-ui";
+        ctx2.fillStyle = "#94a3b8";
+        // Sparse-statistics warning (user feedback, 2026-07-16): at small
+        // f_pix (and/or diluted illumination like UD at large M) the pixel
+        // grid can hold <2 counts/bin -- the map then reads as clipped
+        // speckle (empty bins black, single counts ≥1), not a smooth BRF.
+        // The normalization is fine; the statistics aren't. Warn below
+        // an average of 2 counts/bin over the 19×72 grid.
+        const pixExits = pixelActiveBdf ? SimStats.pixelReflectedCount() : 0;
+        const sparse = pixelActiveBdf && pixExits < 2 * BDF_THETA_BINS * BDF_PHI_BINS;
+        ctx2.fillText(
+          pixelActiveBdf
+            ? `BRF(pixel): N_pixel=${SimStats.nPixelIncident().toFixed(0)}, exits=${pixExits}` +
+              (sparse ? " — SPARSE (<2/bin): raise N or f_pix" : "") +
+              `; BTF: N_top=${nTop}`
+            : `BRF/BTF: normalized by top-face-incident N_top=${nTop} (${sideNote})`,
+          w / 2,
+          226
+        );
+      } else if (!showEntireDomainBdf) {
+        ctx2.font = "10px system-ui";
+        ctx2.fillStyle = "#94a3b8";
+        ctx2.fillText("N_top=0 — BRF undefined; showing N-normalized BDF.", w / 2, 226);
+      }
 
       // Clear-sky direct count, shown only when relevant -- same pattern as the
       // mu-histogram and path-length panels (TODO "3.A"/"3.B").
@@ -470,9 +588,22 @@ export const BottomPanel = {
       }
     },
 
-    // Build the displayable BDF grid from a flat incremental weight array
+    // Build the displayable BDF/BRF grid from a flat incremental weight array
     // (length BDF_THETA_BINS * BDF_PHI_BINS, accumulated in SimStats).
-    computeBdfGrid: function(weightsFlat) {
+    //
+    // opts (Phase 4, all optional -- omitting them reproduces the historical
+    // N-normalized BDF exactly, which remains the correct DOMAIN-MEAN quantity
+    // for the entire-domain view and the legacy JSON grids):
+    //   nRef          reference incident count (default: all launched photons).
+    //                 For the rigorous BRF/BTF this is the realized top-face
+    //                 count SimStats.nTopIncident().
+    //   sidesIncluded when true, each bin's value is additionally divided by
+    //                 A_proj(θᵥ,φᵥ)/W² (SimStats.aProjOverTop) -- the observed
+    //                 cloud element includes the side walls, whose ground-
+    //                 projected footprint grows with view zenith. For top-face-
+    //                 only observation A_proj ≡ W², so this stays false and the
+    //                 formula collapses to the plain 1/nRef normalization.
+    computeBdfGrid: function(weightsFlat, opts = {}) {
       const thetaBins = BDF_THETA_BINS;
       const phiBins = BDF_PHI_BINS;
       const weights = Array.from({ length: thetaBins }, (_, ir) =>
@@ -480,7 +611,8 @@ export const BottomPanel = {
       const bdf = Array.from({ length: thetaBins }, () => Array(phiBins).fill(0));
       const binInfo = Array.from({ length: thetaBins }, () => Array(phiBins).fill(null));
 
-      const nIncident = Math.max(SimStats.stats.launched, 1);
+      const nIncident = Math.max(opts.nRef ?? SimStats.stats.launched, 1);
+      const sidesIncluded = opts.sidesIncluded ?? false;
       const dPhi = 2 * Math.PI / phiBins;
       const dTheta = (Math.PI / 2) / (thetaBins - 1);
 
@@ -503,7 +635,11 @@ export const BottomPanel = {
         const normFactor = Math.PI / (muCenter * deltaMu * dPhi);
 
         for (let ip = 0; ip < phiBins; ip++) {
-          const value = (weights[ir][ip] / nIncident) * normFactor;
+          // Per-bin view-projection correction (1 unless sidesIncluded).
+          const aProj = sidesIncluded
+            ? SimStats.aProjOverTop(muCenter, ip * dPhi)
+            : 1;
+          const value = (weights[ir][ip] / (nIncident * aProj)) * normFactor;
           bdf[ir][ip] = value;
           binInfo[ir][ip] = {
             W: weights[ir][ip],
@@ -678,7 +814,7 @@ export const BottomPanel = {
       ctx2.rotate(-Math.PI / 2);
       ctx2.textAlign = "center";
       ctx2.textBaseline = "middle";
-      ctx2.fillText(isLog ? "Log BDF" : "BDF", 0, 0);
+      ctx2.fillText(isLog ? `Log ${label}` : label, 0, 0);
       ctx2.restore();
     },
 

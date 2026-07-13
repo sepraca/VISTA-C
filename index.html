@@ -389,11 +389,15 @@
     <label>Photons</label>
     <input id="photonCount" type="number" value="10000" min="1" max="10000000" onblur="UI.getPhotonCount()">
 
+    <!-- τ/extent/M guards (2026-07-16): a genuine change must still reset (the
+         scene geometry is baked into every trajectory), but focus-in/focus-out
+         with no edit must NOT wipe a finished run. Compare against the APPLIED
+         values in `world` (synced by Scene.updateWorld at every run start). -->
     <label>Cloud optical thickness τ</label>
-    <input id="tauCloud" type="number" value="10" min="0.01" max="100" step="0.01" onblur="UI.getTauCloud(); RunControl.resetScene(); UI.updateDomainMarginWarning()">
+    <input id="tauCloud" type="number" value="10" min="0.01" max="100" step="0.01" onblur="if (Math.abs(UI.getTauCloud() - world.tauCloud) > 1e-12) RunControl.resetScene(); UI.updateDomainMarginWarning()">
 
     <label>Horizontal extent (optical path)</label>
-    <input id="hExtent" type="number" value="40" min="2" max="500" step="1" onblur="UI.getHorizontalExtent(); RunControl.resetScene(); UI.updateDomainMarginWarning()">
+    <input id="hExtent" type="number" value="40" min="2" max="500" step="1" onblur="if (Math.abs(UI.getHorizontalExtent() - world.slabW) > 1e-12) RunControl.resetScene(); UI.updateDomainMarginWarning()">
 
     <label>Incident zenith Θ₀</label>
     <input id="theta0" type="number" value="0" min="0" max="89" step="1" onblur="UI.getTheta0Rad(); UI.updateDomainMarginWarning()">
@@ -414,7 +418,9 @@
 
     <div id="domainFactorGroup" style="display:none">
       <label>Domain factor M (domain width = M × cloud width)</label>
-      <input id="domainFactor" type="number" value="4" min="1" max="50" step="0.1" onblur="UI.getDomainFactor(); UI.updateDomainMarginWarning(); RunControl.resetScene()">
+      <!-- Applied M = world.domainW / world.slabW (synced at every run start;
+           this input is only reachable under Uniform-domain illumination). -->
+      <input id="domainFactor" type="number" value="4" min="1" max="50" step="0.1" onblur="UI.updateDomainMarginWarning(); if (Math.abs(UI.getDomainFactor() - world.domainW / world.slabW) > 1e-12) RunControl.resetScene()">
       <div id="domainMarginWarning"></div>
     </div>
 
@@ -423,6 +429,19 @@
       <option value="top-base_faces" selected>Cloud top/base faces only</option>
       <option value="all_faces">Cloud top/base/side faces (cloud element)</option>
     </select>
+
+    <!-- Sub-cloud observation pixel (Phase 4): pixel width = f_pix × cloud
+         width, centered; 1.0 = whole top face (off). Accumulators are gated
+         at record time (fixed pixel per run), so changing it resets the run,
+         matching the τ/extent/M convention. -->
+    <label id="pixelFractionLabel" for="pixelFraction">Reflected observation pixel fraction (f_pix)</label>
+    <!-- DEFERRED APPLICATION (user-reported, 2026-07-16, twice): editing f_pix
+         must never destroy a finished run. This input is a REQUEST; the value
+         actually governing the accumulators/panels is SimStats._pixelFrac,
+         cached when a run starts (Launch Ensemble / Reset both call
+         SimStats.reset()). Until then the stats panel shows a "pending" note.
+         The blur handler only clamps and refreshes the display. -->
+    <input id="pixelFraction" type="number" value="1.00" min="0.05" max="1" step="0.05" onblur="UI.getPixelFraction(); SimStats.updateDisplay()">
 
     <label>HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">

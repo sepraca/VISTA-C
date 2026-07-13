@@ -1,5 +1,5 @@
 {
-  "generated": "2026-07-12T17:32:00.927Z",
+  "generated": "2026-07-13T01:57:12.084Z",
   "appVersion": "6.0.0-dev (post-Phase-2, post-2026-07-12-review; open boundary)",
   "seed": 42,
   "N_photons": 500000,
@@ -45,7 +45,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 144476,
       "Rfrac": 0.288952,
@@ -128,7 +131,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 195657,
       "Rfrac": 0.391314,
@@ -211,7 +217,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 175766,
       "Rfrac": 0.351532,
@@ -294,7 +303,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 247342,
       "Rfrac": 0.494684,
@@ -377,7 +389,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 218892,
       "Rfrac": 0.437784,
@@ -460,7 +475,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 319277,
       "Rfrac": 0.638554,
@@ -543,7 +561,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 215225,
       "Rfrac": 0.43045,
@@ -626,7 +647,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 263155,
       "Rfrac": 0.52631,
@@ -709,7 +733,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 234224,
       "Rfrac": 0.468448,
@@ -792,7 +819,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 294344,
       "Rfrac": 0.588688,
@@ -875,7 +905,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 259344,
       "Rfrac": 0.518688,
@@ -958,7 +991,10 @@
         "transmittedClearDirect": 0,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 500000,
+        "launchedCloudWall": 0,
+        "launchedClear": 0
       },
       "Rcount": 335873,
       "Rfrac": 0.671746,
@@ -1041,7 +1077,10 @@
         "transmittedClearDirect": 375085,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124915,
+        "launchedCloudWall": 0,
+        "launchedClear": 375085
       },
       "Rcount": 35884,
       "Rfrac": 0.071768,
@@ -1124,7 +1163,10 @@
         "transmittedClearDirect": 375085,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124915,
+        "launchedCloudWall": 0,
+        "launchedClear": 375085
       },
       "Rcount": 48618,
       "Rfrac": 0.097236,
@@ -1207,7 +1249,10 @@
         "transmittedClearDirect": 375798,
         "surfaceReflectedClearDirect": 187825,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124202,
+        "launchedCloudWall": 0,
+        "launchedClear": 375798
       },
       "Rcount": 55741,
       "Rfrac": 0.111482,
@@ -1290,7 +1335,10 @@
         "transmittedClearDirect": 375798,
         "surfaceReflectedClearDirect": 187825,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124202,
+        "launchedCloudWall": 0,
+        "launchedClear": 375798
       },
       "Rcount": 80882,
       "Rfrac": 0.161764,
@@ -1373,7 +1421,10 @@
         "transmittedClearDirect": 375112,
         "surfaceReflectedClearDirect": 375112,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124888,
+        "launchedCloudWall": 0,
+        "launchedClear": 375112
       },
       "Rcount": 81430,
       "Rfrac": 0.16286,
@@ -1456,7 +1507,10 @@
         "transmittedClearDirect": 375112,
         "surfaceReflectedClearDirect": 375112,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124888,
+        "launchedCloudWall": 0,
+        "launchedClear": 375112
       },
       "Rcount": 123239,
       "Rfrac": 0.246478,
@@ -1539,7 +1593,10 @@
         "transmittedClearDirect": 321125,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 125151,
+        "launchedCloudWall": 53724,
+        "launchedClear": 321125
       },
       "Rcount": 63828,
       "Rfrac": 0.127656,
@@ -1622,7 +1679,10 @@
         "transmittedClearDirect": 321125,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 125151,
+        "launchedCloudWall": 53724,
+        "launchedClear": 321125
       },
       "Rcount": 82484,
       "Rfrac": 0.164968,
@@ -1705,7 +1765,10 @@
         "transmittedClearDirect": 321259,
         "surfaceReflectedClearDirect": 160915,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124791,
+        "launchedCloudWall": 53950,
+        "launchedClear": 321259
       },
       "Rcount": 79429,
       "Rfrac": 0.158858,
@@ -1788,7 +1851,10 @@
         "transmittedClearDirect": 321259,
         "surfaceReflectedClearDirect": 160915,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124791,
+        "launchedCloudWall": 53950,
+        "launchedClear": 321259
       },
       "Rcount": 108471,
       "Rfrac": 0.216942,
@@ -1871,7 +1937,10 @@
         "transmittedClearDirect": 320761,
         "surfaceReflectedClearDirect": 320761,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124742,
+        "launchedCloudWall": 54497,
+        "launchedClear": 320761
       },
       "Rcount": 100671,
       "Rfrac": 0.201342,
@@ -1954,7 +2023,10 @@
         "transmittedClearDirect": 320761,
         "surfaceReflectedClearDirect": 320761,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 124742,
+        "launchedCloudWall": 54497,
+        "launchedClear": 320761
       },
       "Rcount": 143865,
       "Rfrac": 0.28773,
@@ -2037,7 +2109,10 @@
         "transmittedClearDirect": 468654,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31346,
+        "launchedCloudWall": 0,
+        "launchedClear": 468654
       },
       "Rcount": 8918,
       "Rfrac": 0.017836,
@@ -2120,7 +2195,10 @@
         "transmittedClearDirect": 468654,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31346,
+        "launchedCloudWall": 0,
+        "launchedClear": 468654
       },
       "Rcount": 12236,
       "Rfrac": 0.024472,
@@ -2203,7 +2281,10 @@
         "transmittedClearDirect": 468893,
         "surfaceReflectedClearDirect": 234615,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31107,
+        "launchedCloudWall": 0,
+        "launchedClear": 468893
       },
       "Rcount": 14963,
       "Rfrac": 0.029926,
@@ -2286,7 +2367,10 @@
         "transmittedClearDirect": 468893,
         "surfaceReflectedClearDirect": 234615,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31107,
+        "launchedCloudWall": 0,
+        "launchedClear": 468893
       },
       "Rcount": 21697,
       "Rfrac": 0.043394,
@@ -2369,7 +2453,10 @@
         "transmittedClearDirect": 468834,
         "surfaceReflectedClearDirect": 468834,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31166,
+        "launchedCloudWall": 0,
+        "launchedClear": 468834
       },
       "Rcount": 22777,
       "Rfrac": 0.045554,
@@ -2452,7 +2539,10 @@
         "transmittedClearDirect": 468834,
         "surfaceReflectedClearDirect": 468834,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31166,
+        "launchedCloudWall": 0,
+        "launchedClear": 468834
       },
       "Rcount": 34514,
       "Rfrac": 0.069028,
@@ -2535,7 +2625,10 @@
         "transmittedClearDirect": 455076,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31364,
+        "launchedCloudWall": 13560,
+        "launchedClear": 455076
       },
       "Rcount": 15981,
       "Rfrac": 0.031962,
@@ -2618,7 +2711,10 @@
         "transmittedClearDirect": 455076,
         "surfaceReflectedClearDirect": 0,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31364,
+        "launchedCloudWall": 13560,
+        "launchedClear": 455076
       },
       "Rcount": 20775,
       "Rfrac": 0.04155,
@@ -2701,7 +2797,10 @@
         "transmittedClearDirect": 455159,
         "surfaceReflectedClearDirect": 227458,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31210,
+        "launchedCloudWall": 13631,
+        "launchedClear": 455159
       },
       "Rcount": 22368,
       "Rfrac": 0.044736,
@@ -2784,7 +2883,10 @@
         "transmittedClearDirect": 455159,
         "surfaceReflectedClearDirect": 227458,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31210,
+        "launchedCloudWall": 13631,
+        "launchedClear": 455159
       },
       "Rcount": 31253,
       "Rfrac": 0.062506,
@@ -2867,7 +2969,10 @@
         "transmittedClearDirect": 455170,
         "surfaceReflectedClearDirect": 455170,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31399,
+        "launchedCloudWall": 13431,
+        "launchedClear": 455170
       },
       "Rcount": 30203,
       "Rfrac": 0.060406,
@@ -2950,7 +3055,10 @@
         "transmittedClearDirect": 455170,
         "surfaceReflectedClearDirect": 455170,
         "absorbedCloudIncident": 0,
-        "absorbedClearRecycled": 0
+        "absorbedClearRecycled": 0,
+        "launchedCloudTop": 31399,
+        "launchedCloudWall": 13431,
+        "launchedClear": 455170
       },
       "Rcount": 44475,
       "Rfrac": 0.08895,

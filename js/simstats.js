@@ -101,7 +101,16 @@ export const SimStats = {
       // surface, re-entered the cloud, and was absorbed inside it). Sum always
       // equals stats.absorbed.
       absorbedCloudIncident: 0,
-      absorbedClearRecycled: 0
+      absorbedClearRecycled: 0,
+      // --- Phase 4: realized first-hit launch-face tallies (rigorous BRF) ---
+      // Which surface each photon's FIRST ray-cast strikes: cloud-top face,
+      // sunward side wall (top_side / uniform_domain), or clear ground
+      // (uniform_domain only). Sum always equals launched.
+      // launchedCloudTop is the BRF reference denominator N_top (realized
+      // count, ratio-estimator design -- see TODO "Normalization / BRDF").
+      launchedCloudTop: 0,
+      launchedCloudWall: 0,
+      launchedClear: 0
     },
 
     // --- Incremental bin accumulators ---
@@ -149,6 +158,20 @@ export const SimStats = {
     // upward-escape pool. Joins R only under "scene"; stays in S under "all_faces".
     muBypassBins:     new Float64Array(MU_BINS),
     bdfBypassWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    // Sub-cloud observation pixel (Phase 4): cloud-TOP-face exits whose exit
+    // position falls inside the centered pixel |x|,|y| ≤ f_pix·W/2. One
+    // parallel accumulator set, gated by an exact geometric test at record
+    // time (fixed pixel size per run -- the fully-general joint spatial×
+    // angular grid is deferred, see TODO "Sub-cloud observation pixel").
+    // Top-face exits only by construction (status "reflected"), so the
+    // Observation-geometry dropdown does not apply to the pixel view.
+    // At f_pix = 1 these are bit-identical to muReflBins/bdfReflWeights.
+    muReflPixelBins:     new Float64Array(MU_BINS),
+    bdfReflPixelWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    // Cached at reset() (record() must not read the DOM per photon): pixel
+    // half-width in position units, and f_pix for the N_pixel reference.
+    _pixelFrac: 1,
+    _pixelHalfW: 20,
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -238,6 +261,7 @@ export const SimStats = {
       s.bypassClearDirect = 0; s.bypassViaCloud = 0;
       s.transmittedClearDirect = 0; s.surfaceReflectedClearDirect = 0;
       s.absorbedCloudIncident = 0; s.absorbedClearRecycled = 0;
+      s.launchedCloudTop = 0; s.launchedCloudWall = 0; s.launchedClear = 0;
       SimStats.muReflBins.fill(0);
       SimStats.muTransBaseBins.fill(0);
       SimStats.muTransSideBins.fill(0);
@@ -252,6 +276,12 @@ export const SimStats = {
       SimStats.bdfSideEscDownWeights.fill(0);
       SimStats.muBypassBins.fill(0);
       SimStats.bdfBypassWeights.fill(0);
+      SimStats.muReflPixelBins.fill(0);
+      SimStats.bdfReflPixelWeights.fill(0);
+      // Cache the pixel gate for the run (world.slabW is already current --
+      // resetScene calls Scene.updateWorld() before SimStats.reset()).
+      SimStats._pixelFrac = UI.getPixelFraction ? UI.getPixelFraction() : 1;
+      SimStats._pixelHalfW = SimStats._pixelFrac * world.slabW / 2;
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};
@@ -466,6 +496,58 @@ export const SimStats = {
     transmittedNetCountCloudOnly() {
       const tc = SimStats.tComponents();
       return SimStats._sidesIncluded() ? tc.viaBase + tc.viaSide : tc.viaBase;
+    },
+
+    // --- Phase 4: rigorous BRF/BTF normalization helpers -------------------
+    // Reference count N_top: the REALIZED number of photons whose first
+    // ray-cast hit the cloud-top face. Using the realized count (not the
+    // expected N·A_top/A_domain) is a deliberate ratio-estimator choice: the
+    // per-bin exit counts N_ij are driven by this same realized population,
+    // so common-mode MC noise cancels (TODO "Normalization / BRDF", step 2).
+    // For center/top illumination N_top === launched; for top_side it is the
+    // realized N·(1−p_side); for uniform_domain ≈ N·f_c. Returns 0 when no
+    // top-face photon has been launched -- callers MUST guard (divide-by-zero
+    // gate) and fall back to N with an "approximate" label.
+    nTopIncident() {
+      return SimStats.stats.launchedCloudTop;
+    },
+
+    // N_pixel: incident-flux-equivalent reference count for the sub-cloud
+    // pixel BRF -- the pixel receives an f_pix² share of the (uniform)
+    // top-face incident flux: N_pixel = N_top·f_pix². Exact for top/top_side/
+    // uniform_domain (uniform-in-area face illumination); the documented
+    // plane-parallel-equivalent approximation for "center" (a point source
+    // has no per-area flux). May be non-integer; callers guard > 0.
+    nPixelIncident() {
+      return SimStats.stats.launchedCloudTop * SimStats._pixelFrac * SimStats._pixelFrac;
+    },
+
+    // Pixel exit count (for N labels): total top-face exits inside the pixel.
+    pixelReflectedCount() {
+      let n = 0;
+      for (let i = 0; i < MU_BINS; i++) n += SimStats.muReflPixelBins[i];
+      return n;
+    },
+
+    // A_proj(θᵥ,φᵥ)/A_top: the cloud element's silhouette projected onto the
+    // horizontal (ground) plane along the view direction, relative to the top
+    // face's own footprint W·D. For W = D (enforced by the single
+    // horizontal-extent input):
+    //     A_proj/W² = 1 + (τ_cloud/W)·tanθᵥ·(|cosφᵥ| + |sinφᵥ|)
+    // Collapses to exactly 1 (i.e. A_proj = W²) for top-face-only observation
+    // -- the flat top's ground footprint is W² from ANY view angle (Phase-4
+    // gate). NO cap is applied (2026-07-16 user decision, reversing the TODO's
+    // earlier "cap at A_domain" note): the reference is the equivalent-uniform-
+    // beam convention (radiance of a perfect Lambertian target under the same
+    // beam), which preserves the UD(M=1) ≡ legacy-top identity and cross-M
+    // comparability; at grazing view angles the large ratio is the physically
+    // real stretched footprint (same effect as limb distortion in
+    // geostationary imagery). mu is the bin's area-weighted |cosθᵥ| center
+    // (floored at 1e-6 upstream), phiRad the bin-center azimuth.
+    aProjOverTop(mu, phiRad) {
+      const tanTheta = Math.sqrt(Math.max(0, 1 - mu * mu)) / Math.max(mu, 1e-6);
+      return 1 + (world.tauCloud / world.slabW) * tanTheta *
+                 (Math.abs(Math.cos(phiRad)) + Math.abs(Math.sin(phiRad)));
     },
 
     // R components (a) cloud top, (b) cloud side, (c) clear-direct, (d)
@@ -812,12 +894,28 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       SimStats.stats.totalScatterings += result.scatterings;
       SimStats.stats.totalPath += result.totalPath;
       SimStats.stats.surfaceReflected += result.surfaceBounceCount ?? 0;
+      // Phase 4: first-hit launch-face tally (defaults to "top" for
+      // robustness -- every legacy center/top launch is a top-face entry).
+      const lf = result.launchFace ?? "top";
+      if (lf === "wall")       SimStats.stats.launchedCloudWall++;
+      else if (lf === "clear") SimStats.stats.launchedClear++;
+      else                     SimStats.stats.launchedCloudTop++;
 
       if (result.status === "reflected") {
         SimStats.stats.reflected++;
         SimStats._addFootprint(SimStats.footRefl, result.xExit, result.yExit);
-        SimStats.muReflBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
-        SimStats.bdfReflWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
+        const mi = muBinIndex(Math.abs(result.dirZ ?? 0));
+        const bi = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
+        SimStats.muReflBins[mi] += 1;
+        SimStats.bdfReflWeights[bi] += 1;
+        // Sub-cloud pixel (Phase 4): exact exit-position gate. At f_pix = 1
+        // every top-face exit passes (|xExit| ≤ W/2 by the crossing math), so
+        // the pixel arrays are bit-identical to the full ones.
+        if (Math.abs(result.xExit) <= SimStats._pixelHalfW &&
+            Math.abs(result.yExit) <= SimStats._pixelHalfW) {
+          SimStats.muReflPixelBins[mi] += 1;
+          SimStats.bdfReflPixelWeights[bi] += 1;
+        }
         SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
       } else if (result.status === "transmitted") {
         // Terminal at A_s = 0 only: a genuine cloud-base crossing (never
@@ -989,6 +1087,18 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       // lines (matching the RADIATIVE COMPONENTS style) rather than sharing
       // one line, per user request for visual consistency across sections.
       const IND = "  ";
+      // Sub-cloud pixel line (Phase 4). APPLIED value = _pixelFrac (cached at
+      // run start); the input is only a request until the next Launch
+      // Ensemble/Reset (deferred application), so a pending edit is shown as
+      // such rather than resetting the run or mislabeling its data.
+      const fPixApplied = SimStats._pixelFrac ?? 1;
+      const fPixRequested = UI.getPixelFraction ? UI.getPixelFraction() : 1;
+      const pending = Math.abs(fPixRequested - fPixApplied) > 1e-12
+        ? ` — pending f_pix=${fPixRequested.toFixed(2)} (applies at next Launch Ensemble/Reset)`
+        : "";
+      const fPixLine = (fPixApplied < 1 || pending)
+        ? `\nReflected obs pixel f_pix: ${fPixApplied.toFixed(2)} (top-face exits in pixel: ${SimStats.pixelReflectedCount()})${pending}`
+        : "";
       // Split across two persistent divs (statsTop / statsMain) with the
       // "Show R/T/A components" checkbox as static HTML sitting between them
       // in index.html (see .component-checkbox-row) -- per user request, so
@@ -1025,7 +1135,7 @@ Horizontal extent: ${UI.getHorizontalExtent().toFixed(1)}
 Θ₀: ${(UI.getTheta0Rad() * 180 / Math.PI).toFixed(1)}°
 g: ${UI.getG().toFixed(2)}
 ω₀: ${UI.getOmega0().toFixed(2)}
-Surface A_s: ${UI.getSurfaceAlbedo().toFixed(2)}
+Surface A_s: ${UI.getSurfaceAlbedo().toFixed(2)}${fPixLine}
 
 Endpoint caps shown: ${endpointShown}/${endpointCap}
 Fade endpoints: ${UI.getFadeEndpoints() ? "on" : "off"}

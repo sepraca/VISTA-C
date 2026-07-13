@@ -67,3 +67,5 @@ Companion to golden_v5.4.0.json (legacy modes). Regenerate with gen_golden_ud.mj
 | 4 | 60 | 0.5 | all_faces | 0.062506 (31253) | 0.487124 (243562) | 0.000000 | 0.450370 (225185) | 1.000000 |
 | 4 | 60 | 1 | top-base_faces | 0.060406 (30203) | 0.000000 (0) | 0.000000 | 0.939594 (469797) | 1.000000 |
 | 4 | 60 | 1 | all_faces | 0.088950 (44475) | 0.000000 (0) | 0.000000 | 0.911050 (455525) | 1.000000 |
+
+**Snapshot refresh (Phase 4.1/4.2, 2026-07-16):** three additive first-hit launch-face tallies (`launchedCloudTop`/`launchedCloudWall`/`launchedClear`, summing to `launched`) were added to `rawStats` for the rigorous-BRF reference count N_top. All pre-existing fields verified byte-identical to the previous snapshot before replacement; wall tallies at Th0=60 match the sunward-reservoir expectation tau*tan(Th0)*W/(M*W)^2 within 1 sigma, and are identically 0 at Th0=0.
