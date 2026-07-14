@@ -433,8 +433,9 @@ export const Physics = {
           const ye = ys + tUp * dir.y;
           if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xe, y: ye, tau: tauCloud});
           // bypass: surface-reflected photon escaping UPWARD without re-entering the
-          // cloud (it never left a cloud face). Geometry "all_faces" routes these to
-          // S; "scene" keeps them in R. Distinguishes this from a genuine side-wall exit.
+          // cloud (it never left a cloud face). Observation geometry "all_faces"
+          // routes these to S; the always-shown domain-wide R_domain keeps them in
+          // R. Distinguishes this from a genuine side-wall exit.
           return {result: {status: "side_escape", bypass: true, xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
         }
 
@@ -519,9 +520,10 @@ export const Physics = {
             // viaSide=true (a stand-in until Phase 2 gives them their own
             // touched-cloud-based bucket instead of reusing the side-derived
             // one) -- harmless for now: it doesn't affect the top-level T count
-            // under "all_faces"/"scene" (both sum base + side unconditionally),
-            // and under "top-base_faces" it's conservatively folded into S
-            // rather than T, so the overall budget still closes exactly.
+            // under "all_faces" (sums base + side unconditionally) or the
+            // always-shown domain-wide T_domain, and under "top-base_faces"
+            // it's conservatively folded into S rather than T, so the overall
+            // budget still closes exactly.
             launchRegion = "clear";
             touchedCloud = false;
             launchFace = "clear";

@@ -85,11 +85,12 @@ export const SimStats = {
       // logic to peel the side contribution out of the transmitted channel.
       transmittedSide: 0,
       surfaceReflectedSide: 0,
-      // Terminal side-wall escapes split by vertical direction. Geometries
-      // "all_faces"/"scene" reassign upward escapes to R and downward to T.
-      // sideEscapeUp counts GENUINE upward cloud-side-wall exits only; the
-      // surface-reflected upward bypass (no cloud face) is tallied separately
-      // in surfaceBypassUp so "all_faces" can keep it in S while "scene" → R.
+      // Terminal side-wall escapes split by vertical direction. "all_faces"
+      // (and the always-shown ENTIRE DOMAIN block) reassign upward escapes to
+      // R and downward to T. sideEscapeUp counts GENUINE upward cloud-side-wall
+      // exits only; the surface-reflected upward bypass (no cloud face) is
+      // tallied separately in surfaceBypassUp so "all_faces" can keep it in S
+      // while the domain-wide total folds it into R_domain.
       sideEscapeUp: 0,
       sideEscapeDown: 0,
       surfaceBypassUp: 0,
@@ -169,7 +170,8 @@ export const SimStats = {
     bdfSideEscUpWeights:   new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     bdfSideEscDownWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     // Surface-reflected upward bypass (no cloud face): a subset peeled out of the
-    // upward-escape pool. Joins R only under "scene"; stays in S under "all_faces".
+    // upward-escape pool. Joins the ENTIRE DOMAIN block's R_domain always;
+    // stays in S under "all_faces" (the observation-geometry dropdown).
     muBypassBins:     new Float64Array(MU_BINS),
     bdfBypassWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
     // Sub-cloud observation pixel (Phase 4): cloud-TOP-face exits whose exit
@@ -211,8 +213,8 @@ export const SimStats = {
     // crash the reported mean. For legacy illumination modes (touchedCloud always
     // true) this is bit-identical to sideTransmittedPathLengths.
     sideTransmittedPathLengthsCloudOnly: [],
-    sideEscapeUpPaths: [],                  // GENUINE upward side-wall escapes (join R under all_faces/scene)
-    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under all_faces/scene)
+    sideEscapeUpPaths: [],                  // GENUINE upward side-wall escapes (join R under all_faces / R_domain)
+    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under all_faces / T_domain)
     bypassPaths: [],                        // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
     // Decontaminated (touchedCloud=true only) subset of bypassPaths -- the
     // "clear-via-cloud" (d) component only, excluding clear-direct (c). Used to
@@ -334,27 +336,25 @@ export const SimStats = {
     // Every exit is accumulated unconditionally above; the observation geometry
     // only chooses how to COMBINE the accumulators, so switching modes re-bins
     // the SAME run with no re-simulation. Footprints are left as plane
-    // projections (unchanged) per design. Observation geometry — one of three keys:
+    // projections (unchanged) per design. Observation geometry — one of two
+    // selectable keys:
     //   "top-base_faces" (a): cloud top/base faces only; sides → S.
     //   "all_faces"      (b): cloud element (top/base/side faces). Genuine upward
     //                         side exits → R, downward side → T, but surface-
     //                         reflected upward bypass (no cloud face) stays in S.
-    //   "scene"          (c): entire scene — all upwelling → R, all downwelling
-    //                         absorption + downward side → T, S → 0 (bypass → R).
-    // T-side helpers are identical for all_faces and scene ("sides included");
-    // only the R/S split differs (whether the bypass pool joins R).
+    // A third historical option, "entire scene" (all upwelling → R, S → 0,
+    // bypass folded into R), was removed pre-v6.0 (R6, CODE-REVIEW) — it's no
+    // longer reachable from the UI (see the two-option <select> in index.html).
+    // Its MATH lives on correctly, independent of this dropdown, in the
+    // always-shown ENTIRE DOMAIN block's domainReflectedCount()/
+    // domainTransmittedNetCount()/domainAbsorbedCount() below.
     _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : "top-base_faces"); },
-    _sidesIncluded() { return SimStats._obsGeom() !== "top-base_faces"; },        // all_faces or scene
-    _bypassInReflected() { return SimStats._obsGeom() === "scene"; },             // scene only
+    _sidesIncluded() { return SimStats._obsGeom() !== "top-base_faces"; },        // all_faces only
     observationGeometryLabel() {
-      const g = SimStats._obsGeom();
-      return g === "scene"     ? "entire scene"
-           : g === "all_faces" ? "cloud top/base/side faces"
-                               : "cloud top/base faces";
+      return SimStats._obsGeom() === "all_faces" ? "cloud top/base/side faces" : "cloud top/base faces";
     },
     observationGeometryKey() {
-      const g = SimStats._obsGeom();
-      return g === "scene" || g === "all_faces" ? g : "top-base_faces";
+      return SimStats._obsGeom() === "all_faces" ? "all_faces" : "top-base_faces";
     },
 
     reflectedMuBins() {
@@ -362,10 +362,9 @@ export const SimStats = {
       // sibling combiner -- a caller mutating the returned array must never be
       // able to corrupt the accumulator (review E11).
       if (!SimStats._sidesIncluded()) return Float64Array.from(SimStats.muReflBins);
-      const byp = SimStats._bypassInReflected();
       const out = new Float64Array(MU_BINS);
       for (let i = 0; i < MU_BINS; i++)
-        out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i] + (byp ? SimStats.muBypassBins[i] : 0);
+        out[i] = SimStats.muReflBins[i] + SimStats.muSideEscUpBins[i];
       return out;
     },
     transmittedMuBins() {
@@ -380,10 +379,9 @@ export const SimStats = {
     reflectedBdfWeights() {
       // Copy, not the live accumulator -- see reflectedMuBins (review E11).
       if (!SimStats._sidesIncluded()) return Float64Array.from(SimStats.bdfReflWeights);
-      const byp = SimStats._bypassInReflected();
       const out = new Float64Array(SimStats.bdfReflWeights.length);
       for (let i = 0; i < out.length; i++)
-        out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i] + (byp ? SimStats.bdfBypassWeights[i] : 0);
+        out[i] = SimStats.bdfReflWeights[i] + SimStats.bdfSideEscUpWeights[i];
       return out;
     },
     transmittedBdfWeights() {
@@ -482,7 +480,7 @@ export const SimStats = {
     reflectedCount() {
       const s = SimStats.stats;
       if (!SimStats._sidesIncluded()) return s.reflected;
-      return s.reflected + s.sideEscapeUp + (SimStats._bypassInReflected() ? s.surfaceBypassUp : 0);
+      return s.reflected + s.sideEscapeUp;
     },
     transmittedNetCount() {
       const s = SimStats.stats;
@@ -497,9 +495,9 @@ export const SimStats = {
         return s.side + (s.transmittedSide - s.surfaceReflectedSide);   // "a": sides + bypass + side-absorption
       }
       // residual ≈ 0 (genuine up/down + bypass all accounted). "all_faces" keeps
-      // bypass in S; "scene" reassigns it to R, leaving only the residual.
+      // the surface bypass in S.
       const residual = s.side - s.sideEscapeUp - s.sideEscapeDown - s.surfaceBypassUp;
-      return residual + (SimStats._bypassInReflected() ? 0 : s.surfaceBypassUp);
+      return residual + s.surfaceBypassUp;
     },
 
     // --- v6.0 "Uniform domain" domain-wide totals and component breakdowns ---
@@ -507,9 +505,11 @@ export const SimStats = {
     // per TODO "Illumination / Observation geometry naming", the domain-wide
     // (a)+(b)+(c)+(d) total is an always-shown report, independent of and in
     // parallel with the dropdown-driven cloud-normalized R/T/A/S above. The
-    // formulas are exactly today's "scene" combiner math (all upwelling -> R, all
-    // net-downward -> T), just applied unconditionally instead of gated behind a
-    // removed dropdown value.
+    // formulas are exactly the old, removed "scene" combiner's math (all
+    // upwelling -> R, all net-downward -> T), just applied unconditionally
+    // instead of gated behind a dropdown value (R6, CODE-REVIEW: that
+    // dropdown value no longer exists -- see the "Observation geometry
+    // combiners" comment above).
     domainReflectedCount() {
       const s = SimStats.stats;
       return s.reflected + s.sideEscapeUp + s.surfaceBypassUp;
@@ -774,9 +774,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
     // list of segments so consumers iterate without allocating a concat copy).
     reflectedPathSegments() {
       if (!SimStats._sidesIncluded()) return [SimStats.reflectedPathLengths];
-      const segs = [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths];
-      if (SimStats._bypassInReflected()) segs.push(SimStats.bypassPaths);   // scene only
-      return segs;
+      return [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths];
     },
     transmittedPathSegments() {
       // Uses the cloud-only decontaminated side array (v6.0.1, see TODO "3.B") so
@@ -972,7 +970,8 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
         if ((result.dirZ ?? 0) < 0) {
           if (result.bypass) {
             // Surface-reflected upward bypass (no cloud face): separate pool so
-            // "all_faces" keeps it in S while "scene" folds it into R.
+            // "all_faces" keeps it in S while the domain-wide R_domain always
+            // folds it into R (see domainReflectedCount() below).
             SimStats.stats.surfaceBypassUp++;
             SimStats.muBypassBins[ei] += 1;
             SimStats.bdfBypassWeights[eb] += 1;

@@ -22,10 +22,18 @@ const { SimStats } = await import(`${BASE}simstats.js`);
 const ILLUM_MODES = ["center", "top", "top_side"];
 const THETA0_DEG = [0, 60];
 const AS_VALUES = [0.0, 0.5, 1.0];
+// "scene" ("entire scene") was a third observation-geometry combiner option
+// that existed in the app when this suite was first written. It was removed
+// from the UI pre-v6.0, and its dead combiner-side special-casing (formerly
+// _bypassInReflected()) was deleted from simstats.js/physics.js in the R6
+// refactor (CODE-REVIEW-v6.0-handoff.md). It is no longer reachable from the
+// UI and no longer has any distinct code path, so it's dropped from this
+// matrix -- testing it would just be re-testing "all_faces" under a stale
+// label. See golden_snapshot_v5.4.0.md for the historical record of its
+// removal.
 const OBS_GEOMS = [
   ["top-base_faces", "Cloud top/base faces only"],
-  ["all_faces",       "Cloud top/base/side faces"],
-  ["scene",            "Entire scene"]
+  ["all_faces",       "Cloud top/base/side faces"]
 ];
 const N_PHOTONS = 500000;
 const SEED = 42;

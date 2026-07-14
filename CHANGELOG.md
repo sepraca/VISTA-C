@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed (CODE-REVIEW R6 — delete dead "scene" observation-geometry plumbing)
+
+- Removed `simstats.js`'s `_bypassInReflected()` and all call sites. It only
+  ever returned `true` for the "Entire scene" observation-geometry option,
+  which was removed from the UI dropdown pre-v6.0 and had been permanently
+  unreachable (always `false`) ever since — simplified
+  `observationGeometryLabel()`/`observationGeometryKey()` and
+  `reflectedMuBins()/reflectedBdfWeights()/reflectedCount()/sideExitCount()/
+  reflectedPathSegments()` to drop their now-dead conditional arms. No
+  behavioral change for either live observation geometry
+  (`top-base_faces`/`all_faces`).
+- Rewrote stale prose comments (in `simstats.js` and `physics.js`) that still
+  described "scene" as a live, selectable option, to instead reference the
+  always-shown, dropdown-independent ENTIRE DOMAIN block that is the real
+  successor to that removed geometry's math.
+- The golden-snapshot test harnesses (`gen_golden.mjs`, `golden_one.mjs`) were
+  independently driving the dead `"scene"` combiner path directly (bypassing
+  the UI). Removed it from both; regenerated `golden_v5.4.0.json` from 54 to
+  36 rows accordingly (the 12 removed rows were the now-meaningless "scene"
+  combinations at A_s > 0). The surviving 36 rows and all raw per-photon
+  stats are verified byte-identical to before this change. Historical
+  "scene" values preserved in an appendix table in
+  `golden_snapshot_v5.4.0.md` for reference.
+
 ### Fixed (CODE-REVIEW P7 — documentation corrections)
 
 - README's "Data export" section still described µ-histogram and BDF export

@@ -22,10 +22,12 @@ const { SimStats } = await import(`${BASE}simstats.js`);
 const N_PHOTONS = 500000, SEED = 42;
 const FIXED = { tauCloud: 10, slabW: 40, slabD: 40, g: 0.85, omega0: 1.0,
                 betaExt: 10.0, surfaceDistanceKm: 0.5 };
+// "scene" dropped (R6, CODE-REVIEW): dead observation-geometry option, removed
+// from the UI pre-v6.0 and from the combiner logic in the R6 refactor. See the
+// matching comment in gen_golden.mjs.
 const OBS_GEOMS = [
   ["top-base_faces", "Cloud top/base faces only"],
-  ["all_faces",       "Cloud top/base/side faces"],
-  ["scene",            "Entire scene"]
+  ["all_faces",       "Cloud top/base/side faces"]
 ];
 
 RNG.reset(SEED);
