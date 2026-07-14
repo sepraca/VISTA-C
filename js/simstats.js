@@ -961,6 +961,14 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
         SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
         SimStats.muTransBaseBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
         SimStats.bdfTransBaseWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
+        // Bug fix (user report, 2026-07): physics.js now computes the actual
+        // surface-plane (x,y) for this A_s=0 fast path (previously it stayed
+        // at the cloud-base crossing point and was silently excluded here) --
+        // bin it into the surface-absorption heatmap, same as the
+        // SURFACE_ABSORBED branch below does. This is the dominant surface-
+        // reaching population at low COT, so this was previously leaving the
+        // heatmap empty directly under the cloud footprint.
+        SimStats._addSurfaceFootprint(result.xExit, result.yExit);
       } else if (result.status === Status.SIDE_ESCAPE) {
         SimStats.stats.side++;
         // Record the escape direction so geometry "b" can reassign it: upward

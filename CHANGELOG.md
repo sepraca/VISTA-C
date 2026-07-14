@@ -6,6 +6,41 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (surface-absorption heatmap missing the dominant population at A_s=0, user report)
+
+- Under Uniform domain illumination at A_s=0, `physics.js`'s cloud-base-
+  crossing fast path (deterministic 100% surface absorption when A_s=0, so
+  it skips the reflection RNG draw) returned `xExit`/`yExit`/`tauExit` at the
+  cloud-base plane instead of the true surface-plane landing position. Since
+  `simstats.js`'s surface-footprint accumulator only ever binned the
+  `surface_absorbed` status branch, this fast-path population (`transmitted`
+  status) was invisible to the surface-absorption heatmap — at low COT this
+  is the *dominant* surface-reaching population (verified: ~24.6% of all
+  launches, essentially the entire cloud-incident population at COT=0.1),
+  leaving the heatmap empty directly under the cloud shadow where the
+  strongest signal should be.
+- Fix: the fast path now computes the true surface-plane (x,y) using the
+  same clear-gap projection `surfaceInteraction()` already uses, without
+  drawing from RNG (the reflection coin-flip is deterministic — always false
+  — when A_s=0, so skipping it changes no physics but keeps the RNG stream,
+  and therefore every golden snapshot, byte-identical). `simstats.js` now
+  bins this corrected position into the surface heatmap; `photons.js` now
+  draws the corresponding surface-absorbed endpoint marker (previously
+  skipped, relying only on the separate green cloud-base-crossing marker).
+- Verified: status counts and all three golden regression suites (legacy
+  v5.4.0, uniform-domain open, uniform-domain periodic) are byte-identical
+  before/after — confirming zero impact on R/T/A/S/Term bookkeeping or the
+  RNG stream. `footSurfAbs` grid total now equals `transmitted +
+  surface_absorbed` exactly (previously equaled `surface_absorbed` alone).
+- Knock-on fix: `index.html`'s legend only listed 3 path-line colors
+  (Reflected/Transmitted/Absorbed); `getOutcomeColor()` has actually
+  returned 5 distinct path colors since the R8 pass added a
+  `surface_absorbed` case, so `side_escape` (orange) and `surface_absorbed`
+  (dark maroon) photon paths were rendering with no legend entry — user
+  report ("red paths in the cloud not in the legend"). Added both missing
+  swatches; relabeled the gray entry "Absorbed (cloud) photon paths" to
+  disambiguate from the new surface-absorbed entry.
+
 ### Changed (CODE-REVIEW R7 — shared constants module)
 
 - Added `js/constants.js`: four frozen string-literal enums (`EntryMode`,

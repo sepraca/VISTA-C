@@ -662,8 +662,35 @@ export const Physics = {
             continue;
           }
 
-          // A_s = 0: photon terminates at cloud base.
-          return {status: Status.TRANSMITTED, xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          // A_s = 0: photon terminates at the surface deterministically (the
+          // reflection draw in surfaceInteraction() can never succeed when
+          // surfaceAlbedo = 0), so this branch skips calling it -- but it must
+          // still compute WHERE on the surface the photon lands, using the
+          // same clear-gap projection surfaceInteraction() uses (tauSurface =
+          // tauCloud + betaExt*surfaceDistanceKm; straight-line continuation
+          // of the current direction), just without the RNG.rand() draw
+          // surfaceInteraction() would make -- that draw's outcome is
+          // deterministic here anyway (never < 0), so skipping it changes no
+          // physics, but DOES keep the RNG stream, and therefore every golden
+          // snapshot, untouched. Previously xExit/yExit/tauExit stayed at the
+          // CLOUD-BASE crossing point, so these photons (the dominant
+          // population at low COT -- effectively the entire cloud-incident
+          // population when scattering is rare) never got a surface-plane
+          // position at all, leaving them uncounted by both the surface-
+          // absorption heatmap (_addSurfaceFootprint, simstats.js record())
+          // and the per-photon surface endpoint marker (photons.js
+          // addEndpoint) -- reported by the user, verified by direct
+          // simulation (2026-07): ~24.6% of all uniform-domain launches at
+          // COT=0.10, M=2 were silently excluded this way. totalPath is
+          // intentionally NOT incremented for the gap traversal, matching
+          // surfaceInteraction()'s own (pre-existing, unrelated to this fix)
+          // convention of not counting that trivial clear-air distance.
+          const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
+          const tDown = (tauSurface - tauCloud) / Math.max(dir.z, 1e-12);
+          const xs = xb + tDown * dir.x;
+          const ys = yb + tDown * dir.y;
+          if (storePath) path.push({x: xs, y: ys, tau: tauSurface});
+          return {status: Status.TRANSMITTED, xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
         // Interior scattering event.

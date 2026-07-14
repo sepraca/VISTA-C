@@ -301,9 +301,18 @@ export const Photons = {
         color = 0x60a5fa;
         radius = 0.16;
       } else if (result.status === Status.TRANSMITTED) {
-        // Downward termination at the cloud base (A_s=0) is already drawn by the
-        // base-crossing marker above; no separate endpoint is added.
-        return;
+        // A_s=0 fast path: the photon crosses the cloud base (already marked
+        // green above) and is then deterministically absorbed at the surface
+        // (no reflection possible when A_s=0). physics.js now computes the
+        // real surface-plane (x,y) for this branch (previously it stayed at
+        // the cloud-base point, so no surface endpoint was ever drawn here --
+        // user report, 2026-07, matching the surface-heatmap fix above this
+        // marker is the same color/radius as SURFACE_ABSORBED since it's the
+        // same physical event, just reached via this A_s=0 shortcut instead
+        // of surfaceInteraction()). Distinct point from the green base-
+        // crossing marker, not a duplicate of it.
+        color = 0x7c2d12;
+        radius = 0.18;
       } else if (result.status === Status.SIDE_ESCAPE) {
         color = 0xf97316;
         radius = 0.14;
