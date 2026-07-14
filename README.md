@@ -397,9 +397,16 @@ values shown in the PNG headers):
   sub-cloud gap, the photon-illumination mode (`center` / `top` / `top_side`), and the RNG seed.
 - **Outputs** — all outcome counts and normalized fluxes (R, T, A, S),
   with the R + T + A + S flux-closure sum.
-- **µ histograms** — reflected and net-transmitted (signed, down − up) exit-angle
-  vectors with explicit bin edges and centers.
-- **BDF** — raw signed bin weights *and* the normalized
+- **µ histograms** — reflected and net-transmitted exit-angle vectors, with
+  explicit bin edges and centers. Counts are **non-negative, terminal-event-only**
+  (v6.0.1, review E3/E4): each photon contributes exactly one +1 tally, at the
+  angle of its actual terminal exit/arrival ("reflected", or "transmitted"/
+  "surface_absorbed" for the net-transmitted side) — surface reflections along
+  the way are never binned. The bin totals equal the net (down − up) counts by
+  construction; this replaced an earlier signed ±1 running-ledger scheme, so
+  despite the name these are no longer "signed" values.
+- **BDF** — raw, non-negative terminal-event bin weights (same one-tally-per-photon
+  construction as the µ histograms above) *and* the normalized
   BDF = (W/N)·π/(µ·Δµ·Δφ) on a 19 (zenith) × 72 (azimuth) grid, with θ, φ, and
   µ coordinates. Exported **unsmoothed** (the display's near-nadir azimuthal
   averaging is a cosmetic only), so it is the ground truth for DISORT comparison.
@@ -436,7 +443,12 @@ Because the Mulberry32 RNG is deterministic, two runs at the same seed, photon
 count, and horizontal extent reproduce these exports exactly — all photon
 tallies are bit-identical across browsers and platforms (only the derived BDF
 floats may differ at the ~10⁻¹⁵ machine-epsilon level from cross-engine
-rounding in `acos`/`cos`).
+rounding in `acos`/`cos`). Note: this only holds starting from a fresh
+**Launch Ensemble** or **Reset** — successive **Launch One** clicks draw new,
+distinct photons from the *advancing* RNG stream and accumulate into the
+running statistics, so an export taken after one or more Launch One clicks is
+not reproducible from `rng_seed` alone (the stream has moved on from its
+initial state by then).
 
 ### Comparison plots
 

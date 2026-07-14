@@ -557,10 +557,15 @@ export const Export = {
     // Design notes:
     //   * Values are exported at full double precision (NOT the toFixed(3)
     //     used in the PNG headers), since quantitative comparison is the point.
-    //   * BDF is exported as BOTH the raw signed bin weights and the normalized
-    //     BDF = (W/N)·π/(µ·Δµ·Δφ). The normalized grid is the UNSMOOTHED
-    //     quantity (near-nadir azimuthal averaging is a display-only cosmetic),
-    //     so it is the ground truth for DISORT comparison.
+    //   * BDF is exported as BOTH the raw, non-negative terminal-event bin
+    //     weights (v6.0.1, review E3/E4: one +1 tally per photon at its
+    //     actual terminal exit/arrival direction; reflections along the way
+    //     are never binned -- this replaced an earlier signed ±1 running-
+    //     ledger scheme, so "raw" no longer means "signed") and the
+    //     normalized BDF = (W/N)·π/(µ·Δµ·Δφ). The normalized grid is the
+    //     UNSMOOTHED quantity (near-nadir azimuthal averaging is a
+    //     display-only cosmetic), so it is the ground truth for DISORT
+    //     comparison.
     //   * Path-length distributions are exported as fixed-bin histograms that
     //     reproduce the on-screen panel exactly (24 bins, same adaptive max,
     //     long tail clipped into the final overflow bin) plus the true means.

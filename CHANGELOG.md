@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (CODE-REVIEW P7 — documentation corrections)
+
+- README's "Data export" section still described µ-histogram and BDF export
+  values as "signed" ("reflected and net-transmitted (signed, down − up)";
+  "raw signed bin weights") — stale since the v6.0.1 review (E3/E4) replaced
+  that earlier signed ±1 running-ledger scheme with a non-negative,
+  terminal-event-only construction (each photon contributes exactly one +1
+  tally, at the angle of its actual terminal exit/arrival; reflections along
+  the way are never binned). Rewritten to describe the actual current scheme.
+- Found the same staleness one level deeper while fixing the above:
+  `exportUtils.js`'s own top-of-function design-notes comment still said "BDF
+  is exported as BOTH the raw signed bin weights..." — inconsistent with the
+  actually-generated `bdf.description` JSON field a few lines below it, which
+  already correctly said "non-negative". Fixed the comment to match.
+- Added a reproducibility caveat to the same README section: an export taken
+  after one or more **Launch One** clicks is not reproducible from `rng_seed`
+  alone, since each click draws new photons from the advancing RNG stream
+  onto the running statistics — only a fresh **Launch Ensemble** or **Reset**
+  restarts from the seed's initial state.
+- The other two CODE-REVIEW P7 items needed no change: the marker/footprint
+  "1:1 with the green downward cloud-base crossings footprint" claim was
+  already accurate (E12, which the note was sequenced after, landed well
+  before this pass), and the "Display updates during large runs" cadence
+  section remains correctly deferred until the TODO-perf-refresh-cadence.md
+  work lands (it doesn't currently claim anything that work would falsify).
+
 ### Fixed (CODE-REVIEW P4 — wrapped-leg path visualization)
 
 - Under periodic domain boundary, a photon path that wraps to a neighboring
