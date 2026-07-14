@@ -24,7 +24,12 @@ import { BottomPanel } from './bottomPanel.js';
 const LEGEND_COL_W = 560;
 const LEGEND_ROW_H = 32;
 const LEGEND_PAD = 10;
-const LEGEND_ROWS = 7;   // 14 entries / 2 columns (review E10: surface-event dots added)
+const LEGEND_ROWS = 8;   // 16 entries / 2 columns (user report, 2026-07: added
+                          // Side-escape/Surface-absorbed path entries -- this
+                          // constant does NOT auto-derive from entries.length
+                          // (see drawExportLegend), so it must be kept in sync
+                          // by hand; this exact mismatch class of bug already
+                          // bit this file once before (review E10 note above).
 const LEGEND_BOX_W = LEGEND_COL_W * 2 + 2 * LEGEND_PAD;
 const LEGEND_BOX_H = LEGEND_ROWS * LEGEND_ROW_H + 2 * LEGEND_PAD;
 
@@ -208,7 +213,17 @@ export const Export = {
       const entries = [
         ["#60a5fa", "Reflected paths", "line"],
         ["#86efac", "Transmitted paths", "line"],
-        ["#94a3b8", "Absorbed paths", "line"],
+        // Side-escape and surface-absorbed paths draw in these colors too
+        // (getOutcomeColor(), ui.js) but this export legend, like the
+        // on-screen #legend before it, only listed 3 path colors -- user
+        // report, 2026-07: exported PNGs showed maroon "surface-absorbed"
+        // paths through/near the cloud with no matching legend entry (the
+        // on-screen #legend was already fixed earlier in the same report;
+        // this export-canvas legend is a SEPARATE hardcoded array and was
+        // missed then).
+        ["#f97316", "Side-escape paths", "line"],
+        ["#7c2d12", "Surface-absorbed paths", "line"],
+        ["#94a3b8", "Absorbed (cloud) paths", "line"],
         ["#60a5fa", "Upward cloud-top crossings", "dot"],
         ["#22c55e", "Downward cloud-base crossings", "dot"],
         ["#111827", "Absorption locations", "dot"],

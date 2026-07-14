@@ -78,6 +78,17 @@ All notable changes to this project are documented here. The format is based on
   report ("red paths in the cloud not in the legend"). Added both missing
   swatches; relabeled the gray entry "Absorbed (cloud) photon paths" to
   disambiguate from the new surface-absorbed entry.
+- Second knock-on fix (user report, follow-up): the on-screen `#legend` fix
+  above didn't appear in exported PNGs even after a full hard-refresh +
+  cache clear, because `exportUtils.js`'s `drawExportLegend()` draws from a
+  **completely separate, independently-hardcoded** `entries` array baked
+  into the export-canvas rendering code -- not the on-screen `#legend` div's
+  HTML. Added the same two missing entries there ("Side-escape paths",
+  "Surface-absorbed paths") and bumped `LEGEND_ROWS` from 7 to 8 (16 entries
+  / 2 columns now, up from 14) -- this constant does not auto-derive from
+  `entries.length`, so it has to be kept in sync by hand; this exact
+  duplicated-constant mismatch class of bug already bit this same file once
+  before (see the review E10 note a few lines above it in the source).
 
 ### Changed (CODE-REVIEW R7 — shared constants module)
 
