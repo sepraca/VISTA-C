@@ -2,6 +2,8 @@
 // All cross-module mutable variables live here as properties of `state`
 // so ES module imports can read and write them without reassignment restrictions.
 
+import { Status } from './constants.js';
+
 export const state = {
   // Three.js core objects (populated by RunControl.init)
   scene:    null,
@@ -30,7 +32,7 @@ export const state = {
   activePhotonID:        null,
   activePhotonStep:      0,
   activePhotonTotalSteps: 0,
-  activePhotonStatus:    "none",
+  activePhotonStatus:    Status.NONE,
 };
 
 // Cloud geometry and optical properties (mutated by Scene.updateWorld).

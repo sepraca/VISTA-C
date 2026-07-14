@@ -12,6 +12,7 @@ import { Scene } from './scene.js';
 import { Photons } from './photons.js';
 import { BottomPanel } from './bottomPanel.js';
 import { Export } from './exportUtils.js';
+import { Status } from './constants.js';
 
 // Instant-mode batching: photons simulated per setTimeout slice, and how many
 // chunks pass between heavy display rebuilds (3D histograms, bottom panel).
@@ -44,7 +45,6 @@ export const RunControl = {
 
       state.camera = new THREE.PerspectiveCamera(50, view3dWidth / window.innerHeight, 0.1, 2000);
 
-      // state.camera.position.set(0, -90, 33);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
       state.camera.position.set(0, -90, 21);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
 
       state.renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
@@ -309,7 +309,7 @@ export const RunControl = {
       state.activePhotonID = null;
       state.activePhotonStep = 0;
       state.activePhotonTotalSteps = 0;
-      state.activePhotonStatus = "none";
+      state.activePhotonStatus = Status.NONE;
       state.isPaused = false;
       state.isStopped = false;
       state.stepRequested = false;

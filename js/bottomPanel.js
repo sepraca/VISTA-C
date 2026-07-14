@@ -3,6 +3,7 @@
 import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI } from './ui.js';
 import { state } from './state.js';
+import { EntryMode } from './constants.js';
 
 const BDF_LAYOUT = {
     reflectedX:  158,
@@ -60,7 +61,7 @@ export const BottomPanel = {
       if (mode === "bdf") {
         // Panel header tracks the active quantity: rigorous BRF/BTF (Phase 4,
         // all illumination modes) vs the domain-mean BDF (entire-domain view).
-        const entire = UI.getPhotonEntryMode() === "uniform_domain" && UI.getShowEntireDomainPlots();
+        const entire = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getShowEntireDomainPlots();
         title.textContent = entire
           ? "Domain-mean BDF polar plots: exit zenith angle Θ and azimuth φ"
           : "BRF / BTF polar plots: exit zenith angle Θ and azimuth φ";
@@ -103,7 +104,7 @@ export const BottomPanel = {
       // scale, so it's excluded from the bars here too (same treatment as the
       // path-length panel, TODO "3.B") and reported as a separate text count
       // instead -- see the clear-direct annotation below.
-      const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const isDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       const showEntireDomain = isDomain && UI.getShowEntireDomainPlots();
       // Sub-cloud pixel (Phase 4): when f_pix < 1 the Reflected panel
       // restricts to top-face exits inside the centered pixel (the
@@ -327,7 +328,7 @@ export const BottomPanel = {
       // includes side exits + bypass, independent of which of the two dropdown
       // options is selected. See TODO "Second round of live-UI feedback" /
       // the follow-up note on drawPathOverlay() not being wired up initially.
-      const isDomainPath = UI.getPhotonEntryMode() === "uniform_domain";
+      const isDomainPath = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       const showEntireDomainPath = isDomainPath && UI.getShowEntireDomainPlots();
       const reflSegs  = showEntireDomainPath ? SimStats.reflectedPathSegmentsDomainWide() : SimStats.reflectedPathSegments();
       const transSegs = showEntireDomainPath ? SimStats.transmittedPathSegmentsDomainWide() : SimStats.transmittedPathSegments();
@@ -464,7 +465,7 @@ export const BottomPanel = {
       // excluded from the plotted grid here too (same treatment as the mu-
       // histogram and path-length panels, TODO "3.A"/"3.B") and reported as a
       // separate text count instead.
-      const isDomainBdf = UI.getPhotonEntryMode() === "uniform_domain";
+      const isDomainBdf = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       const showEntireDomainBdf = isDomainBdf && UI.getShowEntireDomainPlots();
       const reflectedWeights = showEntireDomainBdf ? SimStats.reflectedBdfWeightsDomainWide() : SimStats.reflectedBdfWeights();
       // No "(entire domain)" suffix (see the mu-histogram's reflLabel comment):

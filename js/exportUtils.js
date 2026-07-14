@@ -4,6 +4,7 @@ import { state, UI_PANEL_WIDTH } from './state.js';
 import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
+import { EntryMode } from './constants.js';
 import { BottomPanel } from './bottomPanel.js';
 
 // Legend box geometry, shared between drawExportLegend() and
@@ -78,9 +79,9 @@ export const Export = {
 
     // Human-readable label for the cloud-top photon-illumination mode.
     photonEntryLabel: function(mode) {
-      return mode === "top"            ? "uniform top"
-           : mode === "top_side"       ? "uniform top+side"
-           : mode === "uniform_domain" ? "uniform domain"
+      return mode === EntryMode.TOP            ? "uniform top"
+           : mode === EntryMode.TOP_SIDE       ? "uniform top+side"
+           : mode === EntryMode.UNIFORM_DOMAIN ? "uniform domain"
            : "centered";
     },
 
@@ -99,7 +100,7 @@ export const Export = {
     // Third line here is the correct place instead: it only describes the
     // bottom-panel PLOTS specifically, which is exactly what it's true of.
     getDomainOutputLines: function() {
-      if (UI.getPhotonEntryMode() !== "uniform_domain") return [];
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN) return [];
       const launched = Math.max(SimStats.stats.launched, 1);
       const M = UI.getDomainFactor();
       const fc = UI.getCloudFraction();
@@ -479,7 +480,7 @@ export const Export = {
         // relevant, and are already shown. Every other combination (legacy
         // modes; Uniform Domain with the checkbox unchecked) is unaffected --
         // pixel-identical to before.
-        const showEntireDomain = UI.getPhotonEntryMode() === "uniform_domain" && UI.getShowEntireDomainPlots();
+        const showEntireDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getShowEntireDomainPlots();
 
         const allLines = Export.getExportParameterLines();
         const lines = showEntireDomain ? allLines.slice(0, -1) : allLines;   // drop trailing "Obs geometry" line
@@ -623,7 +624,7 @@ export const Export = {
 
       // domain_factor/domain_boundary only meaningful under "Uniform domain"
       // illumination -- omitted otherwise rather than exported as meaningless.
-      const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const isDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       if (isDomain) {
         inputs.domain_factor = UI.getDomainFactor();
         inputs.domain_boundary = UI.getDomainBoundary();   // "open" | "periodic" (Phase 3)

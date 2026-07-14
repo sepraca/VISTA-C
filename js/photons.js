@@ -5,6 +5,7 @@ import { state, world } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
+import { Status } from './constants.js';
 
 // Stored-endpoint buffer cap = the "Endpoint caps shown" slider maximum. Storage
 // is bounded by THIS (not the live display cap), so dragging the slider down and
@@ -70,12 +71,31 @@ export const Photons = {
       return segments;
     },
 
+    // One LineBasicMaterial per outcome color (not per path/segment), reused
+    // across the whole session. Previously addStaticPath allocated a fresh
+    // material for every segment of every path -- up to ~maxPaths (1000)
+    // distinct materials per run, all identical apart from `color`, none of
+    // them ever needing per-path variation. R8, CODE-REVIEW. Marked
+    // userData.shared so Scene.clearGroup (called on every Reset) skips
+    // disposing them, matching the existing pattern used for the shared
+    // heatmap material in scene.js.
+    _pathMatCache: {},
+    _pathMaterial: function(color) {
+      let mat = Photons._pathMatCache[color];
+      if (!mat) {
+        mat = new THREE.LineBasicMaterial({color, transparent: true, opacity: 0.48});
+        mat.userData.shared = true;
+        Photons._pathMatCache[color] = mat;
+      }
+      return mat;
+    },
+
     addStaticPath: function(result) {
       const color = UI.getOutcomeColor(result.status);
+      const mat = Photons._pathMaterial(color);
       for (const seg of Photons.splitPathSegments(result.path)) {
         const pts = seg.map(Coords.simToWorldPoint);
         const geom = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineBasicMaterial({color, transparent: true, opacity: 0.48});
         state.pathGroup.add(new THREE.Line(geom, mat));
       }
     },
@@ -277,17 +297,17 @@ export const Photons = {
 
       let color, radius;
 
-      if (result.status === "reflected") {
+      if (result.status === Status.REFLECTED) {
         color = 0x60a5fa;
         radius = 0.16;
-      } else if (result.status === "transmitted") {
+      } else if (result.status === Status.TRANSMITTED) {
         // Downward termination at the cloud base (A_s=0) is already drawn by the
         // base-crossing marker above; no separate endpoint is added.
         return;
-      } else if (result.status === "side_escape") {
+      } else if (result.status === Status.SIDE_ESCAPE) {
         color = 0xf97316;
         radius = 0.14;
-      } else if (result.status === "surface_absorbed") {
+      } else if (result.status === Status.SURFACE_ABSORBED) {
         color = 0x7c2d12;
         radius = 0.18;
       } else {

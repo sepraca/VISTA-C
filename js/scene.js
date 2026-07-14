@@ -6,6 +6,7 @@ import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
 import { BottomPanel } from './bottomPanel.js';
+import { EntryMode } from './constants.js';
 
 export const Scene = {
 
@@ -46,7 +47,7 @@ export const Scene = {
       // collapse to M=1, so domainW/domainD === slabW/slabD and rendering is
       // unchanged from before this was added. See TODO-direct-surface-
       // illumination.md, "Uniform domain" section, for the M·W domain definition.
-      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const isUniformDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       const M = isUniformDomain ? UI.getDomainFactor() : 1;
       world.domainW = M * L;
       world.domainD = M * L;
@@ -54,7 +55,6 @@ export const Scene = {
 
     // Reset state.camera to the default view position.
     resetCamera: function() {
-      // state.camera.position.set(0, -90, 33);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
       state.camera.position.set(0, -90, 21);   // +15 vs target keeps the angle; pans the cloud down, clear of the legend
       state.camera.up.set(0, 0, 1);
       state.controls.target.set(0, 0, -12);
@@ -330,7 +330,7 @@ export const Scene = {
       // Trade-off: at a small sub-cloud gap (low d_sfc / β_ext) this can
       // overlap the base-crossing footprint in mid-gap — acceptable since
       // both are translucent. Light brown, geometry-independent.
-      if ((UI.getSurfaceAlbedo() > 0 || UI.getPhotonEntryMode() === "uniform_domain") && UI.getShowSurfaceHeatmap()) {
+      if ((UI.getSurfaceAlbedo() > 0 || UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN) && UI.getShowSurfaceHeatmap()) {
         Scene.addFootprintHeatmap(
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,

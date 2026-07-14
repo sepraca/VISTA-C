@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed (CODE-REVIEW R7 — shared constants module)
+
+- Added `js/constants.js`: four frozen string-literal enums (`EntryMode`,
+  `ObsGeom`, `DomainBoundary`, `Status`) with their default values, for the
+  photon entry mode, observation geometry, domain boundary, and terminal
+  photon status categories that were previously string-matched independently
+  across `physics.js`, `simstats.js`, `ui.js`, `photons.js`,
+  `exportUtils.js`, `bottomPanel.js`, `scene.js`, `runControl.js`, and
+  `state.js`. A mistyped literal in any of these files previously fell
+  through silently to a default/legacy branch rather than erroring; every
+  live comparison/definition site is now a reference into one shared,
+  frozen source of truth instead.
+- Pure refactor, no behavioral change: every constant evaluates to the exact
+  same string value it replaced. Verified via `node --check` on all files, a
+  runtime smoke-import of every three.js-independent module (catching two
+  missing-`import` `ReferenceError`s that `node --check` alone couldn't
+  detect), and all three mandatory golden-snapshot regression suites
+  (exact-match, no change).
+- `launchFace`/`launchRegion` (physics.js-internal per-photon derived tags)
+  intentionally left as plain literals — out of scope for this pass; see
+  `constants.js`'s header comment for the rationale.
+
+### Changed (CODE-REVIEW R8 — presentation nits)
+
+- `ui.js`'s `getOutcomeColor()` gained a distinct `"surface_absorbed"` case
+  (dark brown, `0x7c2d12`) — previously these paths fell through to the same
+  gray used for cloud-absorbed (`"absorbed"`) paths, making the two outcomes
+  visually indistinguishable in the 3D path view. The new color matches the
+  one already used for surface-absorbed event markers
+  (`Scene.addSurfaceInteractionMarkers()`).
+- Removed a duplicated, stale commented-out camera-position line that had
+  been independently copy-pasted into both `RunControl.init()`
+  (`runControl.js`) and `Scene.resetCamera()` (`scene.js`).
+- `Photons.addStaticPath` (`photons.js`) now shares one `LineBasicMaterial`
+  per outcome color, cached in `Photons._pathMatCache`, instead of
+  allocating a fresh material for every path segment drawn (previously up to
+  ~1000/run, one per path up to the "Max paths drawn" cap). Marked as a
+  shared material so `Scene.clearGroup()` doesn't dispose it on Reset,
+  matching the existing pattern used for the shared heatmap material.
+
 ### Changed (CODE-REVIEW R6 — delete dead "scene" observation-geometry plumbing)
 
 - Removed `simstats.js`'s `_bypassInReflected()` and all call sites. It only

@@ -12,6 +12,7 @@
 
 import { state, world } from './state.js';
 import { UI } from './ui.js';
+import { EntryMode, ObsGeom, DEFAULT_OBS_GEOM, Status } from './constants.js';
 
 let _drawPanelCallback = () => {};
 export function setDrawPanelCallback(fn) { _drawPanelCallback = fn; }
@@ -231,7 +232,7 @@ export const SimStats = {
     // ensureFootprintGrids() (both off the per-photon hot path), NOT from
     // _addSurfaceFootprint (cache the result in _surfFootFactor instead).
     surfaceFootFactor() {
-      if (UI.getPhotonEntryMode() !== "uniform_domain") return SURFACE_FOOT_EXTENT;
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN) return SURFACE_FOOT_EXTENT;
       return Math.min(SURF_FACTOR_CAP, Math.max(SURFACE_FOOT_EXTENT, UI.getDomainFactor()));
     },
 
@@ -348,13 +349,13 @@ export const SimStats = {
     // Its MATH lives on correctly, independent of this dropdown, in the
     // always-shown ENTIRE DOMAIN block's domainReflectedCount()/
     // domainTransmittedNetCount()/domainAbsorbedCount() below.
-    _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : "top-base_faces"); },
-    _sidesIncluded() { return SimStats._obsGeom() !== "top-base_faces"; },        // all_faces only
+    _obsGeom() { return (UI.getObservationGeometry ? UI.getObservationGeometry() : DEFAULT_OBS_GEOM); },
+    _sidesIncluded() { return SimStats._obsGeom() !== ObsGeom.TOP_BASE_FACES; },   // all_faces only
     observationGeometryLabel() {
-      return SimStats._obsGeom() === "all_faces" ? "cloud top/base/side faces" : "cloud top/base faces";
+      return SimStats._obsGeom() === ObsGeom.ALL_FACES ? "cloud top/base/side faces" : "cloud top/base faces";
     },
     observationGeometryKey() {
-      return SimStats._obsGeom() === "all_faces" ? "all_faces" : "top-base_faces";
+      return SimStats._obsGeom() === ObsGeom.ALL_FACES ? ObsGeom.ALL_FACES : ObsGeom.TOP_BASE_FACES;
     },
 
     reflectedMuBins() {
@@ -936,7 +937,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       else if (lf === "clear") SimStats.stats.launchedClear++;
       else                     SimStats.stats.launchedCloudTop++;
 
-      if (result.status === "reflected") {
+      if (result.status === Status.REFLECTED) {
         SimStats.stats.reflected++;
         SimStats._addFootprint(SimStats.footRefl, result.xExit, result.yExit);
         const mi = muBinIndex(Math.abs(result.dirZ ?? 0));
@@ -952,7 +953,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
           SimStats.bdfReflPixelWeights[bi] += 1;
         }
         SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
-      } else if (result.status === "transmitted") {
+      } else if (result.status === Status.TRANSMITTED) {
         // Terminal at A_s = 0 only: a genuine cloud-base crossing (never
         // clear-direct -- at A_s = 0, surfaceInteraction always returns
         // "surface_absorbed" instead, since the albedo draw can never succeed).
@@ -960,7 +961,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
         SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
         SimStats.muTransBaseBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
         SimStats.bdfTransBaseWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
-      } else if (result.status === "side_escape") {
+      } else if (result.status === Status.SIDE_ESCAPE) {
         SimStats.stats.side++;
         // Record the escape direction so geometry "b" can reassign it: upward
         // escapes (dirZ < 0) join the reflected channel, downward escapes
@@ -997,7 +998,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
           SimStats.bdfSideEscDownWeights[eb] += 1;
           SimStats.sideEscapeDownPaths.push(result.totalPath ?? 0);
         }
-      } else if (result.status === "surface_absorbed") {
+      } else if (result.status === Status.SURFACE_ABSORBED) {
         SimStats.stats.surfaceAbsorbed++;
         // Where the photon was absorbed at the surface (net transmittance, one
         // per absorbed photon). Geometry-independent: all physical landings are
@@ -1033,11 +1034,11 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
           SimStats.muTransBaseBins[ai] += 1;
           SimStats.bdfTransBaseWeights[ab] += 1;
         }
-      } else if (result.status === "terminated") {
+      } else if (result.status === Status.TERMINATED) {
         // Photon hit the maxEvents safety cap in physics.js. Counted
         // separately so it can never masquerade as cloud absorption.
         SimStats.stats.terminated++;
-      } else if (result.status === "wrap_capped") {
+      } else if (result.status === Status.WRAP_CAPPED) {
         // Phase 3 (periodic domain boundary): exceeded MAX_WRAPS on a clear-
         // air leg -- the extreme grazing tail (see physics.js
         // wrapAndFindBoxEntry doc comment). Same safety-cap semantics as
@@ -1101,7 +1102,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       // "ENTIRE DOMAIN" block: only shown for "Uniform domain" illumination (see
       // TODO "Draft: panel & export wording"), independent of the Observation
       // geometry dropdown above.
-      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const isUniformDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       const domainSection = isUniformDomain
         ? "\n" + SimStats.buildDomainBlockText(launched) + "\n\n"
         : "\n";

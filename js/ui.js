@@ -1,6 +1,7 @@
 // ui.js — All DOM input readers. Only namespace that touches the DOM for input.
 
 import { DEFAULT_ENDPOINT_MARKERS } from './state.js';
+import { EntryMode, DEFAULT_ENTRY_MODE, DEFAULT_OBS_GEOM, DomainBoundary, DEFAULT_DOMAIN_BOUNDARY, Status } from './constants.js';
 
 export const UI = {
 
@@ -50,7 +51,7 @@ export const UI = {
     //   "uniform_domain" — TOA-uniform launch over the full M·W x M·D domain (see
     //                      getDomainFactor); ray-cast to the first surface (cloud
     //                      top / sunward side / ground). Subsumes "top" at M = 1.
-    getPhotonEntryMode:   function() { return document.getElementById("photonEntry")?.value ?? "center"; },
+    getPhotonEntryMode:   function() { return document.getElementById("photonEntry")?.value ?? DEFAULT_ENTRY_MODE; },
 
     // Domain factor M (dimensionless, M >= 1): full domain width = M x cloud
     // width W, centered on the cloud (M x W/2 on each side). Only meaningful
@@ -71,7 +72,7 @@ export const UI = {
     // "periodic" (the same finite domain tiled infinitely in both horizontal
     // directions -- a regular/broken cloud field; M does double duty as the
     // tile period). See TODO "Domain boundary condition: open vs. periodic".
-    getDomainBoundary: function() { return document.getElementById("domainBoundary")?.value ?? "open"; },
+    getDomainBoundary: function() { return document.getElementById("domainBoundary")?.value ?? DEFAULT_DOMAIN_BOUNDARY; },
 
     // "Show R/T/A components" checkbox (default off; id retained as
     // "showDomainComponents" for continuity): expands the (a)/(b)/(c)/(d)-style
@@ -123,7 +124,7 @@ export const UI = {
     updateDomainMarginWarning: function() {
       const box = document.getElementById("domainMarginWarning");
       if (!box) return;
-      if (UI.getPhotonEntryMode() !== "uniform_domain" || UI.getDomainBoundary() === "periodic") {
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN || UI.getDomainBoundary() === DomainBoundary.PERIODIC) {
         box.style.display = "none";
         return;
       }
@@ -142,7 +143,7 @@ export const UI = {
     // RunControl.init() to sync everything to the loaded selection).
     onIlluminationChange: function() {
       const group = document.getElementById("domainFactorGroup");
-      const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
+      const isUniformDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
       if (group) group.style.display = isUniformDomain ? "contents" : "none";
       const boundaryGroup = document.getElementById("domainBoundaryGroup");
       if (boundaryGroup) boundaryGroup.style.display = isUniformDomain ? "contents" : "none";
@@ -175,7 +176,7 @@ export const UI = {
       // centered illumination (same disable/dim pattern as
       // showEntireDomainPlots above). The paired resetScene() on this
       // dropdown's onchange refreshes the record-time cache.
-      const pixelOk = UI.getPhotonEntryMode() !== "center";
+      const pixelOk = UI.getPhotonEntryMode() !== EntryMode.CENTER;
       const pixelInput = document.getElementById("pixelFraction");
       if (pixelInput) {
         if (!pixelOk) pixelInput.value = "1.00";
@@ -195,7 +196,7 @@ export const UI = {
     //   "top-base_faces" (a) — cloud top/base faces only (sides + surface bypass → S)
     //   "all_faces"      (b) — cloud element: top/base/side faces → R/T; surface-
     //                          reflected upward bypass (no cloud face) stays in S
-    getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? "top-base_faces"; },
+    getObservationGeometry: function() { return document.getElementById("observationGeometry")?.value ?? DEFAULT_OBS_GEOM; },
 
     // Sub-cloud observation pixel fraction f_pix (Phase 4): the Reflected
     // μ/BRF panels restrict to cloud-TOP-face exits within the centered pixel
@@ -233,9 +234,16 @@ export const UI = {
     // --- Outcome color map ---
     // Maps a photon exit status string to a Three.js hex color.
     getOutcomeColor: function(status) {
-      if (status === "reflected")   return 0x60a5fa;
-      if (status === "transmitted") return 0x86efac;
-      if (status === "side_escape") return 0xf97316;
+      if (status === Status.REFLECTED)       return 0x60a5fa;
+      if (status === Status.TRANSMITTED)     return 0x86efac;
+      if (status === Status.SIDE_ESCAPE)     return 0xf97316;
+      // Surface-absorbed paths (Aₛ>0 terminal event at the Lambertian
+      // surface) previously fell through to the same gray as cloud-absorbed
+      // ("absorbed") -- indistinguishable in the 3D path view. Match the dark
+      // brown already used for these events' markers (Scene.
+      // addSurfaceInteractionMarkers()'s non-reflected sphere color; R8,
+      // CODE-REVIEW). Cloud-absorbed ("absorbed") intentionally stays gray.
+      if (status === Status.SURFACE_ABSORBED) return 0x7c2d12;
       return 0x94a3b8;
     }
   };

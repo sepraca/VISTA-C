@@ -2,6 +2,7 @@
 // No SimStats dependency: caller handles all stat updates.
 
 import { RNG } from './rng.js';
+import { EntryMode, DomainBoundary, Status } from './constants.js';
 
 // Safety cap on transport events per photon; photons hitting it return
 // status "terminated" and are tallied separately by SimStats.
@@ -254,8 +255,8 @@ export const Physics = {
       const { entryMode, slabW, slabD, tauCloud, theta0, domainFactor } = params;
       const halfW = slabW / 2, halfD = slabD / 2;
 
-      if (entryMode === "top" || entryMode === "top_side") {
-        if (entryMode === "top_side") {
+      if (entryMode === EntryMode.TOP || entryMode === EntryMode.TOP_SIDE) {
+        if (entryMode === EntryMode.TOP_SIDE) {
           const wTop  = slabW   * Math.cos(theta0);   // ∝ W·cosΘ₀
           const wSide = tauCloud * Math.sin(theta0);  // ∝ τ·sinΘ₀
           const denom = wTop + wSide;
@@ -269,7 +270,7 @@ export const Physics = {
         return { x: (RNG.rand() - 0.5) * slabW, y: (RNG.rand() - 0.5) * slabD, tau: 0 };
       }
 
-      if (entryMode === "uniform_domain") {
+      if (entryMode === EntryMode.UNIFORM_DOMAIN) {
         const M = domainFactor ?? 1;
         // Uniform over the full M·W x M·D domain at τ = 0 (the TOA plane,
         // coincident with cloud-top height -- there is no clear-air optical
@@ -301,7 +302,7 @@ export const Physics = {
       // otherwise). domainHalfW/domainHalfD are the fundamental-tile half-
       // extents (M*halfW, M*halfD); computed once here since all three wrap
       // sites need them.
-      const isPeriodic = entryMode === "uniform_domain" && domainBoundary === "periodic";
+      const isPeriodic = entryMode === EntryMode.UNIFORM_DOMAIN && domainBoundary === DomainBoundary.PERIODIC;
 
       const entry = Physics.sampleEntryPoint(params);
       let x = entry.x, y = entry.y, tau = entry.tau;
@@ -342,7 +343,7 @@ export const Physics = {
       // are uniform in tau over (0, tauCloud]; tau == 0 exactly has measure
       // zero and would be physically indistinguishable from a top-edge entry).
       let launchFace = "top";       // "top" | "wall" | "clear"
-      if (entryMode === "top_side" && tau > 0) launchFace = "wall";
+      if (entryMode === EntryMode.TOP_SIDE && tau > 0) launchFace = "wall";
 
       // --- Clear-air transport over the INFINITE Lambertian surface ---
       // Model (A_s > 0): the cloud box is finite but the surface below it is
@@ -405,7 +406,7 @@ export const Physics = {
           if (isPeriodic) {
             const wrapResult = Physics.wrapAndFindBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
             if (wrapResult.wrapCapped) {
-              return {result: {status: "wrap_capped", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+              return {result: {status: Status.WRAP_CAPPED, xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
             }
             if (wrapResult.hit) {
               // wrapBreak: teleports from the surface-reflection point (xs,ys)
@@ -418,7 +419,7 @@ export const Physics = {
             // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
             const missPos = wrapResult.miss;
             if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: true});
-            return {result: {status: "side_escape", bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+            return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
           }
 
           const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
@@ -436,7 +437,7 @@ export const Physics = {
           // cloud (it never left a cloud face). Observation geometry "all_faces"
           // routes these to S; the always-shown domain-wide R_domain keeps them in
           // R. Distinguishes this from a genuine side-wall exit.
-          return {result: {status: "side_escape", bypass: true, xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+          return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: xe, yExit: ye, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
         }
 
         // A terminal surface absorption is drawn ONCE, as a brown endpoint (see
@@ -444,7 +445,7 @@ export const Physics = {
         // It is deliberately NOT also pushed as a surface event, which would
         // double-mark the same point. Only mid-trajectory surface reflections
         // are recorded as events.
-        return {result: {status: "surface_absorbed", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, viaSide: countDownArrival, touchedCloud, launchRegion, launchFace}};
+        return {result: {status: Status.SURFACE_ABSORBED, xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, viaSide: countDownArrival, touchedCloud, launchRegion, launchFace}};
       };
 
       // --- Uniform-domain launch resolution (v6.0) ---
@@ -458,7 +459,7 @@ export const Physics = {
       // and goes straight to the surface (clear-incident). See TODO, "The core
       // knob: domain factor" for the M_min margin needed to avoid
       // under-sampling direct sunward-wall illumination.
-      if (entryMode === "uniform_domain" && (Math.abs(x) > halfW || Math.abs(y) > halfD)) {
+      if (entryMode === EntryMode.UNIFORM_DOMAIN && (Math.abs(x) > halfW || Math.abs(y) > halfD)) {
         // Periodic domain boundary (Phase 3): the THIRD wrap site (CODE-REVIEW
         // P2), easy to miss since the plan's original two sites are both
         // re-entry/escape paths, not the initial launch resolution. Under
@@ -470,7 +471,7 @@ export const Physics = {
         if (isPeriodic) {
           const wrapResult = Physics.wrapAndFindBoxEntry({x, y, tau}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
           if (wrapResult.wrapCapped) {
-            return {status: "wrap_capped", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+            return {status: Status.WRAP_CAPPED, xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
           }
           if (wrapResult.hit) {
             launchFace = "wall";
@@ -565,7 +566,7 @@ export const Physics = {
           const yb = y + f * (yNew - y);
           totalPath += s * f;
           if (storePath) path.push({x: xb, y: yb, tau: 0});
-          return {status: "reflected", xExit: xb, yExit: yb, tauExit: 0, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          return {status: Status.REFLECTED, xExit: xb, yExit: yb, tauExit: 0, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
         // Side boundary escape: crossed strictly before the top/base planes.
@@ -595,7 +596,7 @@ export const Physics = {
           if (isPeriodic) {
             const wrapResult = Physics.wrapAndFindBoxEntry({x: xb, y: yb, tau: taub}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
             if (wrapResult.wrapCapped) {
-              return {status: "wrap_capped", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+              return {status: Status.WRAP_CAPPED, xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
             }
             if (wrapResult.hit) {
               x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
@@ -626,7 +627,7 @@ export const Physics = {
               x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
               continue;
             }
-            return {status: "side_escape", xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+            return {status: Status.SIDE_ESCAPE, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
           }
 
           // Over a reflective surface, a DOWNWARD side-escaper continues
@@ -639,7 +640,7 @@ export const Physics = {
             continue;
           }
 
-          return {status: "side_escape", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          return {status: Status.SIDE_ESCAPE, xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
         // Cloud-base crossing.
@@ -662,7 +663,7 @@ export const Physics = {
           }
 
           // A_s = 0: photon terminates at cloud base.
-          return {status: "transmitted", xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          return {status: Status.TRANSMITTED, xExit: xb, yExit: yb, tauExit: tauCloud, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
         // Interior scattering event.
@@ -671,14 +672,14 @@ export const Physics = {
         if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
 
         if (RNG.rand() > omega0) {
-          return {status: "absorbed", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          return {status: Status.ABSORBED, xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
         dir = Physics.scatterDirectionHG(dir, g);
         scatterings++;
       }
 
-      return {status: "terminated", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+      return {status: Status.TERMINATED, xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
     }
 
   };
