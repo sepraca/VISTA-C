@@ -8,10 +8,10 @@ All notable changes to this project are documented here. The format is based on
 
 **Not yet tagged/released.** Direct clear-sky (surface) illumination for a non-black
 surface (Aₛ > 0), plus a general-purpose R/T/A component breakdown. Both the **open/
-isolated** and **periodic** (tiled cloud field) domain boundaries are now implemented;
-test-folder coverage (golden snapshots + Illumination-comparisons imagery) for the
-periodic case is still open (see `TODO-direct-surface-illumination.md`), so any of the
-below is still subject to change before the v6.0.0 tag.
+isolated** and **periodic** (tiled cloud field) domain boundaries are now implemented,
+with test-folder coverage (golden snapshots + Illumination-comparisons imagery) for
+both (see `TODO-direct-surface-illumination.md`), so any of the below is still
+subject to change before the v6.0.0 tag.
 
 ### Added (2026-07-14 session — Phase 3: periodic domain boundary)
 
@@ -35,14 +35,46 @@ below is still subject to change before the v6.0.0 tag.
   stays substantial — "escape to space through the gaps between clouds"); terminal
   downward side escapes are identically 0 (migrate into T, as required).
 - New gate suite `tests/review-harness/verify_phase3.mjs` (7 gates, all passing): budget
-  closure under periodic; S(all_faces) == surfaceBypassUp exactly; S(periodic) ≤ S(open);
-  terminal sideEscapeDown ≡ 0; wrapCapped = 0; periodic/open convergence at large M
+  closure under periodic; S(all_faces) == surfaceBypassUp exactly (88,171 = 88,171);
+  S(periodic) ≤ S(open) at matched settings (218,064 ≤ 230,321); terminal
+  sideEscapeDown ≡ 0; wrapCapped = 0 at N=300k; periodic/open convergence at large M
   (confirms the "approximation improves with M" claim holds under periodic tiling too);
   and the third-wrap-site signature directly (below M_min(60°)=1.866, at M=1.566 periodic
-  recovers 52,913 sunward-wall entries vs. open's 34,496 for the identical launch-point
+  recovers 52,934 sunward-wall entries vs. open's 34,496 for the identical launch-point
   sequence). `gen_golden.mjs` (54/54) and `check_golden_ud.mjs` (36/36) both still pass
   exact-match under open boundary — Phase 3 only changes behavior when
   `domainBoundary === "periodic"`.
+
+### Fixed (2026-07-14 session, caught by the 3c golden-snapshot matrix)
+
+- The direct upward-side-escape wrap site initially only handled `dir.z < 0`.
+  `gen_golden_periodic.mjs`'s 18-run x 500k-photon matrix (M∈{1,2,4} × Θ₀∈{0,60} ×
+  Aₛ∈{0,0.5,1}) failed its embedded `terminalSideEscapeDownIsZero` gate at every
+  Aₛ=0 row: a downward-moving (`dir.z > 0`) side-wall exit at Aₛ=0 has no surface to
+  bounce off, but is still geometrically able to clip a neighboring cloud image,
+  exactly like the upward case — the fix needed to be direction-independent. A
+  second, related bug: once wrapped, a genuine miss on a downward leg must proceed
+  to the surface unconditionally on Aₛ (not just when Aₛ > 0) — under periodic there
+  is no "escape to nowhere" sideways, the physical ground is always present
+  everywhere, same reasoning already applied to the uniform_domain clear-miss
+  launch branch. Both fixed; all 36 golden rows pass their embedded gates; open
+  boundary re-verified completely unaffected (both existing goldens still
+  exact-match; the Illumination-comparisons open-boundary JSON export is
+  byte-identical, timestamp aside, to the pre-Phase-3 committed export).
+
+### Added (2026-07-14 session — task 3c: periodic test coverage)
+
+- `tests/golden-snapshots/gen_golden_periodic.mjs` / `golden_periodic_v6.0-phase3.json`
+  / `golden_periodic_snapshot_v6.0-phase3.md` / `check_golden_periodic.mjs`: locks the
+  periodic-boundary case bit-for-bit, same 36-row M×Θ₀×Aₛ matrix as the open-boundary
+  golden, with embedded Phase-3 gate assertions (budget closure incl. safety-cap
+  residual, S(all_faces)==surfaceBypassUp, terminal sideEscapeDown≡0, wrapCapped
+  negligible) checked at generation time — all pass.
+- Four new open-vs-periodic comparison figures in `tests/Illumination comparisons/`
+  (M=4, Aₛ=0.5, Θ₀∈{0,60}, geomB + entireDomain views) as the Phase-3 counterpart of
+  the existing uniform-top-vs-uniform-domain figures.
+- `tests/review-harness/gen_export.mjs` gained an optional 8th CLI arg
+  (`[boundary]`, default `open`) to drive periodic-boundary exports.
 
 ### Fixed (2026-07-14 session, caught during Phase 3 export review)
 

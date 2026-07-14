@@ -582,10 +582,21 @@ export const Physics = {
               if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
               continue; // re-enters the main loop inside the neighboring cloud image
             }
-            // Genuine miss: continue from the wrapped position, same
-            // direction-based branching as the open-boundary case below.
+            // Genuine miss: continue from the wrapped position. DOWNWARD
+            // (dir.z > 0) always proceeds to the surface now, regardless of
+            // Aₛ -- under periodic there is no "escape to nowhere" sideways;
+            // going sideways just means arriving under a different, identical
+            // cloud image's shadow, and the physical ground below is real and
+            // present everywhere (same reasoning already applied to the
+            // uniform_domain clear-miss launch branch above, which calls
+            // surfaceInteraction unconditionally on Aₛ). This is the TODO's
+            // "terminal DOWNWARD side escapes must become identically 0 (that
+            // population migrates into T)" claim -- it is NOT qualified by
+            // Aₛ, so the open-boundary-only "surfaceAlbedo > 0" gate below
+            // does not apply here. Only UPWARD (dir.z < 0) misses are
+            // genuinely terminal (escaped above cloud-top height for good).
             const missPos = wrapResult.miss;
-            if (surfaceAlbedo > 0 && dir.z > 0) {
+            if (dir.z > 0) {
               const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true);
               if (out.result) return out.result;
               x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
