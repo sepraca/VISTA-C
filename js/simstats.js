@@ -63,6 +63,13 @@ export const SimStats = {
       absorbed: 0,
       side: 0,
       terminated: 0,        // hit the maxEvents safety cap (should be ~0)
+      // Phase 3 (periodic domain boundary): exceeded the wrap-iteration cap
+      // on some clear-air leg (extreme grazing tail -- see physics.js
+      // MAX_WRAPS / wrapAndFindBoxEntry). Folded into `terminated` for
+      // closure purposes (same safety-cap semantics), but tallied here too
+      // so it's never silently indistinguishable from a MAX_EVENTS cap.
+      // Always 0 under open boundary.
+      wrapCapped: 0,
       surfaceReflected: 0,
       surfaceAbsorbed: 0,
       // Side-derived subset of the surface-plane tallies: downward side-wall
@@ -254,7 +261,7 @@ export const SimStats = {
     reset() {
       const s = SimStats.stats;
       s.launched = 0; s.reflected = 0; s.transmitted = 0; s.finalTransmitted = 0;
-      s.absorbed = 0; s.side = 0; s.terminated = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
+      s.absorbed = 0; s.side = 0; s.terminated = 0; s.wrapCapped = 0; s.surfaceReflected = 0; s.surfaceAbsorbed = 0;
       s.transmittedSide = 0; s.surfaceReflectedSide = 0;
       s.sideEscapeUp = 0; s.sideEscapeDown = 0; s.surfaceBypassUp = 0;
       s.totalScatterings = 0; s.totalPath = 0;
@@ -586,11 +593,11 @@ export const SimStats = {
     // Illumination = "Uniform domain"; see updateDisplay). Collapsed by default;
     // the component breakdown is appended when "Show domain components" is
     // checked (UI.getShowDomainComponents()), same pattern as "Show surface
-    // heatmap". Domain boundary is hardcoded to "open" until Phase 3 adds the
-    // periodic option.
+    // heatmap". Domain boundary (Phase 3) reflects the actual UI selection.
     buildDomainBlockText(launched) {
       const M = UI.getDomainFactor();
       const fc = UI.getCloudFraction();
+      const boundary = UI.getDomainBoundary();
       const RdCount = SimStats.domainReflectedCount();
       const TdCount = SimStats.domainTransmittedNetCount();
       const AdCount = SimStats.domainAbsorbedCount();
@@ -608,7 +615,7 @@ export const SimStats = {
 
       let text =
 `<b>RADIATIVE COMPONENTS: ENTIRE DOMAIN</b>
- (Uniform domain illumination; domain boundary: open;
+ (Uniform domain illumination; domain boundary: ${boundary};
  domain factor M=${M.toFixed(2)}, cloud fraction f_c=${fc.toFixed(4)})
 
 R_domain (all upwelling): ${Rd.toFixed(3)} (${RdCount})`;
@@ -1001,6 +1008,14 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
         // Photon hit the maxEvents safety cap in physics.js. Counted
         // separately so it can never masquerade as cloud absorption.
         SimStats.stats.terminated++;
+      } else if (result.status === "wrap_capped") {
+        // Phase 3 (periodic domain boundary): exceeded MAX_WRAPS on a clear-
+        // air leg -- the extreme grazing tail (see physics.js
+        // wrapAndFindBoxEntry doc comment). Same safety-cap semantics as
+        // "terminated" (folded in for closure), tallied separately too so it
+        // is never silently indistinguishable from a MAX_EVENTS cap.
+        SimStats.stats.terminated++;
+        SimStats.stats.wrapCapped++;
       } else {
         SimStats.stats.absorbed++;
         // A_cloud origin split (see TODO "T and A component decomposition"): uses

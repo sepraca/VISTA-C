@@ -424,6 +424,20 @@
       <div id="domainMarginWarning"></div>
     </div>
 
+    <div id="domainBoundaryGroup" style="display:none">
+      <label>Domain boundary (Uniform domain only)</label>
+      <!-- Phase 3: open (isolated launch region) vs. periodic (the domain
+           tiled infinitely in both horizontal directions -- a regular/broken
+           cloud field, M doing double duty as the tile period). Same
+           resetScene-on-change convention as domainFactor/illumination:
+           changes the transport physics, so photons from the other boundary
+           condition can't be mixed into one statistics set. -->
+      <select id="domainBoundary" onchange="UI.updateDomainMarginWarning(); RunControl.resetScene()">
+        <option value="open" selected>Open (isolated cloud)</option>
+        <option value="periodic">Periodic (tiled cloud field)</option>
+      </select>
+    </div>
+
     <label>Observation geometry</label>
     <select id="observationGeometry" onchange="SimStats.updateDisplay()">
       <option value="top-base_faces" selected>Cloud top/base faces only</option>

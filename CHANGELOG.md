@@ -7,11 +7,58 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased] — work in progress toward v6.0.0
 
 **Not yet tagged/released.** Direct clear-sky (surface) illumination for a non-black
-surface (Aₛ > 0), plus a general-purpose R/T/A component breakdown. Only the **open/
-isolated** domain boundary is implemented so far — periodic domain tiling and a rigorous
-sub-domain BRDF/observation-pixel treatment are planned but not yet built (see
-`TODO-direct-surface-illumination.md`), so any of the below is still subject to change
-before the v6.0.0 tag.
+surface (Aₛ > 0), plus a general-purpose R/T/A component breakdown. Both the **open/
+isolated** and **periodic** (tiled cloud field) domain boundaries are now implemented;
+test-folder coverage (golden snapshots + Illumination-comparisons imagery) for the
+periodic case is still open (see `TODO-direct-surface-illumination.md`), so any of the
+below is still subject to change before the v6.0.0 tag.
+
+### Added (2026-07-14 session — Phase 3: periodic domain boundary)
+
+- **Periodic domain boundary**, selectable alongside the existing open/isolated boundary
+  whenever Illumination = "Uniform domain" (new `#domainBoundary` selector). Tiles the
+  M·W × M·D domain infinitely in both horizontal directions (a regular/broken cloud
+  field), reusing `rayBoxEntry` unchanged at each tile via a new wrap-and-retest helper
+  (`Physics.wrapAndFindBoxEntry`). Wired into all **three** sites a photon can encounter a
+  neighboring cloud image: the surface-reflection re-entry path, the direct
+  upward-side-escape branch in the main transport loop, and — easy to miss, caught by
+  external code review (P2) — the initial TOA descending ray-cast in the uniform-domain
+  launch resolution (the "sunward-wall reservoir" a leeward-edge point would otherwise
+  miss under open boundary is supplied by the neighbor tile under periodic, so the M_min
+  under-sampling warning is now suppressed under periodic).
+- `rayBoxEntry` additionally returns `tEnter` (additive); new wrap-iteration safety cap
+  `MAX_WRAPS = 10000`, capped photons tallied in a new `wrapCapped` counter (folded into
+  `terminated` for closure, tracked separately so it's never silently conflated with a
+  MAX_EVENTS cap — verified 0 at realistic parameters).
+- S bookkeeping under periodic (decided 2026-07-12, see CODE-REVIEW P4) verified exactly:
+  S does not go to zero (all_faces reduces to exactly the surface bypass; top-base_faces
+  stays substantial — "escape to space through the gaps between clouds"); terminal
+  downward side escapes are identically 0 (migrate into T, as required).
+- New gate suite `tests/review-harness/verify_phase3.mjs` (7 gates, all passing): budget
+  closure under periodic; S(all_faces) == surfaceBypassUp exactly; S(periodic) ≤ S(open);
+  terminal sideEscapeDown ≡ 0; wrapCapped = 0; periodic/open convergence at large M
+  (confirms the "approximation improves with M" claim holds under periodic tiling too);
+  and the third-wrap-site signature directly (below M_min(60°)=1.866, at M=1.566 periodic
+  recovers 52,913 sunward-wall entries vs. open's 34,496 for the identical launch-point
+  sequence). `gen_golden.mjs` (54/54) and `check_golden_ud.mjs` (36/36) both still pass
+  exact-match under open boundary — Phase 3 only changes behavior when
+  `domainBoundary === "periodic"`.
+
+### Fixed (2026-07-14 session, caught during Phase 3 export review)
+
+- `exportUtils.js`'s `outputs.uniform_domain_outputs.domain_boundary` was a second,
+  independent hardcoded `"open"` string (separate from `inputs.domain_boundary`, which was
+  correctly wired) — missed on the first Phase 3 pass. This is the field
+  `mc_export_reader.py`'s `to_xarray()`/`to_netcdf()` actually reads for the primary
+  `domain_boundary` NetCDF attribute, so periodic-boundary runs were silently exported
+  (and would have written to NetCDF) mislabeled `"open"`. Fixed; verified end-to-end
+  (`gen_export.mjs uniform_domain 60 0.5 all_faces 2 200000 1.0 periodic` →
+  `mc_export_reader.py --netcdf`): JSON shows `"periodic"` in both locations, the printed
+  summary shows "domain boundary : periodic", and the written NetCDF's `domain_boundary`
+  global attribute reads `"periodic"`. No `mc_export_reader.py` changes were needed — it
+  already reads `domain_boundary` as a plain string with no periodic-specific parsing, and
+  Phase 3 added no new JSON fields (schema stays 1.3, only an existing field's *value* was
+  wrong for one export path).
 
 ### Added (2026-07-16 session — Phase 4: rigorous BRF/BTF + sub-cloud observation pixel)
 

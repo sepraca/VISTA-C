@@ -16,6 +16,20 @@ const fresh = JSON.parse(execFileSync(process.execPath, [here + "gen_golden_ud.m
 const golden = JSON.parse(readFileSync(here + "golden_ud_v6.0-phase2.json", "utf8"));
 
 for (const o of [fresh, golden]) { delete o.generated; delete o.appVersion; }
+
+// Phase 3 additive wrap-cap diagnostic (physics.js/simstats.js): always 0
+// here, since this suite never sets domainBoundary="periodic" (isPeriodic is
+// false for every row). Strip before comparing, same pattern diff_golden.mjs
+// uses for the Phase-2/Phase-4 additive fields -- keeps the committed golden
+// JSON itself untouched (open-boundary behavior is bit-identical; only the
+// rawStats *shape* gained a field).
+for (const r of fresh.results) {
+  if (r.rawStats.wrapCapped !== 0) {
+    console.error(`NONZERO wrapCapped=${r.rawStats.wrapCapped} in M=${r.M} th0=${r.theta0_deg} As=${r.As} ${r.obsGeom}`);
+  }
+  delete r.rawStats.wrapCapped;
+}
+
 const a = JSON.stringify(fresh), b = JSON.stringify(golden);
 if (a === b) {
   console.log(`PASS — exact match, ${golden.results.length} rows (uniform_domain golden).`);

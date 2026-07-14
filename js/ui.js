@@ -65,6 +65,14 @@ export const UI = {
       return 1 / (M * M);
     },
 
+    // Domain boundary condition (Phase 3), selectable only under "Uniform
+    // domain" illumination (same gating as domainFactor): "open" (baseline --
+    // isolated launch region in an otherwise-dark infinite clear surface) or
+    // "periodic" (the same finite domain tiled infinitely in both horizontal
+    // directions -- a regular/broken cloud field; M does double duty as the
+    // tile period). See TODO "Domain boundary condition: open vs. periodic".
+    getDomainBoundary: function() { return document.getElementById("domainBoundary")?.value ?? "open"; },
+
     // "Show R/T/A components" checkbox (default off; id retained as
     // "showDomainComponents" for continuity): expands the (a)/(b)/(c)/(d)-style
     // R/T/A component breakdown, same collapsed-by-default pattern as "Show
@@ -103,12 +111,19 @@ export const UI = {
     // Live, persistent warning (not the transient showLimitWarning banner):
     // shown whenever illumination = "uniform_domain" and the current M is
     // below getMinDomainFactor() for the current theta0/tauCloud/slabW. Call
-    // after any change to photonEntry, domainFactor, theta0, tauCloud, or
-    // hExtent.
+    // after any change to photonEntry, domainFactor, domainBoundary, theta0,
+    // tauCloud, or hExtent.
+    //
+    // Open-boundary-only (CODE-REVIEW P2): under periodic tiling there is no
+    // under-sampling to warn about -- a TOA point near the tile's leeward
+    // edge whose descending ray would miss the home tile's cloud is instead
+    // resolved by the wrap-and-retest logic clipping the NEIGHBORING tile's
+    // cloud image (the "sunward-wall reservoir" is supplied by the neighbor
+    // tile, not absent). See physics.js's third wrap site.
     updateDomainMarginWarning: function() {
       const box = document.getElementById("domainMarginWarning");
       if (!box) return;
-      if (UI.getPhotonEntryMode() !== "uniform_domain") {
+      if (UI.getPhotonEntryMode() !== "uniform_domain" || UI.getDomainBoundary() === "periodic") {
         box.style.display = "none";
         return;
       }
@@ -129,6 +144,8 @@ export const UI = {
       const group = document.getElementById("domainFactorGroup");
       const isUniformDomain = UI.getPhotonEntryMode() === "uniform_domain";
       if (group) group.style.display = isUniformDomain ? "contents" : "none";
+      const boundaryGroup = document.getElementById("domainBoundaryGroup");
+      if (boundaryGroup) boundaryGroup.style.display = isUniformDomain ? "contents" : "none";
       UI.updateDomainMarginWarning();
 
       // "Show entire-domain plots" only has any effect under "Uniform domain"

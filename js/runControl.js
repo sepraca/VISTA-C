@@ -130,7 +130,8 @@ export const RunControl = {
         betaExt:           UI.getCloudBetaExt(),
         surfaceDistanceKm: UI.getSurfaceDistanceKm(),
         entryMode:         UI.getPhotonEntryMode(),
-        domainFactor:      UI.getDomainFactor()
+        domainFactor:      UI.getDomainFactor(),
+        domainBoundary:    UI.getDomainBoundary()
       };
     },
 

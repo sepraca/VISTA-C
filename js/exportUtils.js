@@ -103,11 +103,12 @@ export const Export = {
       const launched = Math.max(SimStats.stats.launched, 1);
       const M = UI.getDomainFactor();
       const fc = UI.getCloudFraction();
+      const boundary = UI.getDomainBoundary();
       const Rd = SimStats.domainReflectedCount() / launched;
       const Td = SimStats.domainTransmittedNetCount() / launched;
       const Ad = SimStats.domainAbsorbedCount() / launched;
       const lines = [
-        `Domain factor M=${M.toFixed(2)} (f_c=${fc.toFixed(4)}), boundary: open`,
+        `Domain factor M=${M.toFixed(2)} (f_c=${fc.toFixed(4)}), boundary: ${boundary}`,
         `R_domain=${Rd.toFixed(3)}   T_domain=${Td.toFixed(3)}   R+T+A_cloud=${(Rd + Td + Ad).toFixed(3)}`
       ];
       if (UI.getShowEntireDomainPlots()) {
@@ -620,7 +621,7 @@ export const Export = {
       const isDomain = UI.getPhotonEntryMode() === "uniform_domain";
       if (isDomain) {
         inputs.domain_factor = UI.getDomainFactor();
-        inputs.domain_boundary = "open";   // Phase 3 adds "periodic"
+        inputs.domain_boundary = UI.getDomainBoundary();   // "open" | "periodic" (Phase 3)
         inputs.units.domain_factor = "dimensionless (domain width = M × cloud width; cloud fraction f_c = 1/M²)";
       }
 
@@ -693,7 +694,7 @@ export const Export = {
         const flux = (count) => ({ flux: count / launched, count });
 
         outputs.uniform_domain_outputs = {
-          domain_boundary: "open",   // Phase 3 adds "periodic"
+          domain_boundary: UI.getDomainBoundary(),   // "open" | "periodic" (Phase 3)
           R_domain: flux(RdCount),
           R_components: {
             cloud_top: flux(rc.cloudTop),

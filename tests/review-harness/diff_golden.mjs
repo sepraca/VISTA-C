@@ -6,7 +6,11 @@ import { readFileSync } from "node:fs";
 const NEW_FIELDS = ["bypassClearDirect", "bypassViaCloud", "transmittedClearDirect",
                     "surfaceReflectedClearDirect", "absorbedCloudIncident", "absorbedClearRecycled",
                     // Phase 4 additive first-hit tallies:
-                    "launchedCloudTop", "launchedCloudWall", "launchedClear"];
+                    "launchedCloudTop", "launchedCloudWall", "launchedClear",
+                    // Phase 3 additive wrap-cap diagnostic (always 0 here: this
+                    // harness never sets domainBoundary, so isPeriodic is false
+                    // for every row -- see physics.js):
+                    "wrapCapped"];
 
 function normalize(obj) {
   const o = JSON.parse(JSON.stringify(obj));

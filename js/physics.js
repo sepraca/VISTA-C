@@ -11,6 +11,15 @@ const MAX_EVENTS = 25000;
 // continues past this — later vertices are simply not recorded).
 const MAX_PATH_POINTS = 3500;
 
+// Cap on horizontal tile-wraps per clear-air leg under periodic domain
+// boundary (Phase 3; see TODO "Domain boundary condition: open vs. periodic"
+// and CODE-REVIEW-v6.0-handoff.md P4). The number of wraps a leg can need is
+// analytically bounded by its horizontal travel divided by the tile period
+// M·W, so this only bites the extreme grazing tail (e.g. a Lambertian bounce
+// with mu ~ 1e-6) -- legs that hit it are tallied separately as status
+// "wrap_capped" (never silently mis-assigned to a normal outcome).
+const MAX_WRAPS = 10000;
+
 export const Physics = {
 
     // Normalize a direction vector {x, y, z} to unit length.
@@ -97,11 +106,102 @@ export const Physics = {
         }
       }
       if (!(tEnter > 1e-12) || !isFinite(tEnter)) return null;
+      // tEnter is additive (CODE-REVIEW P3): existing callers destructure only
+      // .x/.y/.tau and are unaffected; Phase 3's wrap loop needs it to tell
+      // whether this hit occurs before or after the current tile boundary.
       return {
         x:   Math.max(-halfW, Math.min(halfW, p.x + tEnter * dir.x)),
         y:   Math.max(-halfD, Math.min(halfD, p.y + tEnter * dir.y)),
-        tau: Math.max(0, Math.min(tauCloud, p.tau + tEnter * dir.z))
+        tau: Math.max(0, Math.min(tauCloud, p.tau + tEnter * dir.z)),
+        tEnter
       };
+    },
+
+    // Periodic-domain-boundary wrap-and-retest (Phase 3; see TODO "Domain
+    // boundary condition: open vs. periodic" and CODE-REVIEW-v6.0-handoff.md
+    // P2-P4). Given a ray starting at p0 (already inside the fundamental
+    // M·W x M·D tile, i.e. |x| <= domainHalfW and |y| <= domainHalfD -- true
+    // by construction at every call site) travelling in direction `dir`,
+    // repeatedly tests for entry into the single cloud box that sits at the
+    // center of the tile ([-halfW,halfW] x [-halfD,halfD]), stepping to the
+    // next tile-boundary crossing and wrapping the coordinate that crossed
+    // when no hit occurs before that boundary (reusing rayBoxEntry unchanged
+    // at each step -- P3's fix, comparing its tEnter against the distance to
+    // the tile edge). The vertical (tau) extent of relevance is bounded too:
+    // for a descending ray (dir.z > 0) no cloud image can be hit once tau
+    // passes tauCloud (the ray has cleared the cloud layer for good, and will
+    // go on to the infinite clear surface below); for an ascending ray
+    // (dir.z < 0, e.g. a Lambertian surface-reflection re-entry test) no
+    // cloud image can be hit once tau passes 0 (the photon has escaped above
+    // cloud-top height to space for good) -- periodicity is purely
+    // horizontal, so both are genuine terminal conditions, not just tile
+    // exits. Returns:
+    //   { hit: {x,y,tau} }        -- a genuine cloud-box entry, in the
+    //                                 wrapped (tile-local) coordinates of
+    //                                 whichever tile the hit occurred in.
+    //   { miss: {x,y,tau} }       -- no cloud image was ever hit; {x,y,tau}
+    //                                 is the final wrapped position at the
+    //                                 tau boundary, for the caller to continue
+    //                                 the clear-air leg (surfaceInteraction)
+    //                                 or terminate (side_escape) from.
+    //   { wrapCapped: true }      -- exceeded maxWraps (the 1e-6 grazing
+    //                                 tail); caller must tally this
+    //                                 separately, never silently fold it into
+    //                                 a normal outcome.
+    wrapAndFindBoxEntry(p0, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, maxWraps) {
+      let p = { x: p0.x, y: p0.y, tau: p0.tau };
+      const tauBoundary = dir.z > 0 ? tauCloud : (dir.z < 0 ? 0 : null);
+
+      for (let w = 0; w <= maxWraps; w++) {
+        let tTau = Infinity;
+        if (tauBoundary !== null) {
+          tTau = (tauBoundary - p.tau) / dir.z;
+          if (tTau < 0) tTau = 0; // already at/past the boundary -- terminate immediately
+        }
+
+        let tX = Infinity;
+        if (dir.x > 1e-15)       tX = (domainHalfW - p.x) / dir.x;
+        else if (dir.x < -1e-15) tX = (-domainHalfW - p.x) / dir.x;
+
+        let tY = Infinity;
+        if (dir.y > 1e-15)       tY = (domainHalfD - p.y) / dir.y;
+        else if (dir.y < -1e-15) tY = (-domainHalfD - p.y) / dir.y;
+
+        const tMax = Math.min(tTau, tX, tY);
+
+        const hit = Physics.rayBoxEntry(p, dir, halfW, halfD, tauCloud);
+        if (hit && hit.tEnter <= tMax + 1e-9) {
+          return { hit: { x: hit.x, y: hit.y, tau: hit.tau } };
+        }
+
+        if (tMax === tTau) {
+          // Reached the tau boundary strictly before any horizontal tile
+          // edge -- no further tile can be reached before exhausting the
+          // box's relevant tau range. Genuinely done (miss).
+          const pFinal = {
+            x: p.x + tMax * dir.x,
+            y: p.y + tMax * dir.y,
+            tau: p.tau + tMax * dir.z
+          };
+          return { miss: pFinal };
+        }
+
+        // Advance to the tile boundary and wrap whichever axis (or axes, at
+        // a corner) crossed. Set explicitly to the opposite edge rather than
+        // via modulo, to avoid float round-off leaving the point exactly on
+        // a boundary after the "wrap" (a landing that is by construction
+        // already exact here).
+        p = {
+          x: p.x + tMax * dir.x,
+          y: p.y + tMax * dir.y,
+          tau: p.tau + tMax * dir.z
+        };
+        const EPS = 1e-9;
+        if (Math.abs(tX - tMax) < EPS) p.x = (dir.x > 0) ? -domainHalfW : domainHalfW;
+        if (Math.abs(tY - tMax) < EPS) p.y = (dir.y > 0) ? -domainHalfD : domainHalfD;
+      }
+
+      return { wrapCapped: true };
     },
 
     // Sample a cosine-weighted upward direction for Lambertian surface reflection.
@@ -194,7 +294,14 @@ export const Physics = {
       const surfaceReflectionDirs  = [];
 
       const { tauCloud, slabW, slabD, theta0, g, omega0,
-              surfaceAlbedo, betaExt, surfaceDistanceKm, entryMode } = params;
+              surfaceAlbedo, betaExt, surfaceDistanceKm, entryMode,
+              domainFactor, domainBoundary } = params;
+      // Periodic domain boundary (Phase 3) only applies under "uniform_domain"
+      // illumination (same gating as domainFactor itself -- meaningless
+      // otherwise). domainHalfW/domainHalfD are the fundamental-tile half-
+      // extents (M*halfW, M*halfD); computed once here since all three wrap
+      // sites need them.
+      const isPeriodic = entryMode === "uniform_domain" && domainBoundary === "periodic";
 
       const entry = Physics.sampleEntryPoint(params);
       let x = entry.x, y = entry.y, tau = entry.tau;
@@ -211,6 +318,9 @@ export const Physics = {
 
       const halfW = slabW / 2;
       const halfD = slabD / 2;
+      const M = domainFactor ?? 1;
+      const domainHalfW = halfW * M;
+      const domainHalfD = halfD * M;
 
       // Launch-region / touched-cloud-box bookkeeping (v6.0; see TODO
       // "T and A component decomposition"). Legacy launch modes (center/top/
@@ -280,6 +390,27 @@ export const Physics = {
           surfaceReflectionDirs.push({x: dir.x, y: dir.y, z: dir.z, weight: -1, viaSide: countDownArrival, touchedCloud, launchRegion, launchFace});
           surfaceBounceCount++;
 
+          // Periodic domain boundary (Phase 3): the re-entry test is one of
+          // the two wrap sites the TODO explicitly calls out -- wrap-and-
+          // retest against the neighboring cloud images before concluding
+          // the reflected photon truly escapes to space.
+          if (isPeriodic) {
+            const wrapResult = Physics.wrapAndFindBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
+            if (wrapResult.wrapCapped) {
+              return {result: {status: "wrap_capped", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+            }
+            if (wrapResult.hit) {
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x: wrapResult.hit.x, y: wrapResult.hit.y, tau: wrapResult.hit.tau});
+              return {reenter: wrapResult.hit};
+            }
+            // Genuinely clears tau=0 (cloud-top height) without clipping any
+            // neighboring cloud image -- escapes to space for good (see
+            // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
+            const missPos = wrapResult.miss;
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau});
+            return {result: {status: "side_escape", bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+          }
+
           const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
           if (entry) {
             if (storePath && path.length < MAX_PATH_POINTS) path.push({x: entry.x, y: entry.y, tau: entry.tau});
@@ -317,36 +448,70 @@ export const Physics = {
       // knob: domain factor" for the M_min margin needed to avoid
       // under-sampling direct sunward-wall illumination.
       if (entryMode === "uniform_domain" && (Math.abs(x) > halfW || Math.abs(y) > halfD)) {
-        const hit = Physics.rayBoxEntry({x, y, tau}, dir, halfW, halfD, tauCloud);
-        if (hit) {
-          // Clips the sunward wall directly -- cloud-incident, same physical
-          // outcome as a legacy "top_side" side-wall entry. launchRegion and
-          // touchedCloud stay at their "cloud" / true defaults.
-          launchFace = "wall";
-          x = hit.x; y = hit.y; tau = hit.tau;
-          if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+        // Periodic domain boundary (Phase 3): the THIRD wrap site (CODE-REVIEW
+        // P2), easy to miss since the plan's original two sites are both
+        // re-entry/escape paths, not the initial launch resolution. Under
+        // periodic tiling the "sunward-wall reservoir" a TOA point near the
+        // tile's leeward edge would otherwise miss is supplied by the
+        // NEIGHBORING tile's cloud image, so the M_min under-sampling margin
+        // is an open-boundary-only concept (see UI.getMinDomainFactor /
+        // updateDomainMarginWarning, gated off under periodic).
+        if (isPeriodic) {
+          const wrapResult = Physics.wrapAndFindBoxEntry({x, y, tau}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
+          if (wrapResult.wrapCapped) {
+            return {status: "wrap_capped", xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          }
+          if (wrapResult.hit) {
+            launchFace = "wall";
+            x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+          } else {
+            // Genuinely never touches any cloud image on the way down --
+            // clear-incident. Continue the descent from the final wrapped
+            // position (tau = tauCloud), not the original launch point --
+            // see wrapAndFindBoxEntry doc comment.
+            launchRegion = "clear";
+            touchedCloud = false;
+            launchFace = "clear";
+            const missPos = wrapResult.miss;
+            x = missPos.x; y = missPos.y; tau = missPos.tau;
+            const out = surfaceInteraction(x, y, tau, true);
+            if (out.result) return out.result;
+            touchedCloud = true;
+            x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+          }
         } else {
-          // Never touches the cloud box on the way down -- clear-incident.
-          // countDownArrival MUST be true here: unlike the cloud-base-crossing
-          // branch in the main loop (which pushes to cloudBaseTransmissions
-          // BEFORE calling surfaceInteraction with false, to avoid a double
-          // count), this clear-direct arrival has no earlier push anywhere --
-          // passing false here would silently drop it from F_down_sfc (a bug
-          // caught by a negative net-transmittance / non-closing budget at
-          // A_s > 0). This temporarily tags clear-direct arrivals with
-          // viaSide=true (a stand-in until Phase 2 gives them their own
-          // touched-cloud-based bucket instead of reusing the side-derived
-          // one) -- harmless for now: it doesn't affect the top-level T count
-          // under "all_faces"/"scene" (both sum base + side unconditionally),
-          // and under "top-base_faces" it's conservatively folded into S
-          // rather than T, so the overall budget still closes exactly.
-          launchRegion = "clear";
-          touchedCloud = false;
-          launchFace = "clear";
-          const out = surfaceInteraction(x, y, tau, true);
-          if (out.result) return out.result;
-          touchedCloud = true; // reflected by the surface and re-entered the cloud
-          x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+          const hit = Physics.rayBoxEntry({x, y, tau}, dir, halfW, halfD, tauCloud);
+          if (hit) {
+            // Clips the sunward wall directly -- cloud-incident, same physical
+            // outcome as a legacy "top_side" side-wall entry. launchRegion and
+            // touchedCloud stay at their "cloud" / true defaults.
+            launchFace = "wall";
+            x = hit.x; y = hit.y; tau = hit.tau;
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+          } else {
+            // Never touches the cloud box on the way down -- clear-incident.
+            // countDownArrival MUST be true here: unlike the cloud-base-crossing
+            // branch in the main loop (which pushes to cloudBaseTransmissions
+            // BEFORE calling surfaceInteraction with false, to avoid a double
+            // count), this clear-direct arrival has no earlier push anywhere --
+            // passing false here would silently drop it from F_down_sfc (a bug
+            // caught by a negative net-transmittance / non-closing budget at
+            // A_s > 0). This temporarily tags clear-direct arrivals with
+            // viaSide=true (a stand-in until Phase 2 gives them their own
+            // touched-cloud-based bucket instead of reusing the side-derived
+            // one) -- harmless for now: it doesn't affect the top-level T count
+            // under "all_faces"/"scene" (both sum base + side unconditionally),
+            // and under "top-base_faces" it's conservatively folded into S
+            // rather than T, so the overall budget still closes exactly.
+            launchRegion = "clear";
+            touchedCloud = false;
+            launchFace = "clear";
+            const out = surfaceInteraction(x, y, tau, true);
+            if (out.result) return out.result;
+            touchedCloud = true; // reflected by the surface and re-entered the cloud
+            x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+          }
         }
       }
 
@@ -391,6 +556,43 @@ export const Physics = {
           const taub = tau + f * (tauNew - tau);
           totalPath += s * f;
           if (storePath) path.push({x: xb, y: yb, tau: taub});
+
+          // Periodic domain boundary (Phase 3): a photon exiting the cloud's
+          // OWN side wall -- whether still descending (dir.z > 0) or already
+          // ascending (dir.z < 0) -- can clip a NEIGHBORING cloud image
+          // before its box-relevant tau range is exhausted. This must run
+          // BEFORE the Aₛ>0 surface-interaction branch below, since a
+          // wrap-hit here means the photon re-enters a cloud image directly
+          // and never reaches the surface at all. First pass at this fix
+          // only wrapped the dir.z < 0 case (the one the TODO's "Domain
+          // boundary condition" section explicitly calls out); the
+          // gen_golden_periodic.mjs matrix caught that the dir.z > 0 / Aₛ = 0
+          // case (no surface to bounce off, but still geometrically able to
+          // clip a neighbor image) needs the identical treatment -- a purely
+          // geometric adjacency test, independent of Aₛ. Under open boundary
+          // this block is skipped entirely (isPeriodic false), preserving
+          // open-boundary behavior bit-for-bit.
+          if (isPeriodic) {
+            const wrapResult = Physics.wrapAndFindBoxEntry({x: xb, y: yb, tau: taub}, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, MAX_WRAPS);
+            if (wrapResult.wrapCapped) {
+              return {status: "wrap_capped", xExit: xb, yExit: yb, tauExit: taub, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+            }
+            if (wrapResult.hit) {
+              x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+              continue; // re-enters the main loop inside the neighboring cloud image
+            }
+            // Genuine miss: continue from the wrapped position, same
+            // direction-based branching as the open-boundary case below.
+            const missPos = wrapResult.miss;
+            if (surfaceAlbedo > 0 && dir.z > 0) {
+              const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true);
+              if (out.result) return out.result;
+              x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
+              continue;
+            }
+            return {status: "side_escape", xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+          }
 
           // Over a reflective surface, a DOWNWARD side-escaper continues
           // through the clear air beside the cloud to the infinite surface
