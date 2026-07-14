@@ -4,14 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — work in progress toward v6.0.0
+## [Unreleased]
 
-**Not yet tagged/released.** Direct clear-sky (surface) illumination for a non-black
-surface (Aₛ > 0), plus a general-purpose R/T/A component breakdown. Both the **open/
-isolated** and **periodic** (tiled cloud field) domain boundaries are now implemented,
-with test-folder coverage (golden snapshots + Illumination-comparisons imagery) for
-both (see `TODO-direct-surface-illumination.md`), so any of the below is still
-subject to change before the v6.0.0 tag.
+Nothing yet.
+
+## [v6.0.2] — 2026-07-14
+
+Tagged and pushed to GitHub (`origin/main` and tag `v6.0.2`). Direct clear-sky
+(surface) illumination for a non-black surface (Aₛ > 0), plus a general-purpose R/T/A
+component breakdown. Both the **open/isolated** and **periodic** (tiled cloud field)
+domain boundaries are implemented, with test-folder coverage (golden snapshots +
+Illumination-comparisons imagery) for both (see `TODO-direct-surface-illumination.md`).
+Also includes a UI pass: a Stop control for the run loop, and clearer visual grouping
+of the Uniform-domain sub-options.
+
+### Added (2026-07-14 session — run-control UI)
+
+- **Stop button**: hard-terminates the in-flight run (instant-batch chunk loop or
+  animated sequence), checked ahead of Pause so it wins even while paused. Unlike
+  Pause, there is no Resume from Stop — only Reset (which now also clears the new
+  `state.isStopped` flag) starts a clean run, picking up any input changes made in
+  the meantime.
+- Font color-coding for the run-control row: Pause light orange (`#fdba74`), Stop
+  red (`#f87171`), Reset yellow (`#fde047`), against the existing blue button fill.
+- The "Domain factor M" and "Domain boundary" labels (shown only under Uniform
+  domain illumination) are now indented via `padding-left` on the `<label>` so
+  wrapped text stays indented on every line, marking them visually as sub-options.
 
 ### Added (2026-07-14 session — Phase 3: periodic domain boundary)
 

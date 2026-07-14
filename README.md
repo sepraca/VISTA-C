@@ -12,8 +12,8 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which currently carries the in-development v6.0.0
-feature set — see Version History below. The latest tagged release is available from the
+*(The hosted version tracks `main`, which is currently at the tagged **v6.0.2** release
+— see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
 ---
@@ -24,16 +24,16 @@ feature set — see Version History below. The latest tagged release is availabl
 - **3D photon path visualization**: animated and static path rendering with colored crossing and endpoint markers by outcome
 - **Henyey-Greenstein phase function**: exact inverse-CDF sampling for the scattering angle
 - **Lambertian surface reflection**: configurable surface albedo Aₛ with geometric sub-cloud gap propagation
-- **Finite-cloud illumination modes**: pencil-beam (centered) entry, uniform illumination of the cloud top (optionally including the sunward side wall), or a **uniform domain** launch that also illuminates the clear sky around the cloud, to study 3D edge effects and direct clear-sky surface illumination *(work in progress toward v6.0.0 — see [CHANGELOG](CHANGELOG.md)'s Unreleased section; open domain boundary only for now)*
+- **Finite-cloud illumination modes**: pencil-beam (centered) entry, uniform illumination of the cloud top (optionally including the sunward side wall), or a **uniform domain** launch that also illuminates the clear sky around the cloud, to study 3D edge effects and direct clear-sky surface illumination — with a selectable **open/isolated** or **periodic** (tiled cloud field) domain boundary *(v6.0.2 — see [CHANGELOG](CHANGELOG.md))*
 - **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
 - **R/T/A component breakdown**: an optional expanded view (any illumination mode) splitting each of R, T, and A into its constituent exit/origin populations — see *Illumination and observation-geometry bookkeeping* below
 - **Surface-absorption heatmap** (Aₛ > 0): toggleable 2-D map of where photons are absorbed at the Lambertian surface, on a grid 2× the cloud extent to capture finite-cloud side leakage
 - **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
-- **Rigorous BRF/BTF polar plots** *(v6.0-dev, Phase 4)*: bidirectional reflectance/
+- **Rigorous BRF/BTF polar plots** *(v6.0.2, Phase 4)*: bidirectional reflectance/
   transmittance factors normalized by the **realized top-face-incident flux**
   (N_top·A_proj/W²), for **every** illumination mode — the domain-mean, N-normalized BDF
   remains available as the entire-domain view; see *Diagnostic plots* below
-- **Sub-cloud observation pixel** *(v6.0-dev, Phase 4)*: restrict the Reflected μ/BRF
+- **Sub-cloud observation pixel** *(v6.0.2, Phase 4)*: restrict the Reflected μ/BRF
   statistics to a centered pixel of width f_pix × cloud width (fixed per run), with
   N_pixel = N_top·f_pix² normalization — an imager-style effective-pixel view
 - **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BRF/BTF polar plots (linear/log scale), optical path-length distributions
@@ -80,7 +80,7 @@ The **Photon illumination** control sets where photons enter the cloud:
 $$p_{\text{side}} = \frac{\tau_{\text{cloud}}\sin\Theta_0}{W\cos\Theta_0 + \tau_{\text{cloud}}\sin\Theta_0}$$
 
 where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-only mode.
-- **Uniform domain** *(work in progress — see note above)*: extends illumination beyond
+- **Uniform domain** *(v6.0.2 — see note above)*: extends illumination beyond
   the cloud itself. Photons launch from a top-of-atmosphere plane uniform over a domain
   **M times wider than the cloud** (new **domain factor M ≥ 1** input, shown only in this
   mode) and are ray-cast to their first surface — cloud top, sunward side wall, or, new,
@@ -92,21 +92,25 @@ where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-o
   M is a **1D** (linear) scaling and f_c is **2D** (areal): M = 2 means f_c = 0.25, not
   "half the cloud fraction." A live warning banner appears if M is smaller than the
   minimum needed to fully capture direct sunward-wall illumination at the current
-  Θ₀/τ_cloud/horizontal-extent combination (M_min = 1 + 2·(τ_cloud/W)·tanΘ₀). The domain
-  boundary is currently **open/isolated** only (far clear sky beyond the launch margin is
-  unilluminated); periodic tiling is planned but not yet implemented.
+  Θ₀/τ_cloud/horizontal-extent combination (M_min = 1 + 2·(τ_cloud/W)·tanΘ₀). A
+  selectable **Domain boundary** control (**open/isolated** or **periodic**, tiled
+  cloud field) governs what lies beyond the launch margin — see next.
 
-#### Planned: periodic domain boundary (v6.0.0, in development)
+#### Domain boundary: open/isolated vs. periodic (v6.0.2)
 
-A selectable **periodic** domain boundary will tile the M·W × M·W domain infinitely in
+The **open/isolated** boundary treats the far clear sky beyond the launch margin as
+unilluminated by the cloud field — a single finite cloud sitting alone in an otherwise
+empty domain. The **periodic** boundary instead tiles the M·W × M·W domain infinitely in
 both horizontal directions — an infinite *regular field* of identical clouds at cloud
 fraction f_c = 1/M², rather than the single isolated cloud of the open boundary. This is
-a **physically different scene**, not merely a numerical option: a photon that escapes
-sideways under the open boundary instead travels on to illuminate a neighboring cloud
-(implemented by wrapping its coordinates back into the fundamental cell, the same
+a **physically different scene**, not merely a numerical option: a photon that would
+escape sideways under the open boundary instead travels on to illuminate a neighboring
+cloud (implemented by wrapping its coordinates back into the fundamental cell, the same
 minimum-image technique used for periodic boundaries in molecular dynamics), so
 R_domain, surface absorption, and the cloud-interaction components all genuinely change
-at moderate M; the two boundaries converge only as M → ∞. Because every tile is
+at moderate M; the two boundaries converge only as M → ∞ (the difference is largest at
+small M combined with a reflective surface, Aₛ > 0 — see the periodic-boundary golden
+snapshot and Illumination-comparisons figures in `tests/`). Because every tile is
 statistically identical, tallying each photon's ultimate fate in its launch cell yields
 the exact per-unit-cell energy budget of the infinite field — R_domain then represents
 the areal-mean albedo of the broken-cloud field. This also carries a large
@@ -137,7 +141,7 @@ With the code's ability to simulate 3D radiative transfer, an unambiguous catego
 This is a pure **post-processing choice**: it changes only how the accumulated
 photon exit counts are aggregated, not the simulated trajectories. A user can select either geometry without a re-run. The two converge as the horizontal extent grows (side leakage → 0). The exported JSON records the active choice in `observation_geometry`. The 2-D footprint heatmaps are always top/base-plane projections and are unaffected by this control.
 
-*(Prior to v6.0.0, a third choice, "Entire scene," folded the surface-reflected bypass into R as well, so S = 0 by definition — but the code had no way to launch surface-incident photons, so there was no physically meaningful observation it corresponded to. It has been removed as a selectable Observation geometry. Uniform domain illumination — work in progress toward v6.0.0, see above — now provides an always-shown, dropdown-independent **ENTIRE DOMAIN** report block instead, described next, which finally gives that whole-scene total a real physical source population to draw from.)*
+*(Prior to v6.0.0, a third choice, "Entire scene," folded the surface-reflected bypass into R as well, so S = 0 by definition — but the code had no way to launch surface-incident photons, so there was no physically meaningful observation it corresponded to. It has been removed as a selectable Observation geometry. Uniform domain illumination (v6.0.2, see above) now provides an always-shown, dropdown-independent **ENTIRE DOMAIN** report block instead, described next, which finally gives that whole-scene total a real physical source population to draw from.)*
 
 #### R/T/A component breakdown and the ENTIRE DOMAIN block
 
@@ -210,7 +214,7 @@ The bottom-panel plots/diagnostics of the histograms and BDFs contain two physic
   μ or path-length interval.
 - The **BDF** is a quantity proportional to **radiance**: BDF = (W/N)·π/(μ·Δμ·Δφ), which is normalized per unit projected solid angle. In particular, this introduces an explicit 1/μ factor relative to the photon count in the µ histograms.
 
-**BRF/BTF normalization (v6.0-dev, Phase 4).** The polar panels display the rigorous
+**BRF/BTF normalization (v6.0.2, Phase 4).** The polar panels display the rigorous
 bidirectional reflectance factor (BRF) / transmittance factor (BTF):
 
 $$\mathrm{BRF}(\mu_i,\varphi_j) = \frac{\pi}{\mu_i\,\Delta\mu_i\,\Delta\varphi_j}\cdot\frac{N_{ij}}{N_{\mathrm{top}}\cdot A_{\mathrm{proj}}(\theta_v,\varphi_v)/W^2}$$
@@ -288,8 +292,9 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Cloud optical thickness τ | Total cloud optical thickness (0.01-100) | 10 |
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
-| Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain *(WIP, see above)* | Centered |
-| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination *(WIP)* | 4 |
+| Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain (v6.0.2, see above) | Centered |
+| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination | 4 |
+| Domain boundary | Open/isolated or periodic (tiled cloud field); shown only for Uniform domain illumination (v6.0.2, see above) | Open (isolated cloud) |
 | Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), or top/base/side faces / cloud element (b) | Cloud top/base faces only |
 | Reflected observation pixel fraction (f_pix) | Centered observation pixel width = f_pix × cloud width; at f_pix < 1 the **Reflected** μ/BRF panels restrict to top-face exits inside the pixel (transmitted panels unaffected; disabled for Centered illumination; a sparse-statistics warning appears below ~2 counts/bin). **Deferred application**: the pixel is fixed per run, so editing the input never clears a finished run — the new value is marked *pending* in the stats panel and takes effect at the next Launch Ensemble/Reset; panels and exports always describe the value the run was accumulated with. The pixel **view** renders only under Obs geometry "cloud top/base faces only" — a planar pixel is well-posed on the flat top face only; under "top/base/side faces" the standard side-inclusive view shows instead, and toggling the dropdown swaps between the two without a re-run (the pixel accumulators fill regardless) | 1.00 (whole face) |
 | HG asymmetry parameter (g) | Henyey-Greenstein asymmetry parameter (−1 to 1) | 0.85 |
@@ -297,13 +302,13 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Surface albedo (Aₛ) | Lambertian surface albedo (0 = black, 1 = non-absorbing) | 0.0 |
 | Cloud β_ext (km⁻¹) | Volume extinction coefficient (used to set cloud-surface aspect ratio) | 10.0 |
 | Cloud-base to surface (km) | Geometric gap thickness (used with β_ext to set cloud-surface aspect ratio) | 0.5 |
-| Show entire-domain plots | Bottom-panel plots use the domain-wide (not cloud-element-only) population; Uniform domain only *(WIP)* | off |
+| Show entire-domain plots | Bottom-panel plots use the domain-wide (not cloud-element-only) population; Uniform domain only | off |
 | Footprint grid size | number of cloud top/base grid elements | 28 |
 | Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0); off also removes its render cost | on |
-| Show R/T/A components | Expand R/T/A into their constituent populations (any illumination mode) *(WIP, see above)* | off |
+| Show R/T/A components | Expand R/T/A into their constituent populations (any illumination mode, see above) | off |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
 
-**Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Reset, Pause/Resume, Step
+**Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Pause/Resume, Step, Stop (v6.0.2 — hard-terminates the run; only Reset resumes), Reset, Reset View
 
 **Bottom panel choices:** μ histograms, BDF polar plots, Optical path-length distributions
 
@@ -462,10 +467,11 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v5.4.0** (2026-06-29). Uniform domain illumination and the R/T/A
-component breakdown (marked *WIP* above) are in progress toward **v6.0.0** — see
-CHANGELOG.md's `[Unreleased]` section. This development work is present on `main` (and
-therefore in the hosted demo) but has not been tagged as a release.
+Latest tagged release: **v6.0.2** (2026-07-14). Adds Uniform domain illumination (direct
+clear-sky surface illumination, selectable open/isolated or periodic domain boundary),
+the general-purpose R/T/A component breakdown, and rigorous BRF/BTF normalization
+(Phase 4) — see CHANGELOG.md's `[v6.0.2]` section for the full, dated history. This is
+the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -477,7 +483,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -488,4 +494,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v5.4.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.2). GitHub. https://github.com/sepraca/VISTA-C
