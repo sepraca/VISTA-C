@@ -25,6 +25,7 @@ export const state = {
   nextPhotonId:          1,
   isAnimating:           false,
   isPaused:              false,
+  isStopped:             false,
   stepRequested:         false,
   activePhotonID:        null,
   activePhotonStep:      0,

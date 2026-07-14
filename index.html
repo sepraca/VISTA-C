@@ -153,6 +153,13 @@
     background: #1d4ed8;
   }
 
+  /* Run-control accent colors: distinct at a glance, still readable against
+     the blue button fill. Pause = light orange (temporary/reversible),
+     Stop = light red (terminal), Reset = yellow (start-over). */
+  #pauseBtn { color: #fdba74; }
+  #stopBtn  { color: #f87171; }
+  #resetBtn { color: #fde047; }
+
   .button-row {
     display: flex;
     gap: 8px;
@@ -417,7 +424,7 @@
     </select>
 
     <div id="domainFactorGroup" style="display:none">
-      <label>Domain factor M (domain width = M × cloud width)</label>
+      <label style="padding-left: 10px">Domain factor M (domain width = M × cloud width)</label>
       <!-- Applied M = world.domainW / world.slabW (synced at every run start;
            this input is only reachable under Uniform-domain illumination). -->
       <input id="domainFactor" type="number" value="4" min="1" max="50" step="0.1" onblur="UI.updateDomainMarginWarning(); if (Math.abs(UI.getDomainFactor() - world.domainW / world.slabW) > 1e-12) RunControl.resetScene()">
@@ -425,7 +432,7 @@
     </div>
 
     <div id="domainBoundaryGroup" style="display:none">
-      <label>Domain boundary (Uniform domain only)</label>
+      <label style="padding-left: 10px">Domain boundary (Uniform domain only)</label>
       <!-- Phase 3: open (isolated launch region) vs. periodic (the domain
            tiled infinitely in both horizontal directions -- a regular/broken
            cloud field, M doing double duty as the tile period). Same
@@ -529,7 +536,8 @@
     <button onclick="RunControl.runEnsemble()">Launch Ensemble</button>
     <button onclick="RunControl.togglePause()" id="pauseBtn">Pause</button>
     <button onclick="RunControl.stepPhoton()" id="stepBtn">Step</button>
-    <button onclick="RunControl.resetScene()">Reset</button>
+    <button onclick="RunControl.stopRun()" id="stopBtn">Stop</button>
+    <button onclick="RunControl.resetScene()" id="resetBtn">Reset</button>
     <button onclick="Scene.resetCamera()">Reset View</button>
   </div>
 

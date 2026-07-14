@@ -108,6 +108,20 @@ export const RunControl = {
       SimStats.updateDisplay();
     },
 
+    // Stop: hard-terminates the in-flight run (instant-batch chunk loop or
+    // animated-sequence loop). Unlike Pause, there is no Resume from here --
+    // the run stays halted at its current photon count until Reset is
+    // clicked, which clears isStopped and starts a clean run (picking up any
+    // input changes made in the meantime, same as any other Reset).
+    stopRun: function() {
+      state.isStopped = true;
+      state.isPaused = false;
+      state.stepRequested = false;
+      const pauseBtn = document.getElementById("pauseBtn");
+      if (pauseBtn) pauseBtn.textContent = "Pause";
+      SimStats.updateDisplay();
+    },
+
     stepPhoton: function() {
       // Step mode is most useful while paused. If not paused, pause first.
       if (!state.isPaused) {
@@ -189,6 +203,7 @@ export const RunControl = {
         const simParams = RunControl.getSimParams();
 
         for (let i = 0; i < nAnimated; i++) {
+          if (state.isStopped) break;
           const result = Physics.simulatePhoton(simParams, true);
           result.photonId = state.nextPhotonId++;
           SimStats.record(result);
@@ -202,7 +217,7 @@ export const RunControl = {
         }
 
         const remaining = n - nAnimated;
-        if (remaining > 0) {
+        if (remaining > 0 && !state.isStopped) {
           RunControl.runInstantBatch(remaining, false);
         }
 
@@ -236,6 +251,15 @@ export const RunControl = {
       const maxPaths = UI.getMaxPaths();
 
       function chunk() {
+        // Honor Stop first, even over Pause: a stopped run must not resume
+        // simply because Pause/Resume gets toggled again. Leaves the photon
+        // count wherever it stood at the moment Stop was clicked; Reset is
+        // the only way forward from here.
+        if (state.isStopped) {
+          Scene.rebuildHistograms();
+          SimStats.updateDisplay();
+          return;
+        }
         // Honor Pause/Step in instant mode: while paused, idle until Resume
         // or a single Step request (Step advances exactly one photon).
         if (state.isPaused && !state.stepRequested) {
@@ -287,6 +311,7 @@ export const RunControl = {
       state.activePhotonTotalSteps = 0;
       state.activePhotonStatus = "none";
       state.isPaused = false;
+      state.isStopped = false;
       state.stepRequested = false;
       const pauseBtn = document.getElementById("pauseBtn");
       if (pauseBtn) pauseBtn.textContent = "Pause";
