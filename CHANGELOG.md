@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (periodic-boundary photon paths silently dropped from the 3D view, user report)
+
+- `Physics.wrapAndFindBoxEntry()`'s three call sites in `physics.js` all
+  marked the returned hit/miss point `wrapBreak: true` unconditionally,
+  regardless of whether a genuine cross-tile wrap actually occurred. In this
+  app's actual geometry (a small clear-air gap relative to the M-scaled
+  domain), the large majority of calls resolve on the FIRST loop iteration
+  without ever wrapping -- the ray reaches the surface, or hits the home
+  tile's own cloud, well before crossing any tile boundary. Marking these
+  `wrapBreak: true` anyway meant `Photons.splitPathSegments()` (added under
+  CODE-REVIEW P4) silently discarded the entire path whenever the wrapBreak
+  point was the ONLY point following the start of a segment -- exactly the
+  case for a simple two-vertex clear-air leg (TOA launch to surface), which
+  is the *dominant* drawn-path population under Uniform domain illumination.
+  Net effect: under periodic boundary, essentially none of these paths were
+  ever visible in the 3D view (silently replaced by whatever other path
+  types remained under the "Max paths drawn" cap), while the identical
+  population rendered normally under open boundary -- reported by the user
+  as "obvious red photon tracks in the open image not seen in the periodic
+  image."
+- Fix: `wrapAndFindBoxEntry()` now returns a `wrapped` boolean (true only if
+  the loop actually advanced past a tile boundary at least once); all three
+  call sites now pass `wrapBreak: wrapResult.wrapped` / `afterWrap:
+  wrapResult.wrapped` instead of a hardcoded `true`.
+- Verified: with the user's exact reported parameters (COT=0.10, M=2,
+  θ₀=60°, A_s=0), periodic boundary's first-250-drawn-path composition now
+  exactly matches open boundary's (67 transmitted / 183 surface-absorbed
+  paths, previously 245 transmitted / 5 reflected / 0 surface-absorbed for
+  periodic). A separate stress test (grazing θ₀=85°, tight M=1 domain, thick
+  τ=10 cloud, A_s=0.9 multi-bounce -- designed to force genuine cross-tile
+  teleports) confirms `wrapped` still correctly fires: 1,031 of 5,000
+  photons got at least one real `wrapBreak` vertex, so the original P4
+  teleport-break behavior is preserved, not just disabled. `wrapBreak` is a
+  path-vertex-only visualization flag, read by nothing in the aggregate
+  accumulation path, so this is a pure rendering fix; confirmed via all
+  three mandatory golden regression suites (legacy v5.4.0, uniform-domain
+  open, uniform-domain periodic) remaining byte-identical.
+
 ### Fixed (surface-absorption heatmap missing the dominant population at A_s=0, user report)
 
 - Under Uniform domain illumination at A_s=0, `physics.js`'s cloud-base-

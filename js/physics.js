@@ -152,6 +152,22 @@ export const Physics = {
     wrapAndFindBoxEntry(p0, dir, halfW, halfD, tauCloud, domainHalfW, domainHalfD, maxWraps) {
       let p = { x: p0.x, y: p0.y, tau: p0.tau };
       const tauBoundary = dir.z > 0 ? tauCloud : (dir.z < 0 ? 0 : null);
+      // Tracks whether a GENUINE tile-boundary wrap ever happened before this
+      // hit/miss was found (i.e. w reached 1, meaning the ray crossed a tile
+      // edge and got its coordinate wrapped at least once). Most calls in
+      // this codebase's actual geometry (small clear-air gap relative to the
+      // domain) resolve on w=0 -- reaching the tau boundary (surface, or
+      // cloud-top for an ascending ray) or hitting the home tile's own cloud
+      // directly, WITHOUT ever needing to wrap. Callers use this to decide
+      // whether the returned point is a genuine cross-tile "teleport" (needs
+      // a visual path break, CODE-REVIEW P4) or just an ordinary, spatially
+      // continuous continuation of the ray within the same tile (previously
+      // callers marked every returned point as post-wrap unconditionally --
+      // user report, 2026-07: this silently discarded the drawn path for any
+      // 2-point clear-air leg that resolved on w=0, since
+      // Photons.splitPathSegments drops any post-break segment that never
+      // grows past length 1).
+      let wrapped = false;
 
       for (let w = 0; w <= maxWraps; w++) {
         let tTau = Infinity;
@@ -172,7 +188,7 @@ export const Physics = {
 
         const hit = Physics.rayBoxEntry(p, dir, halfW, halfD, tauCloud);
         if (hit && hit.tEnter <= tMax + 1e-9) {
-          return { hit: { x: hit.x, y: hit.y, tau: hit.tau } };
+          return { hit: { x: hit.x, y: hit.y, tau: hit.tau }, wrapped };
         }
 
         if (tMax === tTau) {
@@ -184,7 +200,7 @@ export const Physics = {
             y: p.y + tMax * dir.y,
             tau: p.tau + tMax * dir.z
           };
-          return { miss: pFinal };
+          return { miss: pFinal, wrapped };
         }
 
         // Advance to the tile boundary and wrap whichever axis (or axes, at
@@ -200,6 +216,7 @@ export const Physics = {
         const EPS = 1e-9;
         if (Math.abs(tX - tMax) < EPS) p.x = (dir.x > 0) ? -domainHalfW : domainHalfW;
         if (Math.abs(tY - tMax) < EPS) p.y = (dir.y > 0) ? -domainHalfD : domainHalfD;
+        wrapped = true;
       }
 
       return { wrapCapped: true };
@@ -409,16 +426,21 @@ export const Physics = {
               return {result: {status: Status.WRAP_CAPPED, xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
             }
             if (wrapResult.hit) {
-              // wrapBreak: teleports from the surface-reflection point (xs,ys)
-              // in the original tile to a neighboring cloud image -- see P4.
-              if (storePath && path.length < MAX_PATH_POINTS) path.push({x: wrapResult.hit.x, y: wrapResult.hit.y, tau: wrapResult.hit.tau, wrapBreak: true});
+              // wrapBreak only if a genuine tile-boundary wrap occurred (see
+              // wrapAndFindBoxEntry's `wrapped` doc comment) -- otherwise this
+              // is a direct, spatially continuous hit on the home tile's own
+              // cloud from the surface-reflection point (xs,ys), and forcing
+              // a break here would (and, before this fix, did) make
+              // Photons.splitPathSegments silently drop the connecting
+              // segment when nothing else preceded it.
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x: wrapResult.hit.x, y: wrapResult.hit.y, tau: wrapResult.hit.tau, wrapBreak: wrapResult.wrapped});
               return {reenter: wrapResult.hit};
             }
             // Genuinely clears tau=0 (cloud-top height) without clipping any
             // neighboring cloud image -- escapes to space for good (see
             // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
             const missPos = wrapResult.miss;
-            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: true});
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: wrapResult.wrapped});
             return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
           }
 
@@ -476,12 +498,19 @@ export const Physics = {
           if (wrapResult.hit) {
             launchFace = "wall";
             x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
-            // wrapBreak: this vertex is not geometrically continuous with the
-            // TOA launch point above it (the true unwrapped ray continues far
-            // outside the rendered domain) -- see CODE-REVIEW P4 and
-            // Photons.splitPathSegments in photons.js, which breaks the drawn
-            // line here instead of drawing a straight teleport segment.
-            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: true});
+            // wrapBreak only if a genuine tile-boundary wrap occurred (see
+            // wrapAndFindBoxEntry's `wrapped` doc comment) -- see CODE-REVIEW
+            // P4 and Photons.splitPathSegments in photons.js, which breaks
+            // the drawn line here instead of drawing a straight teleport
+            // segment, but ONLY when the point is actually a cross-tile
+            // teleport; a direct hit on the home tile's own cloud (very
+            // common in practice -- most launch points needing this branch
+            // are only marginally outside the cloud's own footprint) is
+            // spatially continuous with the TOA launch point and should not
+            // be broken (user report, 2026-07: forcing a break unconditionally
+            // here made Photons.splitPathSegments silently drop these paths
+            // whenever nothing preceded the break, i.e. exactly this case).
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: wrapResult.wrapped});
           } else {
             // Genuinely never touches any cloud image on the way down --
             // clear-incident. Continue the descent from the final wrapped
@@ -492,10 +521,18 @@ export const Physics = {
             launchFace = "clear";
             const missPos = wrapResult.miss;
             x = missPos.x; y = missPos.y; tau = missPos.tau;
-            // afterWrap=true: missPos is a wrapped coordinate, not a
-            // continuation of the TOA launch point -- the first vertex
-            // surfaceInteraction pushes must start a new visual segment too.
-            const out = surfaceInteraction(x, y, tau, true, true);
+            // afterWrap=wrapResult.wrapped: missPos is only a genuinely
+            // wrapped coordinate (needing the first vertex surfaceInteraction
+            // pushes to start a new visual segment) if a tile-boundary wrap
+            // actually happened; the common case (small clear-air gap
+            // relative to the domain) resolves on w=0 with NO wrap, so the
+            // ray from TOA to the surface is one ordinary straight line --
+            // user report, 2026-07 (this was the dominant surface-absorbed
+            // population under Uniform domain, and was being silently
+            // dropped from the 3D path view for periodic boundary; see the
+            // heatmap/legend fixes earlier this session for the related
+            // history).
+            const out = surfaceInteraction(x, y, tau, true, wrapResult.wrapped);
             if (out.result) return out.result;
             touchedCloud = true;
             x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
@@ -600,9 +637,11 @@ export const Physics = {
             }
             if (wrapResult.hit) {
               x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
-              // wrapBreak: teleports from the side-wall exit point (xb,yb,taub)
-              // in the original tile to a neighboring cloud image -- see P4.
-              if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: true});
+              // wrapBreak only if a genuine tile-boundary wrap occurred (see
+              // wrapAndFindBoxEntry's `wrapped` doc comment) -- a direct hit
+              // on the home tile's own cloud from the side-wall exit point
+              // (xb,yb,taub) is spatially continuous and should draw normally.
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: wrapResult.wrapped});
               continue; // re-enters the main loop inside the neighboring cloud image
             }
             // Genuine miss: continue from the wrapped position. DOWNWARD
@@ -620,9 +659,12 @@ export const Physics = {
             // genuinely terminal (escaped above cloud-top height for good).
             const missPos = wrapResult.miss;
             if (dir.z > 0) {
-              // afterWrap=true: missPos is a wrapped coordinate, not a
-              // continuation of the side-wall exit point (xb,yb,taub) above.
-              const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true, true);
+              // afterWrap=wrapResult.wrapped: missPos is only a genuinely
+              // wrapped coordinate (needing a visual break) if a tile-
+              // boundary wrap actually happened; otherwise it's the ordinary
+              // spatially continuous continuation of the side-wall exit
+              // point (xb,yb,taub) above.
+              const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true, wrapResult.wrapped);
               if (out.result) return out.result;
               x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
               continue;
