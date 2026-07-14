@@ -6,7 +6,77 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed (CODE-REVIEW P4 — wrapped-leg path visualization)
+
+- Under periodic domain boundary, a photon path that wraps to a neighboring
+  cloud image previously rendered as one continuous straight line/curve from
+  the pre-wrap point to the post-wrap point — visually implying the photon
+  crossed the entire rendered domain in a single jump, when only its
+  horizontal position wrapped (a deferred/cosmetic item from Phase 3, no
+  physics/bookkeeping was ever affected). Fixed per CODE-REVIEW P4's
+  suggested treatment: a visible line break at every wrap vertex instead of a
+  connecting segment.
+- `physics.js`: every one of the three wrap sites now flags the vertex it
+  pushes immediately after a wrap (`wrapBreak: true`) — both the wrap-hit and
+  wrap-miss cases at the initial TOA launch resolution and the surface-
+  reflection re-entry site, and the wrap-hit case in the main transport
+  loop's side-escape branch. The two miss-branch cases that resolve through
+  the shared `surfaceInteraction` closure use a new optional `afterWrap`
+  parameter so the closure's own path push carries the flag instead of
+  duplicating its geometry-computation logic at each call site.
+- `photons.js`: new `Photons.splitPathSegments()` splits a photon's path into
+  contiguous sub-arrays at every `wrapBreak` vertex. `addStaticPath` (used for
+  both the final full-path render and non-animated batch runs) now draws one
+  `THREE.Line` per segment instead of a single line through the whole path.
+  The animated tail tube (`replaceActiveTail`, a smooth `CatmullRomCurve3`
+  which can't have an internal seam) instead clamps its sliding window to
+  never start before the most recent wrap vertex, so the curve only ever
+  spans one tile at a time.
+- Open boundary is entirely unaffected (no vertex is ever flagged there) and
+  legacy modes never call the changed code paths at all.
+- Verified: all three golden suites (legacy 54/54 via `diff_golden.mjs`,
+  uniform-domain-open 36/36, uniform-domain-periodic 36/36) still pass
+  exact-match — purely a rendering change, the `path` array was never part of
+  any exported/golden-checked statistic. A dedicated harness confirms
+  `physics.js` genuinely emits `wrapBreak` vertices under realistic periodic
+  conditions (192/500 photons at M=1, Θ₀=60°, Aₛ=0.5), never at the first
+  (launch) vertex, and a hand-traced synthetic case (including two wraps back
+  to back with no vertex between them) confirms `splitPathSegments` drops
+  degenerate single-point segments and splits everything else correctly.
+  (`photons.js` itself can't be imported into the Node test harness — it
+  loads `three` from a CDN in the browser — so the segment-splitting logic
+  was verified as an extracted copy of the algorithm, not the live import;
+  the live version is otherwise unchanged from what was verified.)
+
+### Fixed (CODE-REVIEW P6 — surface-absorption heatmap under Uniform domain)
+
+- The surface-absorption heatmap was gated on `surfaceAlbedo > 0`, so it never
+  displayed under Uniform domain illumination at Aₛ = 0 — even though every
+  clear-sky-direct photon that reaches the surface there genuinely terminates
+  `surface_absorbed` (a black surface reflects nothing), and the resulting map
+  traces the cloud's shadow, which CODE-REVIEW called out as "pedagogically
+  valuable." Display gate is now `surfaceAlbedo > 0 || entryMode ===
+  "uniform_domain"`.
+- The heatmap's grid was a fixed 2× cloud-extent regardless of illumination
+  mode. Under Uniform domain the direct beam can land anywhere across the full
+  M-times-wider domain, so at moderate-to-large M almost every landing clamped
+  to the grid's edge cells, destroying the structure the fix above was meant
+  to reveal. The grid extent now tracks the domain factor M under Uniform
+  domain (`SimStats.surfaceFootFactor()`, capped at 10× to bound memory/
+  rebuild cost), read once per run (cached in `SimStats._surfFootFactor`, same
+  acquisition-time-gate convention as `_pixelFrac`) — never per-photon, so the
+  hot loop (`_addSurfaceFootprint`) gained no new DOM reads. At M ≤ 2 this is
+  numerically identical to the legacy fixed 2× grid. All three call sites
+  (`ensureFootprintGrids`, `_addSurfaceFootprint`, `Scene.rebuildHistograms`)
+  now read the same cached property instead of three independently-maintained
+  hardcoded constants that had to be kept in sync by convention.
+- Purely a display/binning change — verified no physics/RNG impact: legacy
+  golden (54/54, via `diff_golden.mjs`), uniform-domain-open golden (36/36),
+  and uniform-domain-periodic golden (36/36) all still pass exact-match, and a
+  dedicated smoke test confirms the factor/grid-size table (legacy modes and
+  Uniform domain at M≤2 stay at factor 2; M=4 → factor 4; M≥10 clamps to the
+  cap) and that a landing point which the old fixed-2× grid would have
+  edge-clamped now lands in its true bin at M=4.
 
 ## [v6.0.2] — 2026-07-14
 

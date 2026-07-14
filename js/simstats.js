@@ -50,7 +50,14 @@ function bdfBinIndex(dx, dy, dz) {
 // Cap on stored surface-interaction events (3D markers show at most the
 // most recent 1200; storing more is wasted memory at large photon counts).
 const SURFACE_EVENT_CAP = 1200;
-const SURFACE_FOOT_EXTENT = 2;      // surface-absorption grid spans 2× the cloud extent
+const SURFACE_FOOT_EXTENT = 2;      // default/legacy surface-absorption grid extent (× cloud extent)
+// CODE-REVIEW P6: under Uniform domain illumination the direct clear-sky beam
+// can land anywhere across the full M-times-wider domain, so a fixed 2× grid
+// clamps almost everything to its edge cells at moderate-to-large M, hiding
+// the very cloud-shadow structure this heatmap exists to show. The extent
+// factor tracks M instead once M exceeds the legacy default, capped here so
+// an extreme M doesn't blow up the grid's memory/per-rebuild iteration cost.
+const SURF_FACTOR_CAP = 10;
 
 export const SimStats = {
 
@@ -179,6 +186,10 @@ export const SimStats = {
     // half-width in position units, and f_pix for the N_pixel reference.
     _pixelFrac: 1,
     _pixelHalfW: 20,
+    // Cached surface-absorption grid extent factor (× cloud extent), set once
+    // per run in reset() -- see surfaceFootFactor() and SURF_FACTOR_CAP above.
+    // Never read live in _addSurfaceFootprint (that's the per-photon hot path).
+    _surfFootFactor: SURFACE_FOOT_EXTENT,
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -210,6 +221,18 @@ export const SimStats = {
     bypassPathsCloudOnly: [],
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
+    // Current surface-absorption grid extent factor (× cloud extent). Legacy/
+    // cloud-derived landings keep the historical default; under Uniform domain
+    // illumination it tracks the domain factor M once M exceeds that default
+    // (capped at SURF_FACTOR_CAP), so the grid actually covers the region the
+    // direct clear-sky beam can reach. Reads UI -- safe to call from reset()/
+    // ensureFootprintGrids() (both off the per-photon hot path), NOT from
+    // _addSurfaceFootprint (cache the result in _surfFootFactor instead).
+    surfaceFootFactor() {
+      if (UI.getPhotonEntryMode() !== "uniform_domain") return SURFACE_FOOT_EXTENT;
+      return Math.min(SURF_FACTOR_CAP, Math.max(SURFACE_FOOT_EXTENT, UI.getDomainFactor()));
+    },
+
     // (Re)create footprint grids at the current UI resolution. Called on
     // reset and on display rebuilds — NOT per photon (avoids DOM reads in
     // the hot loop). A resolution change clears accumulated footprints.
@@ -221,11 +244,13 @@ export const SimStats = {
           f.counts = new Float64Array(nBins * nBins);
         }
       }
-      // Surface-absorption grid spans 2× the cloud extent (to capture finite-cloud
-      // side leakage that lands beyond the cloud footprint); 2× bins keeps the
-      // cell size equal to the cloud footprint. The factor 2 MUST match the one
-      // in _addSurfaceFootprint and in Scene.rebuildHistograms.
-      const nSurf = nBins * SURFACE_FOOT_EXTENT;
+      // Surface-absorption grid spans _surfFootFactor× the cloud extent (see
+      // surfaceFootFactor() above); that many× bins keeps the cell size equal
+      // to the cloud-footprint grid's. _surfFootFactor is the single source of
+      // truth for this extent — _addSurfaceFootprint and Scene.rebuildHistograms
+      // both read the same cached property, so the three can no longer drift
+      // out of sync the way three independent hardcoded constants could.
+      const nSurf = Math.round(nBins * SimStats._surfFootFactor);
       const fs = SimStats.footSurfAbs;
       if (fs.nBins !== nSurf || !fs.counts) {
         fs.nBins = nSurf;
@@ -241,15 +266,17 @@ export const SimStats = {
       if (ix >= 0 && ix < n && iy >= 0 && iy < n) f.counts[ix * n + iy]++;
     },
 
-    // Surface-absorption footprint: bins (x,y) over a grid SURFACE_FOOT_EXTENT×
-    // the cloud extent. Landings beyond the grid (far side-wall leakage) clamp
-    // to the nearest edge cell — preserving direction rather than being dropped.
+    // Surface-absorption footprint: bins (x,y) over a grid _surfFootFactor×
+    // the cloud extent (cached at run start, see surfaceFootFactor() above).
+    // Landings beyond the grid (far side-wall leakage, or -- at capped M under
+    // Uniform domain -- clear-direct landings past the cap) clamp to the
+    // nearest edge cell, preserving direction rather than being dropped.
     _addSurfaceFootprint(x, y) {
       const f = SimStats.footSurfAbs;
       if (!f.counts) return;
       const n = f.nBins;
-      const extW = world.slabW * SURFACE_FOOT_EXTENT;
-      const extD = world.slabD * SURFACE_FOOT_EXTENT;
+      const extW = world.slabW * SimStats._surfFootFactor;
+      const extD = world.slabD * SimStats._surfFootFactor;
       let ix = Math.floor(((x + extW / 2) / extW) * n);
       let iy = Math.floor(((y + extD / 2) / extD) * n);
       ix = Math.max(0, Math.min(n - 1, ix));
@@ -289,6 +316,9 @@ export const SimStats = {
       // resetScene calls Scene.updateWorld() before SimStats.reset()).
       SimStats._pixelFrac = UI.getPixelFraction ? UI.getPixelFraction() : 1;
       SimStats._pixelHalfW = SimStats._pixelFrac * world.slabW / 2;
+      // Cache the surface-absorption grid extent factor for the run (CODE-REVIEW
+      // P6) — read once here, not per-photon; see surfaceFootFactor() above.
+      SimStats._surfFootFactor = SimStats.surfaceFootFactor();
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};

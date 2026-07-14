@@ -367,12 +367,20 @@ export const Physics = {
       // away later, as that would silently shift every uniform_domain RNG
       // stream while leaving legacy modes untouched (golden-snapshot trap --
       // see review finding E5).
-      const surfaceInteraction = (cx, cy, ctau, countDownArrival) => {
+      // afterWrap: true when (cx,cy,ctau) is itself a post-wrap coordinate
+      // (a periodic-boundary teleport landed here), so the FIRST vertex this
+      // call pushes must start a new visual line segment rather than connect
+      // back to whatever point preceded the wrap (CODE-REVIEW P4). Default
+      // false preserves every pre-existing (non-wrap) call site unchanged.
+      const surfaceInteraction = (cx, cy, ctau, countDownArrival, afterWrap = false) => {
         const tauSurface = tauCloud + betaExt * surfaceDistanceKm;
         const tDown = (tauSurface - ctau) / Math.max(dir.z, 1e-12);
         const xs = cx + tDown * dir.x;
         const ys = cy + tDown * dir.y;
-        if (storePath && path.length < MAX_PATH_POINTS) path.push({x: xs, y: ys, tau: tauSurface});
+        if (storePath && path.length < MAX_PATH_POINTS) {
+          path.push(afterWrap ? {x: xs, y: ys, tau: tauSurface, wrapBreak: true}
+                               : {x: xs, y: ys, tau: tauSurface});
+        }
 
         // viaSide tags the OBSERVATION-GEOMETRY origin of each surface-plane leg:
         // countDownArrival is true only when surfaceInteraction is reached from a
@@ -400,14 +408,16 @@ export const Physics = {
               return {result: {status: "wrap_capped", xExit: xs, yExit: ys, tauExit: tauSurface, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
             }
             if (wrapResult.hit) {
-              if (storePath && path.length < MAX_PATH_POINTS) path.push({x: wrapResult.hit.x, y: wrapResult.hit.y, tau: wrapResult.hit.tau});
+              // wrapBreak: teleports from the surface-reflection point (xs,ys)
+              // in the original tile to a neighboring cloud image -- see P4.
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x: wrapResult.hit.x, y: wrapResult.hit.y, tau: wrapResult.hit.tau, wrapBreak: true});
               return {reenter: wrapResult.hit};
             }
             // Genuinely clears tau=0 (cloud-top height) without clipping any
             // neighboring cloud image -- escapes to space for good (see
             // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
             const missPos = wrapResult.miss;
-            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau});
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: true});
             return {result: {status: "side_escape", bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
           }
 
@@ -464,7 +474,12 @@ export const Physics = {
           if (wrapResult.hit) {
             launchFace = "wall";
             x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
-            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+            // wrapBreak: this vertex is not geometrically continuous with the
+            // TOA launch point above it (the true unwrapped ray continues far
+            // outside the rendered domain) -- see CODE-REVIEW P4 and
+            // Photons.splitPathSegments in photons.js, which breaks the drawn
+            // line here instead of drawing a straight teleport segment.
+            if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: true});
           } else {
             // Genuinely never touches any cloud image on the way down --
             // clear-incident. Continue the descent from the final wrapped
@@ -475,7 +490,10 @@ export const Physics = {
             launchFace = "clear";
             const missPos = wrapResult.miss;
             x = missPos.x; y = missPos.y; tau = missPos.tau;
-            const out = surfaceInteraction(x, y, tau, true);
+            // afterWrap=true: missPos is a wrapped coordinate, not a
+            // continuation of the TOA launch point -- the first vertex
+            // surfaceInteraction pushes must start a new visual segment too.
+            const out = surfaceInteraction(x, y, tau, true, true);
             if (out.result) return out.result;
             touchedCloud = true;
             x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
@@ -579,7 +597,9 @@ export const Physics = {
             }
             if (wrapResult.hit) {
               x = wrapResult.hit.x; y = wrapResult.hit.y; tau = wrapResult.hit.tau;
-              if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
+              // wrapBreak: teleports from the side-wall exit point (xb,yb,taub)
+              // in the original tile to a neighboring cloud image -- see P4.
+              if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau, wrapBreak: true});
               continue; // re-enters the main loop inside the neighboring cloud image
             }
             // Genuine miss: continue from the wrapped position. DOWNWARD
@@ -597,7 +617,9 @@ export const Physics = {
             // genuinely terminal (escaped above cloud-top height for good).
             const missPos = wrapResult.miss;
             if (dir.z > 0) {
-              const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true);
+              // afterWrap=true: missPos is a wrapped coordinate, not a
+              // continuation of the side-wall exit point (xb,yb,taub) above.
+              const out = surfaceInteraction(missPos.x, missPos.y, missPos.tau, true, true);
               if (out.result) return out.result;
               x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
               continue;

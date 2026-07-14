@@ -315,21 +315,29 @@ export const Scene = {
         false
       );
 
-      // Surface-absorption heatmap (A_s>0 only): where photons are absorbed at
-      // the Lambertian surface. Grid is 2× the cloud extent (far side-wall
-      // landings clamp to the edge cells); it rises UP from the surface plane.
-      // Relief matches the reflected/base heatmaps (2.8) so all three share one
-      // height scale. Trade-off: at a small sub-cloud gap (low d_sfc / β_ext)
-      // this can overlap the base-crossing footprint in mid-gap — acceptable
-      // since both are translucent. Light brown, geometry-independent.
-      if (UI.getSurfaceAlbedo() > 0 && UI.getShowSurfaceHeatmap()) {
+      // Surface-absorption heatmap: where photons are absorbed at the
+      // Lambertian surface. Shown whenever Aₛ>0 (any mode) OR under Uniform
+      // domain illumination even at Aₛ=0 (CODE-REVIEW P6) — the direct
+      // clear-sky beam still gets bookkept as a genuine surface-absorption
+      // event there (Aₛ=0 just means it doesn't reflect), and the resulting
+      // pattern shows the cloud's shadow, which is pedagogically useful in
+      // its own right. Grid extent is SimStats._surfFootFactor× the cloud
+      // extent (far/out-of-grid landings clamp to the edge cells) — cached at
+      // run start so it can track the domain factor M under Uniform domain
+      // instead of the legacy fixed 2× (see surfaceFootFactor() in
+      // simstats.js); it rises UP from the surface plane. Relief matches the
+      // reflected/base heatmaps (2.8) so all three share one height scale.
+      // Trade-off: at a small sub-cloud gap (low d_sfc / β_ext) this can
+      // overlap the base-crossing footprint in mid-gap — acceptable since
+      // both are translucent. Light brown, geometry-independent.
+      if ((UI.getSurfaceAlbedo() > 0 || UI.getPhotonEntryMode() === "uniform_domain") && UI.getShowSurfaceHeatmap()) {
         Scene.addFootprintHeatmap(
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
           0xc8a27a,
           true,
-          world.slabW * 2,
-          world.slabD * 2,
+          world.slabW * SimStats._surfFootFactor,
+          world.slabD * SimStats._surfFootFactor,
           2.8
         );
       }

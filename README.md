@@ -27,7 +27,7 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 - **Finite-cloud illumination modes**: pencil-beam (centered) entry, uniform illumination of the cloud top (optionally including the sunward side wall), or a **uniform domain** launch that also illuminates the clear sky around the cloud, to study 3D edge effects and direct clear-sky surface illumination — with a selectable **open/isolated** or **periodic** (tiled cloud field) domain boundary *(v6.0.2 — see [CHANGELOG](CHANGELOG.md))*
 - **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
 - **R/T/A component breakdown**: an optional expanded view (any illumination mode) splitting each of R, T, and A into its constituent exit/origin populations — see *Illumination and observation-geometry bookkeeping* below
-- **Surface-absorption heatmap** (Aₛ > 0): toggleable 2-D map of where photons are absorbed at the Lambertian surface, on a grid 2× the cloud extent to capture finite-cloud side leakage
+- **Surface-absorption heatmap**: toggleable 2-D map of where photons are absorbed at the Lambertian surface. Shown whenever Aₛ > 0 (any illumination mode), and also under **Uniform domain** illumination at Aₛ = 0 — every clear-sky-incident photon is absorbed there by definition at a black surface, and the resulting map traces the cloud's shadow. Grid extent is 2× the cloud extent for legacy/cloud-derived landings; under Uniform domain it tracks the domain factor M instead (capped) so the grid actually covers the region the direct beam can reach
 - **Net normalized flux transmittance (surface absorption)**: correctly accounts for surface reflections: T = F↓ − F↑ at surface
 - **Rigorous BRF/BTF polar plots** *(v6.0.2, Phase 4)*: bidirectional reflectance/
   transmittance factors normalized by the **realized top-face-incident flux**
@@ -250,18 +250,26 @@ The colored spherical markers in the 3-D view indicate two distinct types of tra
 - **Downward cloud-base crossings** (green) are drawn at *every* downward crossing
   of the cloud base. Here, the markers show **each** downward crossings, e.g., a trajectory where a surface reflected photon re-enters the cloud and scatters back towards the surface again (or multiple times). The marker numbers are 1:1 with the green *downward cloud-base crossings footprint* heat map up to the number indicated in the "Endpoint caps shown" selection. For Aₛ = 0, each transmitted photon crosses the cloud base only once, so a crossing coincides with a photon's termination.
 - **Upward cloud-top crossings** (blue): a reflected photon crosses the cloud top boundary exactly once, so these are simultaneously a crossing *and* a terminal endpoint.
-- **Terminal endpoints**: surface-absorbed (brown) only when Aₛ > 0, cloud-absorbed
-  (black), and side-escape (orange). Mid-trajectory surface *reflections* are
-  shown separately as events (purple).
+- **Terminal endpoints**: surface-absorbed (brown) — when Aₛ > 0 (any mode), or
+  at Aₛ = 0 under **Uniform domain** illumination, where every clear-sky-direct
+  photon that reaches the surface is absorbed there by definition (a black
+  surface reflects nothing; the RNG albedo draw is still made, deliberately,
+  for reproducibility) — cloud-absorbed (black), and side-escape (orange).
+  Mid-trajectory surface *reflections* are shown separately as events (purple).
 
-The **surface-absorption heatmap** (Aₛ > 0; toggle "Show surface heatmap") shows
-where photons are absorbed at the surface. It uses a grid 2× the cloud extent to
-capture surface absorption from cloud side leakage. Absorption beyond the surface
-grid is clamped to the nearest boundary cell, each axis independently: a landing
-past the grid in one axis goes to the nearest edge cell, and one past it in both
-axes goes to a corner. The four corners therefore tend to be the brightest overflow
-bins, since each collects an entire far-field corner region. This is geometry-independent, 
-i.e., every physical landing is binned, regardless of the Observation geometry choice.
+The **surface-absorption heatmap** (toggle "Show surface heatmap"; shown whenever
+Aₛ > 0, or under Uniform domain illumination even at Aₛ = 0 — see above) shows
+where photons are absorbed at the surface. For legacy/cloud-derived landings it
+uses a grid 2× the cloud extent to capture surface absorption from cloud side
+leakage; under Uniform domain illumination the grid instead tracks the domain
+factor M (capped at 10×cloud extent) so it covers the region the direct
+clear-sky beam can actually reach — at M ≤ 2 this is identical to the legacy 2×
+grid. Absorption beyond the surface grid is clamped to the nearest boundary
+cell, each axis independently: a landing past the grid in one axis goes to the
+nearest edge cell, and one past it in both axes goes to a corner. The four
+corners therefore tend to be the brightest overflow bins, since each collects
+an entire far-field corner region. This is geometry-independent, i.e., every
+physical landing is binned, regardless of the Observation geometry choice.
 
 The **"Endpoint caps shown"** slider is a non-destructive display filter. Lowering the set value and then increasing it
 back to its original setting reveals the same markers (they are retained, not discarded), even when a run
@@ -304,7 +312,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Cloud-base to surface (km) | Geometric gap thickness (used with β_ext to set cloud-surface aspect ratio) | 0.5 |
 | Show entire-domain plots | Bottom-panel plots use the domain-wide (not cloud-element-only) population; Uniform domain only | off |
 | Footprint grid size | number of cloud top/base grid elements | 28 |
-| Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0); off also removes its render cost | on |
+| Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0, or Uniform domain illumination even at Aₛ=0); off also removes its render cost | on |
 | Show R/T/A components | Expand R/T/A into their constituent populations (any illumination mode, see above) | off |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
 

@@ -45,15 +45,39 @@ export const Photons = {
       Photons.addEndpoint(result);
     },
 
+    // CODE-REVIEW P4: split a photon's recorded path into contiguous visual
+    // segments, breaking immediately BEFORE any vertex flagged `wrapBreak`
+    // (physics.js sets this on every vertex that lands after a periodic-
+    // boundary teleport -- see the wrap sites in simulatePhoton). Without
+    // this, a wrapped leg draws as one straight line/curve connecting a point
+    // in the original tile to a point in a neighboring cloud image, which
+    // reads as the photon crossing the whole rendered domain in one jump --
+    // physically wrong (only its horizontal position wrapped; nothing
+    // actually traveled that distance). Segments of length 1 (two wraps back
+    // to back with no point between them) are dropped -- nothing to draw.
+    splitPathSegments: function(path) {
+      const segments = [];
+      let current = [path[0]];
+      for (let i = 1; i < path.length; i++) {
+        if (path[i].wrapBreak) {
+          if (current.length > 1) segments.push(current);
+          current = [path[i]];
+        } else {
+          current.push(path[i]);
+        }
+      }
+      if (current.length > 1) segments.push(current);
+      return segments;
+    },
+
     addStaticPath: function(result) {
-      const pts = result.path.map(Coords.simToWorldPoint);
-      const geom = new THREE.BufferGeometry().setFromPoints(pts);
-      const mat = new THREE.LineBasicMaterial({
-        color: UI.getOutcomeColor(result.status),
-        transparent: true,
-        opacity: 0.48
-      });
-      state.pathGroup.add(new THREE.Line(geom, mat));
+      const color = UI.getOutcomeColor(result.status);
+      for (const seg of Photons.splitPathSegments(result.path)) {
+        const pts = seg.map(Coords.simToWorldPoint);
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({color, transparent: true, opacity: 0.48});
+        state.pathGroup.add(new THREE.Line(geom, mat));
+      }
     },
 
     makeTubeFromPoints: function(points, color, radius=0.11, opacity=1.0) {
@@ -286,6 +310,17 @@ export const Photons = {
         const worldPts = result.path.map(Coords.simToWorldPoint);
         const activeColor = 0xfff700; // bright yellow active photon tracer
 
+        // CODE-REVIEW P4: indices in result.path where a periodic-boundary
+        // wrap landed (see splitPathSegments above for the static-path
+        // counterpart). The animated tail is a single smooth CatmullRom
+        // curve, so it can't "break" mid-tube the way separate Line segments
+        // can -- instead, clamp the tail window so it never starts before
+        // the most recent wrap, i.e. the curve only ever spans one tile.
+        const wrapBreakIndices = [];
+        for (let k = 0; k < result.path.length; k++) {
+          if (result.path[k].wrapBreak) wrapBreakIndices.push(k);
+        }
+
         state.activePhotonID = result.photonId ?? null;
         state.activePhotonStep = 0;
         state.activePhotonTotalSteps = worldPts.length - 1;
@@ -313,7 +348,18 @@ export const Photons = {
 
           // Fading-tail approximation: only show the most recent segment of the path.
           const tailLength = UI.getTailLength();
-          const start = Math.max(0, points.length - tailLength);
+          let start = Math.max(0, points.length - tailLength);
+          // CODE-REVIEW P4: never let the tube curve span a periodic-boundary
+          // wrap -- clamp the window to start at the most recent wrap vertex
+          // at or before the current position, if that's more restrictive
+          // than the plain tail length. wrapBreakIndices is ascending, so the
+          // first hit scanning from the end is the closest one.
+          for (let k = wrapBreakIndices.length - 1; k >= 0; k--) {
+            const b = wrapBreakIndices[k];
+            if (b > points.length - 1) continue; // wrap hasn't happened yet at this step
+            if (b > start) start = b;
+            break; // closest wrap at or before the current position found
+          }
           const tailPts = points.slice(start);
 
           activeTube = Photons.makeTubeFromPoints(tailPts, activeColor, 0.12, 1.0);
