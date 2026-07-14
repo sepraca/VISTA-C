@@ -20,3 +20,7 @@ node_modules/
 # Local working/session notes -- internal dev-journal style, not project docs
 TODO-*.md
 CODE-REVIEW-*.md
+
+# Release-notes drafts -- scratch templates for pasting into GitHub Releases,
+# not tracked project docs
+RELEASE_NOTES*.md
