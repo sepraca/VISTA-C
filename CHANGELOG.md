@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (endpoint-marker density/brightness depended on "Endpoint caps shown" slider history, user report)
+
+- `Photons._ensureEndpointMesh()` in `photons.js` only ever grew the endpoint
+  InstancedMesh's allocated capacity, never shrank it. Raising the "Endpoint
+  caps shown" slider (e.g. to 20000) then lowering it again (e.g. back to
+  5000) reused the same oversized 20000-capacity mesh with `mesh.count`
+  pulled back down to 5000 -- while `mesh.count` alone should gate the draw
+  range, the oversized mesh also carried a frustum-culling bounding sphere
+  computed once, lazily, from the larger instance set and never recomputed,
+  plus stale high-index instance-buffer data left resident in the GPU
+  buffers. Net effect, confirmed via a side-by-side pair of exported PNGs at
+  identical parameters/seed: a run held at cap=5000 throughout rendered a
+  sparse marker scatter, while the same run's cap cycled 5000 -> 20000 ->
+  5000 afterward rendered visibly denser, brighter, more saturated markers
+  covering far more of the surface/wall area -- despite both showing the
+  same "5000" in the slider and the live stats-panel readout (confirmed by
+  the user in real time, ruling out a stale DOM/UI read).
+- Fix: `_ensureEndpointMesh()` now reallocates an exactly-sized mesh both on
+  growth (previous behavior) and on large shrinkage (new capacity request
+  below half the currently allocated capacity), instead of silently reusing
+  an oversized buffer. `syncEndpointMesh()` now also calls
+  `mesh.computeBoundingSphere()` after every write, so frustum culling
+  always reflects the current instance set rather than a stale one from a
+  prior, larger/differently-positioned write. The endpoint material also now
+  sets `depthWrite: false` (previously defaulted to `true` under
+  `transparent: true`) -- standard practice for overlapping semi-transparent
+  instanced markers, removing draw-order-dependent occlusion/contrast as a
+  contributing factor.
+- Scope: rendering-only change in `photons.js`; does not touch `physics.js`
+  or `simstats.js`. All three golden regression suites (legacy, uniform-
+  domain open, uniform-domain periodic) still pass exact-match, as expected.
+
 ### Fixed (periodic-boundary photon paths silently dropped from the 3D view, user report)
 
 - `Physics.wrapAndFindBoxEntry()`'s three call sites in `physics.js` all

@@ -198,7 +198,25 @@ export const Photons = {
     _endpointCapacity: 0,
 
     _ensureEndpointMesh: function(capacity) {
-      if (state.endpointInstanced && Photons._endpointCapacity >= capacity) {
+      // Reuse the existing mesh only when it already fits the request and
+      // isn't wildly oversized for it; otherwise reallocate exactly-sized.
+      // Previously this only ever grew capacity, never shrank it: raising
+      // the endpoint-cap slider (e.g. to 20000) then lowering it again (e.g.
+      // back to 5000) reused the same oversized 20000-capacity mesh with
+      // mesh.count pulled back down to 5000. mesh.count should gate the
+      // draw range on its own, but that oversized mesh also carried a
+      // frustum-culling bounding sphere computed once (lazily, on first
+      // render) from the larger instance set and never recomputed --  a
+      // stale culling volume alongside stale high-index instance-buffer
+      // data left resident in the GPU buffers. Reallocating exactly-sized
+      // on a large shrink removes that whole class of stale-buffer/stale-
+      // culling risk outright, rather than relying solely on mesh.count
+      // (user report, 2026-07: marker density/brightness depended on the
+      // endpoint-cap slider's adjustment history, not just its current
+      // value -- e.g. cycling 5000 -> 20000 -> 5000 showed visibly more/
+      // brighter markers than a run held at 5000 throughout).
+      const current = Photons._endpointCapacity;
+      if (state.endpointInstanced && capacity <= current && capacity >= current * 0.5) {
         return state.endpointInstanced;
       }
       if (state.endpointInstanced) {
@@ -207,7 +225,13 @@ export const Photons = {
         state.endpointInstanced.material.dispose();
       }
       const geom = new THREE.SphereGeometry(1, 10, 10);
-      const mat = new THREE.MeshBasicMaterial({transparent: true, opacity: 0.95});
+      // depthWrite:false -- standard practice for semi-transparent instanced
+      // markers: with the default depthWrite:true, overlapping instances
+      // depth-test against each other in draw-index order instead of
+      // blending, producing order-dependent occlusion/contrast among the
+      // markers rather than consistent alpha compositing (contributed to
+      // the same 2026-07 user report above).
+      const mat = new THREE.MeshBasicMaterial({transparent: true, opacity: 0.95, depthWrite: false});
       const mesh = new THREE.InstancedMesh(geom, mat, capacity);
       mesh.count = 0;
       state.endpointInstanced = mesh;
@@ -271,6 +295,14 @@ export const Photons = {
       mesh.count = shown;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      // InstancedMesh's frustum-culling bounding sphere is computed lazily
+      // (once, on first render) and is NOT auto-recomputed when instance
+      // transforms change afterward -- three.js requires this to be called
+      // by hand after updates. Recompute every sync so culling always
+      // reflects the current instance set instead of a stale one left over
+      // from a larger/differently-positioned prior write (2026-07 fix, see
+      // _ensureEndpointMesh).
+      if (shown > 0) mesh.computeBoundingSphere();
     },
 
     // Adds a marker only; cap-trimming and fading are deferred to
