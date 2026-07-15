@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [v6.0.3] — 2026-07-14
+
 ### Fixed (sunward ground-illumination asymmetry under Uniform domain, open boundary, user report)
 
 - User report: at open-boundary uniform_domain illumination, COT=10, Θ₀=60°, M=2, almost

@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.0.2** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.0.3** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -505,11 +505,17 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.0.2** (2026-07-14). Adds Uniform domain illumination (direct
-clear-sky surface illumination, selectable open/isolated or periodic domain boundary),
-the general-purpose R/T/A component breakdown, and rigorous BRF/BTF normalization
-(Phase 4) — see CHANGELOG.md's `[v6.0.2]` section for the full, dated history. This is
-the version currently on `main` and in the hosted demo.
+Latest tagged release: **v6.0.3** (2026-07-14, patch release — bug fixes and internal
+refactors only, no new capabilities). Headline fix: a sunward ground-illumination
+asymmetry under Uniform domain illumination (open boundary) at large cloud optical
+thickness and solar zenith angle, decoupling the launch-domain sunward margin from the
+cloud's own optical thickness — see CHANGELOG.md's `[v6.0.3]` section and
+[RELEASE_NOTES_v6.0.3.md](RELEASE_NOTES_v6.0.3.md) for the full history. **v6.0.2**
+(also 2026-07-14) added Uniform domain illumination (direct clear-sky surface
+illumination, selectable open/isolated or periodic domain boundary), the general-purpose
+R/T/A component breakdown, and rigorous BRF/BTF normalization (Phase 4) — see
+CHANGELOG.md's `[v6.0.2]` section. v6.0.3 is the version currently on `main` and in the
+hosted demo.
 
 ---
 
@@ -521,7 +527,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -532,4 +538,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.2). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.3). GitHub. https://github.com/sepraca/VISTA-C
