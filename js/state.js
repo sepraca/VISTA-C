@@ -12,10 +12,26 @@ export const state = {
   controls: null,
 
   // Three.js scene groups
-  cloudGroup:     null,
-  pathGroup:      null,
-  endpointGroup:  null,
-  histogramGroup: null,
+  cloudGroup:      null,
+  pathGroup:       null,
+  endpointGroup:   null,
+  histogramGroup:  null,
+  // Persistent footprint-heatmap InstancedMeshes (reflected/transmitted/
+  // surface-absorbed) live here, NOT inside histogramGroup -- histogramGroup
+  // is destroyed and rebuilt every Scene.rebuildHistograms() call (frame
+  // outlines, surface-interaction marker spheres), which is fine for those
+  // lightweight per-call objects, but was also destroying and recreating the
+  // heatmap meshes themselves on that same cadence. Each recreation gives a
+  // mesh a fresh, ever-increasing three.js object id, which flips the
+  // ambiguous tie-break three.js uses to order same-renderOrder transparent
+  // objects -- the same root cause diagnosed for the endpoint marker mesh
+  // (see Photons._ensureEndpointMesh). Keeping the heatmap meshes here, with
+  // stable identity across rebuilds (see Scene._heatmapMeshFor), fixes a
+  // 2026-07 user report of the 3D view flashing between dense/sparse
+  // renderings during a live run and continuing to toggle when adjusting the
+  // endpoint-cap slider under periodic-boundary domains.
+  heatmapMeshGroup: null,
+  heatmapMeshes:    {},
 
   // Endpoint markers: plain data records {x, y, z, color, radius} (oldest
   // first), rendered as a single InstancedMesh by Photons.syncEndpointMesh().

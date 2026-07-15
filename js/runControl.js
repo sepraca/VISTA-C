@@ -69,11 +69,16 @@ export const RunControl = {
       state.pathGroup = new THREE.Group();
       state.endpointGroup = new THREE.Group();
       state.histogramGroup = new THREE.Group();
+      // Sibling of histogramGroup, not a child of it -- Scene.clearGroup()
+      // clears histogramGroup wholesale every rebuild, and the heatmap
+      // meshes living here need to survive that (see state.js for why).
+      state.heatmapMeshGroup = new THREE.Group();
 
       state.scene.add(state.cloudGroup);
       state.scene.add(state.pathGroup);
       state.scene.add(state.endpointGroup);
       state.scene.add(state.histogramGroup);
+      state.scene.add(state.heatmapMeshGroup);
 
       Scene.buildCloudBox();
       RunControl.refreshEndpointDisplay();
@@ -144,7 +149,10 @@ export const RunControl = {
         betaExt:           UI.getCloudBetaExt(),
         surfaceDistanceKm: UI.getSurfaceDistanceKm(),
         entryMode:         UI.getPhotonEntryMode(),
-        domainFactor:      UI.getDomainFactor(),
+        // getEffectiveDomainFactor() (not getDomainFactor()) auto-clamps M up
+        // to the sunward-illumination minimum for uniform_domain + open
+        // boundary, 2026-07 fix -- see UI.getEffectiveDomainFactor doc comment.
+        domainFactor:      UI.getEffectiveDomainFactor(),
         domainBoundary:    UI.getDomainBoundary()
       };
     },
@@ -321,6 +329,7 @@ export const RunControl = {
       Scene.clearGroup(state.endpointGroup);
       Photons.clearEndpoints();
       Scene.clearGroup(state.histogramGroup);
+      Scene.clearHeatmapMeshes();
       BottomPanel.drawBottomPanel();
       Scene.buildCloudBox();
       RunControl.refreshEndpointDisplay();

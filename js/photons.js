@@ -197,33 +197,55 @@ export const Photons = {
     // Age fading is expressed as per-instance scale and color dimming.
     _endpointCapacity: 0,
 
-    _ensureEndpointMesh: function(capacity) {
-      // Reuse the existing mesh only when it already fits the request and
-      // isn't wildly oversized for it; otherwise reallocate exactly-sized.
-      // Previously this only ever grew capacity, never shrank it: raising
-      // the endpoint-cap slider (e.g. to 20000) then lowering it again (e.g.
-      // back to 5000) reused the same oversized 20000-capacity mesh with
-      // mesh.count pulled back down to 5000. mesh.count should gate the
-      // draw range on its own, but that oversized mesh also carried a
-      // frustum-culling bounding sphere computed once (lazily, on first
-      // render) from the larger instance set and never recomputed --  a
-      // stale culling volume alongside stale high-index instance-buffer
-      // data left resident in the GPU buffers. Reallocating exactly-sized
-      // on a large shrink removes that whole class of stale-buffer/stale-
-      // culling risk outright, rather than relying solely on mesh.count
-      // (user report, 2026-07: marker density/brightness depended on the
-      // endpoint-cap slider's adjustment history, not just its current
-      // value -- e.g. cycling 5000 -> 20000 -> 5000 showed visibly more/
-      // brighter markers than a run held at 5000 throughout).
-      const current = Photons._endpointCapacity;
-      if (state.endpointInstanced && capacity <= current && capacity >= current * 0.5) {
-        return state.endpointInstanced;
-      }
-      if (state.endpointInstanced) {
-        state.endpointGroup.remove(state.endpointInstanced);
-        state.endpointInstanced.geometry.dispose();
-        state.endpointInstanced.material.dispose();
-      }
+    _ensureEndpointMesh: function() {
+      // Allocate once, at the full fixed buffer capacity (ENDPOINT_BUFFER_
+      // MAX), and reuse that SAME mesh object for the entire run -- never
+      // dispose/recreate it just because the display-cap slider changes.
+      // Only mesh.count (and the per-instance data for indices 0..count-1)
+      // changes per sync; the mesh's identity, position, and geometry never
+      // do.
+      //
+      // This replaces two earlier designs, both dead ends, kept here as the
+      // record of what was tried (2026-07, user report):
+      //
+      // 1. Reallocate only when the requested capacity grew (original code),
+      //    later also on a large shrink (a same-day follow-up). Reallocating
+      //    on every change turned out to BE the bug: recreating the mesh
+      //    gives it a fresh, ever-increasing THREE.Object3D id each time.
+      //    Three.js sorts transparent objects at the same renderOrder (the
+      //    default, unset, used scene-wide) by distance from camera to each
+      //    object's own matrixWorld origin -- NOT by instance positions or
+      //    bounding volume -- so for a mesh like this one, whose own local
+      //    origin never moves, that distance is tied with other scene
+      //    geometry (cloud box, surface plane, etc.), and ties are broken by
+      //    object id. A constantly-changing id flips that tie-break
+      //    unpredictably relative to the cloud/surface geometry -- exactly a
+      //    toggle, uncorrelated with the cap's magnitude, confirmed with
+      //    four side-by-side exports of the identical completed run at
+      //    cap=5000/6000/7500/16000 that came out non-monotonically dense/
+      //    sparse/dense/sparse.
+      // 2. Pin renderOrder explicitly (=1, then =-1) to force a deterministic
+      //    paint order regardless of that tie. This did remove the toggle,
+      //    but uniformly forced markers before or after EVERY other
+      //    transparent layer in the scene (cloud box, top/bottom faces,
+      //    surface plane, footprint heatmap cells) -- blunter than the
+      //    original behavior. Markers under multiple stacked translucent
+      //    layers (e.g. green cloud-base-crossing markers sitting inside the
+      //    cloud box's full 3D volume) got compounded/over-attenuated to
+      //    near invisibility, and surface markers picked up a visible color
+      //    shift from the footprint-heatmap layer now reliably painting over
+      //    them ("remaining visible endpoints looked more like orange...
+      //    than red surface absorption").
+      //
+      // Keeping the mesh's identity permanently stable removes the actual
+      // instability (the id-based tie-break) without overriding the natural
+      // per-object distance sort at all, so markers interact with every
+      // other layer of scene geometry exactly as they did before any of
+      // today's fixes -- restoring the original soft/translucent look while
+      // still being deterministic, since nothing about the mesh's identity
+      // changes between syncs anymore.
+      if (state.endpointInstanced) return state.endpointInstanced;
+
       const geom = new THREE.SphereGeometry(1, 10, 10);
       // depthWrite:false -- standard practice for semi-transparent instanced
       // markers: with the default depthWrite:true, overlapping instances
@@ -232,10 +254,56 @@ export const Photons = {
       // markers rather than consistent alpha compositing (contributed to
       // the same 2026-07 user report above).
       const mat = new THREE.MeshBasicMaterial({transparent: true, opacity: 0.95, depthWrite: false});
-      const mesh = new THREE.InstancedMesh(geom, mat, capacity);
+      const mesh = new THREE.InstancedMesh(geom, mat, ENDPOINT_BUFFER_MAX);
       mesh.count = 0;
+      // Markers can appear anywhere across the (possibly M-scaled) domain, so
+      // disable frustum culling rather than rely on InstancedMesh's bounding
+      // sphere -- same reasoning, and same pattern, as the footprint-heatmap
+      // meshes in scene.js ("cells span the whole domain"). This replaces an
+      // explicit mesh.computeBoundingSphere() call made on every sync, which
+      // turned out to be the actual remaining cause of the flashing/toggling
+      // reported after the mesh-identity fixes below: recomputing the
+      // bounding sphere on every sync (every chunk during a live run, every
+      // slider tick on a completed one) changes ITS centroid each time even
+      // though the mesh's identity no longer does, and that recomputed value
+      // is what was flipping the transparent-object paint-order tie-break
+      // against other scene geometry -- not the identity churn originally
+      // suspected (2026-07 user report: fixing both the endpoint- and
+      // heatmap-mesh identity churn did not stop the flashing/toggling,
+      // which persisted identically in open AND periodic domains and
+      // independent of whether Scene.rebuildHistograms() was even invoked,
+      // ruling the identity theory out and pointing at the one thing left
+      // that both meshes' sync paths still recomputed on every call).
+      mesh.frustumCulled = false;
+      // Explicit renderOrder=1 (paired with cloudGroup's box/top/bottom
+      // faces at renderOrder=2 in scene.js's buildCloudBox, and the
+      // ground/heatmap layers left at the default 0): with the flashing/
+      // toggling itself fixed above, the remaining symptom (2026-07 user
+      // report) was that the *stable* natural sort still landed on
+      // different, domain-dependent outcomes for open vs. periodic boundary
+      // -- periodic consistently rendered the "dense" (unsoftened) look,
+      // open the "sparse" one. Both are plausible under an unpinned sort:
+      // every relevant object here (this mesh, the cloud faces, the ground
+      // plane, the heatmap meshes) sits at an identical, un-translated
+      // matrixWorld origin, since none of them call .position.set() on
+      // themselves -- their real spatial extent lives entirely in instance/
+      // vertex data. That's an exact tie, broken only by object id (creation
+      // order), and open vs. periodic domains construct their scenes via
+      // slightly different call sequences, so they land on opposite,
+      // internally-consistent sides of that tie. A 3-tier explicit
+      // renderOrder removes the ambiguity outright rather than relying on
+      // creation order: ground/heatmap (0) paint first, so markers are
+      // always clearly visible and untinted on top of them (matches every
+      // screenshot where that already looked right); markers (1) paint
+      // next; the cloud volume (2) paints last, so it always -- and only --
+      // softens whatever marker or heatmap cell happens to sit under its
+      // on-screen footprint, restoring the translucent look without the
+      // earlier renderOrder attempts' failure modes (uniformly-before caused
+      // heatmap tinting of markers; uniformly-after removed the softening
+      // entirely).
+      mesh.renderOrder = 1;
       state.endpointInstanced = mesh;
-      Photons._endpointCapacity = capacity;
+      Photons._endpointCapacity = ENDPOINT_BUFFER_MAX;
       state.endpointGroup.add(mesh);
       return mesh;
     },
@@ -276,7 +344,7 @@ export const Photons = {
       const cap = Math.max(UI.getEndpointCap(), 0);
       const shown = Math.min(cap, data.length);
       const start = data.length - shown;
-      const mesh = Photons._ensureEndpointMesh(Math.max(shown, 1));
+      const mesh = Photons._ensureEndpointMesh();
       const fade = UI.getFadeEndpoints();
       const m4 = new THREE.Matrix4();
       const col = new THREE.Color();
@@ -295,14 +363,10 @@ export const Photons = {
       mesh.count = shown;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      // InstancedMesh's frustum-culling bounding sphere is computed lazily
-      // (once, on first render) and is NOT auto-recomputed when instance
-      // transforms change afterward -- three.js requires this to be called
-      // by hand after updates. Recompute every sync so culling always
-      // reflects the current instance set instead of a stale one left over
-      // from a larger/differently-positioned prior write (2026-07 fix, see
-      // _ensureEndpointMesh).
-      if (shown > 0) mesh.computeBoundingSphere();
+      // No computeBoundingSphere() call here -- see the frustumCulled=false
+      // comment in _ensureEndpointMesh for why, and why an earlier version
+      // of this fix that DID call it on every sync was itself the remaining
+      // cause of a flashing/toggling symptom.
     },
 
     // Adds a marker only; cap-trimming and fading are deferred to

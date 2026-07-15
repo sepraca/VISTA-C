@@ -78,6 +78,17 @@ export const Scene = {
       });
 
       const box = new THREE.Mesh(boxGeom, boxMat);
+      // renderOrder=2 -- paired with the endpoint mesh's renderOrder=1
+      // (photons.js's _ensureEndpointMesh) and the ground/heatmap layers
+      // left at the default 0, so the cloud volume always paints last and
+      // consistently softens whatever marker/heatmap cell sits under its
+      // on-screen footprint, deterministically regardless of domain type or
+      // camera (2026-07 user report: open vs. periodic boundary landed on
+      // different, stable outcomes under the unpinned natural sort). Applies
+      // to all three cloud-volume faces below (box, top, bottom) -- NOT the
+      // ground/surface plane further down, which stays at the default so
+      // markers still draw clearly on top of it as before.
+      box.renderOrder = 2;
       state.cloudGroup.add(box);
 
       const edges = new THREE.EdgesGeometry(boxGeom);
@@ -95,6 +106,7 @@ export const Scene = {
       });
       const topPlane = new THREE.Mesh(planeGeom, topMat);
       topPlane.position.z = world.slabH / 2 + 0.004;
+      topPlane.renderOrder = 2;   // see box.renderOrder comment above
       state.cloudGroup.add(topPlane);
 
       const bottomMat = new THREE.MeshBasicMaterial({
@@ -106,6 +118,7 @@ export const Scene = {
       });
       const bottomPlane = new THREE.Mesh(planeGeom, bottomMat);
       bottomPlane.position.z = -world.slabH / 2 - 0.004;
+      bottomPlane.renderOrder = 2;   // see box.renderOrder comment above
       state.cloudGroup.add(bottomPlane);
 
       // Lambertian surface plane — opacity scales with A_s so a black surface
@@ -302,6 +315,7 @@ export const Scene = {
       SimStats.ensureFootprintGrids();
 
       Scene.addFootprintHeatmap(
+        'refl',
         SimStats.footRefl,
         world.slabH / 2 + 0.035,
         0x60a5fa,
@@ -309,6 +323,7 @@ export const Scene = {
       );
 
       Scene.addFootprintHeatmap(
+        'trans',
         SimStats.footTrans,
         -world.slabH / 2 - 0.035,
         0x86efac,
@@ -332,6 +347,7 @@ export const Scene = {
       // both are translucent. Light brown, geometry-independent.
       if ((UI.getSurfaceAlbedo() > 0 || UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN) && UI.getShowSurfaceHeatmap()) {
         Scene.addFootprintHeatmap(
+          'surfAbs',
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
           0xc8a27a,
@@ -340,9 +356,70 @@ export const Scene = {
           world.slabD * SimStats._surfFootFactor,
           2.8
         );
+      } else {
+        // Surface heatmap toggled off/not applicable this rebuild -- hide
+        // (not dispose) any previously-built mesh for it, so its identity
+        // stays stable if/when it's shown again (see _heatmapMeshFor).
+        Scene.hideFootprintHeatmap('surfAbs');
       }
 
       Scene.addSurfaceInteractionMarkers();
+    },
+
+    // Dispose the persistent footprint-heatmap meshes (heatmapMeshGroup) and
+    // forget their identities. Called only on a genuine scene reset --
+    // NOT on every Scene.rebuildHistograms() call, which is the whole point
+    // (see state.js heatmapMeshGroup comment).
+    clearHeatmapMeshes: function() {
+      Scene.clearGroup(state.heatmapMeshGroup);
+      state.heatmapMeshes = {};
+    },
+
+    // Hide a persistent heatmap mesh without disposing/forgetting it -- used
+    // when a heatmap is conditionally not shown on a given rebuild (e.g. the
+    // surface-absorption heatmap when Aₛ=0 under non-uniform-domain modes).
+    hideFootprintHeatmap: function(key) {
+      const entry = state.heatmapMeshes[key];
+      if (!entry) return;
+      entry.mesh.count = 0;
+      entry.mesh.instanceMatrix.needsUpdate = true;
+    },
+
+    // Get (or lazily create) the persistent InstancedMesh for one footprint
+    // heatmap (key: 'refl' | 'trans' | 'surfAbs'), sized to hold at least
+    // `capacity` cells. Reused across every Scene.rebuildHistograms() call
+    // for the lifetime of the run/scene -- only reallocated on genuine grid-
+    // resolution growth (rare, user-driven via the "Footprint grid" input),
+    // never on the routine per-chunk cadence that rebuildHistograms() runs
+    // at. See state.js heatmapMeshGroup comment for why this matters: a mesh
+    // recreated on that cadence gets a fresh, ever-increasing three.js
+    // object id each time, which flips the ambiguous same-renderOrder
+    // transparent-object sort tie-break against other scene geometry
+    // (2026-07 user report: 3D view flashing dense/sparse during a live run,
+    // and continuing to toggle on periodic-boundary domains even after the
+    // analogous endpoint-marker-mesh fix).
+    _heatmapMeshFor: function(key, capacity) {
+      const existing = state.heatmapMeshes[key];
+      if (existing && existing.capacity >= capacity) {
+        return existing.mesh;
+      }
+      if (existing) {
+        state.heatmapMeshGroup.remove(existing.mesh);
+        existing.mesh.geometry.dispose();
+        // Material is the shared singleton (Scene._heatmapMaterial) -- never
+        // disposed here.
+      }
+      const geom = new THREE.BoxGeometry(1, 1, 1);
+      const mesh = new THREE.InstancedMesh(geom, Scene._heatmapMaterial(), capacity);
+      mesh.count = 0;
+      mesh.frustumCulled = false;   // cells span the whole domain
+      const alpha = new Float32Array(capacity);
+      const emis  = new Float32Array(capacity);
+      geom.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alpha, 1));
+      geom.setAttribute('instanceEmis',  new THREE.InstancedBufferAttribute(emis, 1));
+      state.heatmapMeshes[key] = { mesh, capacity };
+      state.heatmapMeshGroup.add(mesh);
+      return mesh;
     },
 
     // Add sphere markers at the surface plane for reflected/absorbed events.
@@ -417,8 +494,12 @@ export const Scene = {
     // incremental count grid ({nBins, counts: Float64Array(nBins*nBins)},
     // accumulated in SimStats). All non-empty cells render as a single
     // InstancedMesh (a shared unit box scaled per instance) — formerly one
-    // Mesh+geometry+material per cell (thousands of objects, rebuilt each refresh).
-    addFootprintHeatmap: function(foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
+    // Mesh+geometry+material per cell (thousands of objects, rebuilt each
+    // refresh), and until 2026-07 a fresh InstancedMesh rebuilt every refresh
+    // (see _heatmapMeshFor for why that mesh is now persistent/reused).
+    // `key` identifies which of the three heatmaps this is ('refl' | 'trans'
+    // | 'surfAbs') so its persistent mesh can be looked up across calls.
+    addFootprintHeatmap: function(key, foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
       if (!foot || !foot.counts) return;
       const nBins = foot.nBins;
       const counts = foot.counts;
@@ -442,17 +523,20 @@ export const Scene = {
       const reliefHeight = maxHeight ?? 2.8;
       const baseColor = new THREE.Color(color);
 
+      // Capacity is the full grid (nBins x nBins), not just the currently-
+      // populated nCells -- nCells only grows as a run progresses, and
+      // reallocating every time it crosses the previous capacity is exactly
+      // the churn this rewrite removes. nBins itself only changes on an
+      // explicit grid-resolution change (rare, user-driven).
+      const mesh = Scene._heatmapMeshFor(key, nBins * nBins);
+
       if (nCells > 0) {
         // Unit box scaled per instance by the instance matrix (cell footprint ×
         // bar height). Per-instance color/opacity/glow are filled below.
-        const geom = new THREE.BoxGeometry(1, 1, 1);
         const cw = Math.max(0.02, cellW * 0.92);
         const cd = Math.max(0.02, cellD * 0.92);
-        const mesh = new THREE.InstancedMesh(geom, Scene._heatmapMaterial(), nCells);
-        mesh.frustumCulled = false;   // cells span the whole domain
-
-        const alpha = new Float32Array(nCells);
-        const emis  = new Float32Array(nCells);
+        const alphaAttr = mesh.geometry.getAttribute('instanceAlpha');
+        const emisAttr  = mesh.geometry.getAttribute('instanceEmis');
         const m4 = new THREE.Matrix4();
         const col = new THREE.Color();
         const white = new THREE.Color(0xffffff);
@@ -476,20 +560,29 @@ export const Scene = {
             col.copy(baseColor).lerp(white, 0.18 + 0.45 * frac);
             mesh.setColorAt(i, col);
 
-            alpha[i] = 0.22 + 0.30 * frac;   // old per-cell opacity (see history below)
-            emis[i]  = 0.25 + 0.9 * frac;    // old emissiveIntensity
+            // AESTHETIC history: max opacity was lowered from (0.42 + 0.48*frac,
+            // peak 0.90) so the heatmap is more translucent and the endpoint
+            // dots show through. To REVERT, use 0.42 + 0.48 * frac below.
+            alphaAttr.array[i] = 0.22 + 0.30 * frac;   // old per-cell opacity
+            emisAttr.array[i]  = 0.25 + 0.9 * frac;    // old emissiveIntensity
             i++;
           }
         }
-        // AESTHETIC history: max opacity was lowered from (0.42 + 0.48*frac, peak
-        // 0.90) so the heatmap is more translucent and the endpoint dots show
-        // through. To REVERT, set alpha[i] back to 0.42 + 0.48 * frac.
-        geom.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alpha, 1));
-        geom.setAttribute('instanceEmis',  new THREE.InstancedBufferAttribute(emis, 1));
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        state.histogramGroup.add(mesh);
+        alphaAttr.needsUpdate = true;
+        emisAttr.needsUpdate = true;
       }
+
+      mesh.count = nCells;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      // No computeBoundingSphere() call -- mesh.frustumCulled is false above
+      // (cells span the whole domain), so it's never needed for culling, and
+      // calling it on every rebuild turned out to be the actual remaining
+      // cause of a flashing/toggling symptom (see the matching comment in
+      // photons.js's _ensureEndpointMesh for the full account): recomputing
+      // it changes the mesh's centroid every call even once its identity is
+      // stable, and that recomputed value was flipping the transparent-
+      // object paint-order tie-break against other scene geometry.
 
       // Outline frame so the heatmap domain boundary is visually clear.
       const zFrame = isTop ? zPlane + 0.01 : zPlane - 0.01;

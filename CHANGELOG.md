@@ -6,6 +6,71 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (sunward ground-illumination asymmetry under Uniform domain, open boundary, user report)
+
+- User report: at open-boundary uniform_domain illumination, COT=10, Θ₀=60°, M=2, almost
+  no surface-absorption events landed on the sunward side of the cloud, though both
+  lateral sides were well populated, and periodic boundary at the same settings showed no
+  such asymmetry. A COT=1 vs. COT=10 comparison at the same Θ₀/M (user's own diagnostic
+  run) showed the asymmetry present at COT=10 but absent at COT=1, correctly narrowing
+  the cause to something scaling with τ_cloud itself.
+- Root cause: `world.slabH = world.tauCloud` (a rendering convention: 1 τ maps to 1 world
+  unit vertically) combines with `sampleEntryPoint`'s fixed τ=0 "cloud-top = TOA" launch
+  reference so that a photon which never touches the cloud still falls the full
+  `τ_cloud + β_ext·surfaceDistanceKm` optical depth before reaching the ground, drifting
+  `(τ_cloud + β_ext·surfaceDistanceKm)·tanΘ₀` downwind in the process. Because this throw
+  scales with τ_cloud, a thicker cloud silently increases it for every launched photon —
+  even ones nowhere near the cloud — against the fixed M·W sampling domain, so the
+  domain's sunward edge progressively loses ground coverage as τ_cloud grows. Verified
+  quantitatively: the closed-form prediction for the minimum reachable sunward landing
+  position matched observed values to 2 decimal places across τ_cloud ∈
+  {0.001, 2, 5, 10, 20}; at the user's exact reported settings the true sunward margin
+  (2.6 km) exceeded the available buffer (2.0 km) by 0.6 km, reproducing the reported
+  gap.
+- Periodic boundary needed no change — confirmed by reading
+  `Physics.wrapAndFindBoxEntry`, not just by re-checking the empirical report: the
+  τ_cloud-scaling part of the throw is already absorbed exactly by wraparound (a
+  uniformly-shifted uniform distribution, wrapped modulo the domain width, is itself
+  exactly uniform — no edge to lose coverage against).
+- Fix (`js/physics.js`, `sampleEntryPoint`'s `uniform_domain` branch): the τ=0
+  sampling window's sunward (-x) bound is now *extended* by
+  `margin = (tauCloud + betaExt*surfaceDistanceKm) * tan(theta0)`, leaving the leeward
+  (+x) bound unchanged at `M*halfW`. Extending (rather than shifting both bounds, an
+  alternative design discussed and checked numerically against the user's own worked
+  example) avoids retreating the leeward bound into the cloud's own footprint, which
+  would silently under-sample the cloud's own leeward-top face for large-margin cases.
+  Zero shift applied under periodic boundary (see above). y is unaffected (no lateral
+  throw in y in this model's slant geometry).
+- `js/ui.js`: `UI.getMinDomainFactor()` corrected to include the previously-missing
+  `β_ext·surfaceDistanceKm` surface-gap term (was `1 + 2*(tauCloud/W)*tan(theta0)`, now
+  `1 + 2*(tauCloud + betaExt*surfaceDistanceKm)/W * tan(theta0)`) — the old formula
+  under-flagged cases where the surface gap contributed a non-trivial share of the true
+  margin (e.g. the user's reported case: old M_min=1.87 never fired against M=2, though
+  M=2 was already insufficient; corrected M_min=2.30 correctly flags it). New
+  `UI.getEffectiveDomainFactor()` auto-clamps M up to the corrected M_min at run time
+  (superseding the prior warn-only design for the domain-factor minimum), writes the
+  raised value back to the `domainFactor` input, and surfaces a transient note via
+  `showLimitWarning()`. `RunControl.getSimParams()` now calls this instead of
+  `UI.getDomainFactor()` directly. The live `#domainMarginWarning` banner is kept
+  (now informational rather than an alarm, since runs self-correct) and is now also
+  recomputed on `cloudBetaExt`/`surfaceDistanceKm` change (`index.html`), since M_min
+  depends on them now.
+- Scope: only `uniform_domain` + open boundary touched. All three legacy launch modes
+  and periodic boundary are provably unaffected (no code path change reaches them).
+  Golden regression: `gen_golden.mjs` (legacy) and `check_golden_periodic.mjs` both
+  exact-match, unchanged. `check_golden_ud.mjs` (open-boundary uniform_domain) required a
+  new baseline — Θ₀=0° rows are byte-identical to the old snapshot (tan(0)=0, zero shift,
+  confirming the fix is precisely scoped), Θ₀=60° rows changed at every M/A_s tested.
+  Direct re-check of the user's reported case: minimum sunward `xExit` for clear-direct
+  surface-absorbed photons now reaches exactly the true domain edge (-40.00, was -14.02).
+  Domain-wide budget shift for the same case (A_s=0, all_faces): R_domain 0.1650 → 0.1250,
+  T_domain 0.8350 → 0.8750 (expected direction: previously-missing sunward-direct-to-
+  ground photons dilute the reflected fraction and raise the transmitted fraction). New
+  `golden_ud_v6.0-phase2.json` baseline reviewed and signed off by the user before
+  committing. Full derivation and the design alternatives considered/ruled out are in
+  `TODO-direct-surface-illumination.md`, "Sunward ground-illumination asymmetry /
+  TOA-altitude coupling".
+
 ### Fixed (endpoint-marker density/brightness depended on "Endpoint caps shown" slider history, user report)
 
 - `Photons._ensureEndpointMesh()` in `photons.js` only ever grew the endpoint
@@ -37,6 +102,150 @@ All notable changes to this project are documented here. The format is based on
 - Scope: rendering-only change in `photons.js`; does not touch `physics.js`
   or `simstats.js`. All three golden regression suites (legacy, uniform-
   domain open, uniform-domain periodic) still pass exact-match, as expected.
+- Follow-up (same day): the above did not fully resolve the symptom. Four
+  further exports of the identical completed run at cap=5000/6000/7500/16000
+  (slider only ever raised, never lowered, so every step reallocates the
+  mesh cleanly under the fix above) showed a non-monotonic, seemingly
+  toggling dense/sparse/dense/sparse pattern uncorrelated with cap magnitude
+  -- ruling out both the capacity-reuse theory above and a data/count
+  explanation (a strictly increasing `shown` cannot produce a sparser render
+  than a smaller one under `syncEndpointMesh()`'s logic). Root cause
+  isolated to three.js's automatic transparent-object paint-order sort: at
+  equal `renderOrder` (the default, unset, for every object in the scene),
+  ties are broken by each object's own `matrixWorld` origin distance to
+  camera -- not by instance positions or bounding volume -- so the endpoint
+  InstancedMesh (whose own local origin never moves) has no principled,
+  stable ordering relative to the translucent cloud/surface/heatmap
+  geometry it overlaps. Fix: `mesh.renderOrder = 1` set on the endpoint mesh
+  in `_ensureEndpointMesh()` (all other scene objects remain at the default
+  0), forcing markers to always paint after -- i.e. on top of -- that
+  geometry, deterministically, regardless of camera distance or any prior
+  slider/cap history. Golden suites re-verified exact-match after this
+  change as well.
+- Second follow-up (same day): renderOrder=1 fixed the toggle but also
+  removed the soft "seen through the translucent cloud" look markers
+  previously had most of the time (user feedback: always-on-top markers are
+  "too distracting"). scene.js's cloud box/top/bottom faces and surface
+  plane all already use depthWrite:false at the scene-wide default
+  renderOrder (0) -- the original softening came from THAT geometry
+  painting over the markers, which only stopped happening reliably once the
+  endpoint mesh's tie-breaking began flipping unpredictably. Changed
+  `mesh.renderOrder` from 1 to -1: markers now always draw BEFORE the
+  cloud/surface geometry instead of after, so that geometry consistently
+  paints over (softens) any marker under its on-screen footprint, restoring
+  the original look, while remaining fully deterministic (renderOrder still
+  always wins over the ambiguous distance-tie that caused the original
+  toggle). Golden suites re-verified exact-match again.
+- Third follow-up (same day): renderOrder=-1 still wasn't quite
+  right -- it uniformly forces markers before *every* translucent scene
+  layer (cloud box, top/bottom faces, surface plane, footprint heatmap
+  cells), not just the one or two a given marker actually sits behind, so
+  markers under multiple stacked layers (e.g. green cloud-base-crossing
+  markers inside the cloud box's full 3D volume) got compounded/over-
+  attenuated to near invisibility, and surface markers picked up a visible
+  color shift from the footprint-heatmap layer now reliably painting over
+  them (user report: remaining visible endpoints looked "more like orange
+  ... than red surface absorption"). Root issue with renderOrder pinning:
+  it's a global override, blunter than the original per-object distance
+  sort it replaced. Real fix: address the actual instability (recreating
+  the mesh on every capacity change gives it a fresh, ever-increasing
+  THREE.Object3D id each time, which is what flipped the ambiguous
+  distance-tie unpredictably) instead of overriding the sort outright.
+  `_ensureEndpointMesh()` now allocates the InstancedMesh ONCE per run, at
+  the full fixed `ENDPOINT_BUFFER_MAX` (20000) capacity, and reuses that
+  same mesh object for the rest of the run regardless of slider changes --
+  only `mesh.count` (and the per-instance data for the currently-shown
+  window) changes per sync; the mesh's identity, and hence its tie-break
+  outcome against other scene geometry, never does. `renderOrder` is no
+  longer set at all, restoring the scene's original natural sort order
+  exactly as it was before any of today's endpoint-rendering fixes. Golden
+  suites re-verified exact-match a third time.
+- Fourth follow-up (same day, final): stabilizing the endpoint mesh's
+  identity fixed its half of the problem, but the user then reported (a)
+  high-frequency flashing between dense/sparse renderings *during a live
+  run* (not just when touching the cap slider on a completed run), and (b)
+  continued toggling under periodic-boundary domains specifically.
+  `Scene.rebuildHistograms()` (scene.js) was the other offender: it calls
+  `Scene.clearGroup(state.histogramGroup)` and rebuilds the three footprint-
+  heatmap InstancedMeshes (reflected/transmitted/surface-absorbed) from
+  scratch on every call -- the same destroy-and-recreate-every-refresh
+  pattern already diagnosed and fixed for the endpoint mesh -- and
+  `rebuildHistograms()` fires periodically *during* a run (every
+  `DISPLAY_EVERY_CHUNKS` chunks in `runControl.js`'s `runInstantBatch`
+  loop), not just once at the end. Each heatmap-mesh recreation got a fresh,
+  ever-increasing id, flipping the same ambiguous transparent-sort tie-break
+  against the (now-stable) endpoint mesh on that live cadence -- explaining
+  both the in-run flashing and the still-present periodic-domain toggle.
+  Fix: introduced `state.heatmapMeshGroup`, a scene-level sibling of
+  `histogramGroup` (added in `runControl.js`'s init, cleared only on a
+  genuine `resetScene()` via new `Scene.clearHeatmapMeshes()`) holding three
+  persistent InstancedMeshes, one per heatmap, each sized to its full grid
+  (`nBins x nBins`) rather than only the currently-populated cell count.
+  `Scene.addFootprintHeatmap()` now takes a `key` ('refl' | 'trans' |
+  'surfAbs') and reuses/rewrites its mesh via new `Scene._heatmapMeshFor()`
+  instead of allocating a new one every rebuild -- only `mesh.count` and the
+  populated-cell instance data change per call; the mesh's identity never
+  does, and is only reallocated on genuine grid-resolution growth (a rare,
+  user-driven change, not part of the routine per-chunk rebuild cadence).
+  New `Scene.hideFootprintHeatmap()` sets a heatmap's mesh count to 0
+  (rather than skip building it) when a rebuild's conditions mean it
+  shouldn't currently be shown (e.g. the surface heatmap toggled off),
+  preserving its identity for if/when it's shown again. `histogramGroup`
+  itself is still cleared and rebuilt every call as before, for the
+  lighter-weight per-call content that remains in it (frame outlines,
+  surface-interaction marker spheres). Golden suites re-verified exact-match
+  a fourth time (this change touches only scene.js/state.js/runControl.js,
+  not physics.js/simstats.js).
+- Fifth follow-up (same day, root cause): stabilizing BOTH the endpoint- and
+  heatmap-mesh identities did not stop the flashing/toggling -- user report:
+  live-run flashing persisted, and the completed-run cap-slider toggle
+  persisted identically in open AND periodic domains. This was the decisive
+  falsification of the identity-churn theory: `RunControl.
+  refreshEndpointDisplay()` (the cap slider's oninput handler) only ever
+  touches the endpoint mesh, never calls `Scene.rebuildHistograms()`, and by
+  this point the endpoint mesh's identity never changes -- yet the toggle
+  still occurred on every slider adjustment. The one remaining thing both
+  meshes' sync paths still recomputed on every single call (every chunk
+  during a live run, every slider tick on a completed run) was the explicit
+  `mesh.computeBoundingSphere()` added in the original two fixes above, to
+  keep frustum culling accurate after instance updates. That recompute
+  changes the mesh's centroid every time even when its identity is stable,
+  and that changing centroid -- not a changing id -- is what was flipping
+  the transparent-object paint-order tie-break against other scene geometry
+  on every sync. Fix: removed both `computeBoundingSphere()` calls entirely
+  and set `mesh.frustumCulled = false` on the endpoint mesh (in
+  `photons.js`'s `_ensureEndpointMesh`), matching the footprint-heatmap
+  meshes, which already used this exact pattern for the same reason ("cells
+  span the whole domain") and were never the ones calling
+  computeBoundingSphere until this session's earlier fix added it to them
+  too. Golden suites re-verified exact-match a fifth time.
+- Sixth follow-up (same day, final): the flashing/toggling was gone, but the
+  user reported periodic-boundary domains consistently rendered the "dense"
+  (unsoftened) look while open boundary consistently rendered the desired
+  "sparse" one -- stable now, not flickering, but still wrong, and different
+  per domain type. Explanation: every relevant object (endpoint mesh, cloud
+  box/top/bottom faces, ground plane, heatmap meshes) sits at an identical,
+  never-translated matrixWorld origin -- their real spatial extent lives
+  entirely in instance/vertex data, not the object's own transform -- so the
+  natural transparent-object sort is an exact tie among all of them, broken
+  only by object id (creation order). Open and periodic domains construct
+  their scenes via slightly different call sequences, so they land on
+  opposite, internally-consistent sides of that tie. Fix: an explicit
+  3-tier `renderOrder`, replacing reliance on creation order entirely.
+  Ground plane and footprint-heatmap meshes stay at the default (0);
+  `photons.js`'s endpoint mesh is now `renderOrder = 1`; `scene.js`'s cloud
+  box, top face, and bottom face (the cloud volume specifically -- NOT the
+  ground/surface plane) are now `renderOrder = 2`. Net paint order: ground/
+  heatmap first, so markers are always clearly visible and untinted on top
+  of them (matching every case where that already looked right); markers
+  next; the cloud volume last, so it consistently -- and only -- softens
+  whatever marker or heatmap cell happens to fall under its on-screen
+  footprint. This sidesteps both earlier renderOrder attempts' failure
+  modes (pinning markers uniformly before everything caused heatmap
+  tinting; uniformly after removed the cloud's softening entirely) by
+  putting markers in an explicit middle tier instead. Deterministic
+  regardless of domain type, camera position, or object creation order.
+  Golden suites re-verified exact-match a sixth time.
 
 ### Fixed (periodic-boundary photon paths silently dropped from the 3D view, user report)
 
