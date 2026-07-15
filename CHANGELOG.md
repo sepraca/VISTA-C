@@ -70,6 +70,27 @@ All notable changes to this project are documented here. The format is based on
   committing. Full derivation and the design alternatives considered/ruled out are in
   `TODO-direct-surface-illumination.md`, "Sunward ground-illumination asymmetry /
   TOA-altitude coupling".
+- Follow-up (same session, test-suite and figure sweep): `tests/review-harness/verify_phase4.mjs`'s
+  "UD M=1 ≡ legacy top" gate started failing at Θ₀=60° — a real, expected consequence of
+  the fix, not a false alarm. The sunward extension in `sampleEntryPoint` is applied
+  unconditionally (independent of M), so at M=1 (τ_cloud=10, Θ₀=60°, defaults) roughly 40%
+  of launches now fall outside the cloud's own footprint, where previously 0% did —
+  meaning the "M=1 reproduces legacy top bit-for-bit at any Θ₀" invariant only ever held
+  because the pre-fix code had no sunward-margin mechanism at all. Since Θ₀=60°/M=1 is
+  well below the corrected M_min (~2.3) — exactly the regime `getEffectiveDomainFactor()`
+  now auto-raises before a real UI-driven run ever reaches `physics.js` — this divergence
+  is expected and correct, the same category of correction as the earlier "M=1 reproduces
+  top+side" gate fix (see TODO, "core knob: domain factor"). Gate 5 now tests at Θ₀=0
+  (margin=0, still holds exactly, unaffected by the fix) with an explanatory comment; all
+  13 Phase 4 gates pass. Also regenerated the stale `tests/Illumination comparisons/`
+  artifacts that embed open-boundary uniform_domain data at Θ₀=60°: `uniform_domain_M4_As0.5_
+  {geomB,open}_theta0=60.json` and the four dependent PNGs
+  (`illumination_comparison_UD_M4_As0.5_{geomB,entireDomain}_theta0=60.png` and
+  `illumination_comparison_periodic_M4_As0.5_{geomB,entireDomain}_theta0=60.png`, the
+  latter since they use the open-boundary export as their "file A"). Θ₀=0° counterparts
+  regenerated too and confirmed byte-identical to the pre-fix files (sanity check that the
+  fix is precisely scoped). `verify_phase3.mjs` (periodic gates) and all three golden
+  suites re-verified passing after every change in this follow-up.
 
 ### Fixed (endpoint-marker density/brightness depended on "Endpoint caps shown" slider history, user report)
 

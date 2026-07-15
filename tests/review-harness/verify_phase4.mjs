@@ -84,14 +84,39 @@ domValues.observationGeometry = "top-base_faces";
 }
 
 // ---- Gate 5: UD M=1 ≡ legacy top — identical N_top and identical BRF ----
-run({ ...P0, theta0: 60 * Math.PI / 180, surfaceAlbedo: 0.5, entryMode: "top" }, 200000);
+// 2026-07 correction: this equivalence only holds when theta0=0. It used to
+// also hold at theta0=60 (tested here originally) because the pre-fix
+// sampleEntryPoint's uniform_domain branch sampled x over exactly
+// [-halfW*M, +halfW*M] with no further adjustment -- at M=1 that window IS
+// the cloud's own top face, so every launch landed exactly on the box and
+// the clear/wall resolution branch in simulatePhoton was never reached,
+// reproducing legacy "top" bit-for-bit at ANY theta0. The sunward
+// ground-illumination-asymmetry fix (see TODO-direct-surface-illumination.md,
+// "Sunward ground-illumination asymmetry / TOA-altitude coupling", and
+// CHANGELOG [Unreleased]) extends that window's sunward bound by
+// (tauCloud + betaExt*surfaceDistanceKm)*tan(theta0), UNCONDITIONALLY,
+// regardless of M -- so at theta0=60, M=1 now launches ~40% of photons
+// outside the cloud's own footprint (verified directly), genuinely differing
+// from legacy "top". This is expected and correct post-fix: M=1 combined
+// with theta0>0 is exactly the "M below the corrected M_min" case the fix
+// targets (M_min(60deg) here is ~2.3, well above 1), which the UI's
+// getEffectiveDomainFactor() auto-clamp now raises before a real run ever
+// reaches physics.js -- this harness calls Physics.simulatePhoton directly,
+// bypassing that clamp, so it can (correctly) observe the raw physics
+// diverging here. Same category of correction as the earlier
+// "M=1 reproduces top+side" gate fix in TODO's "core knob" section -- an
+// invariant that was true only under an earlier, incomplete physics
+// understanding. Testing at theta0=0 instead: margin = 0 there
+// (tan(0)=0), so the window is unchanged from the pre-fix formula and the
+// equivalence still holds exactly, unaffected by the fix.
+run({ ...P0, theta0: 0, surfaceAlbedo: 0.5, entryMode: "top" }, 200000);
 const topBrf = gridVals(BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(),
                { nRef: SimStats.nTopIncident(), sidesIncluded: false }));
 const topNtop = SimStats.nTopIncident();
-run({ ...P0, theta0: 60 * Math.PI / 180, surfaceAlbedo: 0.5, entryMode: "uniform_domain", domainFactor: 1 }, 200000);
+run({ ...P0, theta0: 0, surfaceAlbedo: 0.5, entryMode: "uniform_domain", domainFactor: 1 }, 200000);
 const udBrf = gridVals(BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(),
               { nRef: SimStats.nTopIncident(), sidesIncluded: false }));
-check("UD M=1 ≡ legacy top: N_top identical and BRF grid bit-identical",
+check("UD M=1 ≡ legacy top at theta0=0 (margin=0): N_top identical and BRF grid bit-identical",
       SimStats.nTopIncident() === topNtop && eq(topBrf, udBrf));
 
 // ---- Gate 6: the anticipated physics — UD M=4, Θ₀=0, Aₛ=0.5 BRF exceeds
