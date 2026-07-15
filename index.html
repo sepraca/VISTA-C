@@ -474,10 +474,10 @@
     <input id="surfaceAlbedo" type="number" value="0.00" min="0" max="1" step="0.01" onblur="UI.getSurfaceAlbedo(); Scene.buildCloudBox()">
 
     <label>Cloud β<sub>ext</sub> (km⁻¹)</label>
-    <input id="cloudBetaExt" type="number" value="10.0" min="0.001" max="1000" step="0.1" onblur="UI.getCloudBetaExt(); Scene.buildCloudBox()">
+    <input id="cloudBetaExt" type="number" value="10.0" min="0.001" max="1000" step="0.1" onblur="UI.getCloudBetaExt(); Scene.buildCloudBox(); UI.updateDomainMarginWarning()">
 
     <label>Cloud-base to surface (km)</label>
-    <input id="surfaceDistanceKm" type="number" value="0.50" min="0" max="20" step="0.05" onblur="UI.getSurfaceDistanceKm(); Scene.buildCloudBox()">
+    <input id="surfaceDistanceKm" type="number" value="0.50" min="0" max="20" step="0.05" onblur="UI.getSurfaceDistanceKm(); Scene.buildCloudBox(); UI.updateDomainMarginWarning()">
 
     <div class="group-head">Plot</div>
 

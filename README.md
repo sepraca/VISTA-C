@@ -90,11 +90,29 @@ where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-o
   that already hits the cloud, not what a satellite pixel or model grid cell sees over
   cloud plus bright clear sky. Cloud fraction **f_c = 1/M²** is reported alongside M — note
   M is a **1D** (linear) scaling and f_c is **2D** (areal): M = 2 means f_c = 0.25, not
-  "half the cloud fraction." A live warning banner appears if M is smaller than the
-  minimum needed to fully capture direct sunward-wall illumination at the current
-  Θ₀/τ_cloud/horizontal-extent combination (M_min = 1 + 2·(τ_cloud/W)·tanΘ₀). A
-  selectable **Domain boundary** control (**open/isolated** or **periodic**, tiled
-  cloud field) governs what lies beyond the launch margin — see next.
+  "half the cloud fraction." A selectable **Domain boundary** control (**open/isolated**
+  or **periodic**, tiled cloud field) governs what lies beyond the launch margin — see
+  next.
+
+  **What "uniform" means here, precisely** *(2026-07 fix — see
+  [CHANGELOG](CHANGELOG.md))*: the surface should receive illumination that is exactly
+  uniform over the full M·W × M·W domain, absent the cloud — the cloud shadows what it
+  physically shadows (and nothing more), regardless of the cloud's own optical thickness
+  τ_cloud. Because launch happens at a fixed reference (cloud-top, τ=0) and the ground
+  sits `τ_cloud + β_ext·d_sfc` optical depths below it, a clear-sky photon's ballistic
+  sideways drift before reaching the ground grows with τ_cloud — so a naively symmetric
+  M·W launch window silently loses sunward-side ground coverage as the cloud gets
+  optically thicker, independent of M (an under-open-boundary-only bug, since periodic
+  tiling absorbs this drift exactly via wraparound and needs no correction). The fix
+  widens the launch window's sunward edge only (never the leeward edge, which stays at
+  the cloud's own footprint boundary) by exactly this drift, so ground illumination is
+  uniform over the full domain for any τ_cloud/Θ₀/M combination, open boundary included.
+  Practically: **open-boundary uniform_domain runs now auto-raise M** to the minimum that
+  keeps this true for the current Θ₀/τ_cloud/β_ext/d_sfc/W combination
+  (M_min = 1 + 2·(τ_cloud + β_ext·d_sfc)/W · tanΘ₀ — corrected to include the
+  previously-missing surface-gap term), with a note shown when this happens; the live
+  `#domainMarginWarning` banner remains as an informational preview of what will change
+  before you run.
 
 #### Domain boundary: open/isolated vs. periodic (v6.0.2)
 
@@ -301,7 +319,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
 | Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain (v6.0.2, see above) | Centered |
-| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination | 4 |
+| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination. Open boundary: auto-raised at run time to the minimum needed for uniform sunward ground illumination at the current Θ₀/τ_cloud/β_ext/d_sfc/W (2026-07 fix, see above and [CHANGELOG](CHANGELOG.md)) | 4 |
 | Domain boundary | Open/isolated or periodic (tiled cloud field); shown only for Uniform domain illumination (v6.0.2, see above) | Open (isolated cloud) |
 | Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), or top/base/side faces / cloud element (b) | Cloud top/base faces only |
 | Reflected observation pixel fraction (f_pix) | Centered observation pixel width = f_pix × cloud width; at f_pix < 1 the **Reflected** μ/BRF panels restrict to top-face exits inside the pixel (transmitted panels unaffected; disabled for Centered illumination; a sparse-statistics warning appears below ~2 counts/bin). **Deferred application**: the pixel is fixed per run, so editing the input never clears a finished run — the new value is marked *pending* in the stats panel and takes effect at the next Launch Ensemble/Reset; panels and exports always describe the value the run was accumulated with. The pixel **view** renders only under Obs geometry "cloud top/base faces only" — a planar pixel is well-posed on the flat top face only; under "top/base/side faces" the standard side-inclusive view shows instead, and toggling the dropdown swaps between the two without a re-run (the pixel accumulators fill regardless) | 1.00 (whole face) |

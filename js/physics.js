@@ -269,7 +269,8 @@ export const Physics = {
     //                          for the M_min margin needed so the domain doesn't
     //                          under-sample direct sunward-wall illumination.
     sampleEntryPoint(params) {
-      const { entryMode, slabW, slabD, tauCloud, theta0, domainFactor } = params;
+      const { entryMode, slabW, slabD, tauCloud, theta0, domainFactor,
+              domainBoundary, betaExt, surfaceDistanceKm } = params;
       const halfW = slabW / 2, halfD = slabD / 2;
 
       if (entryMode === EntryMode.TOP || entryMode === EntryMode.TOP_SIDE) {
@@ -293,7 +294,48 @@ export const Physics = {
         // coincident with cloud-top height -- there is no clear-air optical
         // depth above the cloud in this model). Whether this point lands on
         // the cloud or in the clear region is resolved in simulatePhoton.
-        return { x: (RNG.rand() - 0.5) * slabW * M, y: (RNG.rand() - 0.5) * slabD * M, tau: 0 };
+        //
+        // Sunward sampling-window shift (2026-07 fix, open boundary only --
+        // see TODO "Sunward illumination asymmetry / TOA-altitude coupling").
+        // A photon that never touches the cloud still falls the FULL
+        // (tauCloud + betaExt*surfaceDistanceKm) optical depth from cloud-top
+        // (tau=0, the fixed launch reference) to the true surface, drifting
+        // sunwardMargin = that depth * tan(theta0) downwind before it lands.
+        // Because world.slabH = tauCloud (rendering convention: cloud-top
+        // altitude scales with the cloud's own optical thickness), a thicker
+        // cloud silently increases this throw for EVERY launched photon, even
+        // ones that never come near the cloud -- without compensation, the
+        // fixed M*halfW domain loses sunward ground coverage as tauCloud
+        // grows (verified quantitatively: COT=10, theta0=60, M=2 gives a
+        // true margin of 2.6km against only a 2km buffer at default
+        // beta_ext/d_sfc). The fix extends (does not shift) the sunward (-x)
+        // sampling bound by this margin, leaving the leeward (+x) bound at
+        // its usual M*halfW: extending both bounds equally (a pure shift)
+        // would instead retreat the leeward bound INTO the cloud's own
+        // footprint for large-margin cases, silently dropping sample coverage
+        // of the cloud's own leeward-top face. UI.getEffectiveDomainFactor()
+        // auto-clamps M so this window is always wide enough that no such
+        // trade-off is needed. y is unaffected -- dir.y = 0, no lateral throw
+        // in y for this model's slant geometry.
+        //
+        // Periodic boundary gets NO shift (margin = 0): under wraparound,
+        // Physics.wrapAndFindBoxEntry already retests every tile the
+        // descending ray's horizontal throw crosses during its passage
+        // through the cloud's own tau range, so the tauCloud-dependent part
+        // of the throw is absorbed exactly, symmetrically, regardless of
+        // size (a constant shift of a uniform distribution, wrapped modulo
+        // the domain width, is itself exactly uniform -- there is no edge to
+        // lose coverage against). Shifting the launch window here would just
+        // relabel which tile a photon starts in, with no effect on the
+        // wrapped result, so it is skipped to keep periodic's RNG stream
+        // and golden snapshots unchanged.
+        const isPeriodic = domainBoundary === DomainBoundary.PERIODIC;
+        const sunwardMargin = isPeriodic ? 0
+          : (tauCloud + betaExt * surfaceDistanceKm) * Math.tan(theta0);
+        const xHalfSpan = halfW * M;
+        const xMin = -xHalfSpan - sunwardMargin;
+        const xMax = xHalfSpan;
+        return { x: xMin + RNG.rand() * (xMax - xMin), y: (RNG.rand() - 0.5) * slabD * M, tau: 0 };
       }
 
       // "center" (default): legacy single-point launch.

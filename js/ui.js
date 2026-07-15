@@ -96,24 +96,44 @@ export const UI = {
     getShowEntireDomainPlots: function() { return document.getElementById("showEntireDomainPlots")?.checked ?? false; },
 
     // Minimum domain factor that avoids under-sampling direct sunward-wall
-    // illumination: the domain must extend at least tau_cloud*tan(theta0)
-    // beyond the cloud edge on the upwind side (the "reservoir" of TOA points
-    // whose descending ray clips the sunward wall). Derived from
-    // M*halfW >= halfW + tauCloud*tan(theta0) => M >= 1 + 2*(tauCloud/slabW)*tan(theta0).
-    // Depends only on theta0 and the tauCloud/slabW ratio. See TODO, "The core
-    // knob: domain factor" for the full derivation and worked examples.
+    // illumination AND keeps ground illumination uniform over the M-domain
+    // regardless of tauCloud (2026-07 fix, see TODO "Sunward illumination
+    // asymmetry / TOA-altitude coupling"). The domain must extend at least
+    // (tau_cloud + beta_ext*d_sfc)*tan(theta0) beyond the cloud edge on the
+    // upwind side -- the FULL ballistic throw a photon experiences between
+    // cloud-top (tau=0, the launch reference) and the true surface, not just
+    // the tau_cloud portion. Derived from
+    // M*halfW >= halfW + (tauCloud + betaExt*d_sfc)*tan(theta0)
+    //   => M >= 1 + 2*(tauCloud + betaExt*d_sfc)/slabW * tan(theta0).
+    // Previously this omitted the beta_ext*d_sfc term entirely, which
+    // silently under-flagged cases where the surface gap contributed a
+    // non-trivial share of the total throw (e.g. tauCloud=10, theta0=60,
+    // default d_sfc=0.5km/betaExt=10 gave a true margin of 2.6km against a
+    // 2km buffer at M=2, but the old formula's M_min=1.87 never fired).
+    // See TODO, "The core knob: domain factor" for the full derivation and
+    // worked examples. RunControl.getSimParams()-equivalent margin is also
+    // used directly by Physics.sampleEntryPoint's sunward shift -- keep the
+    // two formulas' margin term in sync if either changes.
     getMinDomainFactor: function() {
       const tauCloud = UI.getTauCloud();
       const slabW    = UI.getHorizontalExtent();
       const theta0   = UI.getTheta0Rad();
-      return 1 + 2 * (tauCloud / slabW) * Math.tan(theta0);
+      const betaExt  = UI.getCloudBetaExt();
+      const dSfc     = UI.getSurfaceDistanceKm();
+      return 1 + 2 * (tauCloud + betaExt * dSfc) / slabW * Math.tan(theta0);
     },
 
     // Live, persistent warning (not the transient showLimitWarning banner):
     // shown whenever illumination = "uniform_domain" and the current M is
     // below getMinDomainFactor() for the current theta0/tauCloud/slabW. Call
     // after any change to photonEntry, domainFactor, domainBoundary, theta0,
-    // tauCloud, or hExtent.
+    // tauCloud, betaExt, surfaceDistanceKm, or hExtent.
+    //
+    // 2026-07: getEffectiveDomainFactor() now auto-clamps M up to
+    // getMinDomainFactor() at run time, so this box is informational (telling
+    // the user what will happen when they run) rather than a "please fix
+    // this" alarm -- kept because between runs the displayed M can be stale
+    // relative to a just-changed Θ₀/τ_cloud until the next run recomputes it.
     //
     // Open-boundary-only (CODE-REVIEW P2): under periodic tiling there is no
     // under-sampling to warn about -- a TOA point near the tile's leeward
@@ -131,11 +151,40 @@ export const UI = {
       const mMin = UI.getMinDomainFactor();
       const m    = UI.getDomainFactor();
       if (m < mMin - 1e-9) {
-        box.textContent = `M = ${m.toFixed(2)} is below M ≈ ${mMin.toFixed(2)}, the minimum needed at this Θ₀/τ_cloud/W to fully capture direct sunward-wall illumination. Sunward-wall illumination will be under-sampled; increase M for realistic behavior at this Θ₀.`;
+        box.textContent = `M = ${m.toFixed(2)} is below M ≈ ${mMin.toFixed(2)}, the minimum needed at this Θ₀/τ_cloud/W to keep sunward-side surface illumination uniform (open boundary). M will be raised to ${mMin.toFixed(2)} automatically when you run.`;
         box.style.display = "block";
       } else {
         box.style.display = "none";
       }
+    },
+
+    // Effective domain factor for a run: UI.getDomainFactor(), auto-clamped up
+    // to getMinDomainFactor() when illumination = uniform_domain and boundary
+    // = open (2026-07 fix -- see TODO "Sunward illumination asymmetry /
+    // TOA-altitude coupling"). Previously an under-sized M silently ran with
+    // sunward-side illumination under-sampled (verified: COT=10, Θ₀=60°,
+    // M=2, default β_ext/d_sfc gave a true margin of 2.6km against a 2km
+    // buffer, and the pre-fix M_min formula -- missing the β_ext*d_sfc term
+    // -- evaluated to 1.87, below M=2, so it never even warned). Writes the
+    // raised value back to the domainFactor input (same convention as
+    // _getClampedInput) and surfaces a transient note so the change is
+    // visible rather than silent. Periodic boundary is exempt -- no
+    // under-sampling to correct there (Physics.wrapAndFindBoxEntry already
+    // gives exact, tauCloud-independent uniform coverage via wraparound).
+    getEffectiveDomainFactor: function() {
+      const m = UI.getDomainFactor();
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN || UI.getDomainBoundary() === DomainBoundary.PERIODIC) {
+        return m;
+      }
+      const mMin = UI.getMinDomainFactor();
+      if (m < mMin - 1e-9) {
+        const el = document.getElementById("domainFactor");
+        if (el) el.value = mMin;
+        showLimitWarning(`Domain factor M raised from ${m.toFixed(2)} to ${mMin.toFixed(2)} -- the minimum needed at this Θ₀/τ_cloud/W to keep sunward-side illumination uniform (open boundary).`);
+        UI.updateDomainMarginWarning();
+        return mMin;
+      }
+      return m;
     },
 
     // Show/hide the domain-factor input row: only relevant when illumination
