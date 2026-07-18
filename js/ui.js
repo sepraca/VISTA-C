@@ -114,13 +114,30 @@ export const UI = {
     // worked examples. RunControl.getSimParams()-equivalent margin is also
     // used directly by Physics.sampleEntryPoint's sunward shift -- keep the
     // two formulas' margin term in sync if either changes.
+    //
+    // The raw margin term is factored out into getSunwardMargin() (2026-07)
+    // so the surface-heatmap/ground-plane rendering fix can share the exact
+    // same value (a third consumer, alongside this function and
+    // Physics.sampleEntryPoint) instead of risking a fourth hand-copied
+    // formula drifting out of sync.
     getMinDomainFactor: function() {
+      const slabW = UI.getHorizontalExtent();
+      return 1 + 2 * UI.getSunwardMargin() / slabW;
+    },
+
+    // The full ballistic sunward throw a photon experiences between cloud-top
+    // (tau=0, the launch reference) and the true surface: (tau_cloud +
+    // beta_ext*d_sfc)*tan(theta0). Meaningful only under Uniform domain +
+    // open boundary (see getMinDomainFactor above and Physics.sampleEntryPoint's
+    // sunward shift, which this exact term feeds); callers outside that
+    // context should treat it as not applicable rather than calling this
+    // unconditionally.
+    getSunwardMargin: function() {
       const tauCloud = UI.getTauCloud();
-      const slabW    = UI.getHorizontalExtent();
       const theta0   = UI.getTheta0Rad();
       const betaExt  = UI.getCloudBetaExt();
       const dSfc     = UI.getSurfaceDistanceKm();
-      return 1 + 2 * (tauCloud + betaExt * dSfc) / slabW * Math.tan(theta0);
+      return (tauCloud + betaExt * dSfc) * Math.tan(theta0);
     },
 
     // Live, persistent warning (not the transient showLimitWarning banner):

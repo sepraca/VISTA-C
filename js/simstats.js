@@ -17,7 +17,7 @@
 
 import { world } from './state.js';
 import { UI } from './ui.js';
-import { EntryMode, ObsGeom, DEFAULT_OBS_GEOM, Status } from './constants.js';
+import { EntryMode, ObsGeom, DEFAULT_OBS_GEOM, DomainBoundary, Status } from './constants.js';
 
 // Bin-layout constants (shared with bottomPanel.js).
 export const MU_BINS = 20;          // exit-angle histograms
@@ -195,6 +195,11 @@ export const SimStats = {
     // per run in reset() -- see surfaceFootFactor() and SURF_FACTOR_CAP above.
     // Never read live in _addSurfaceFootprint (that's the per-photon hot path).
     _surfFootFactor: SURFACE_FOOT_EXTENT,
+    // Leeward (+x) grid-extension and periodic-wrap flag (2026-07 rendering
+    // fix), both cached at reset() -- see surfaceFootMarginX() below. Never
+    // read live (UI.*) in _addSurfaceFootprint; that's the per-photon hot path.
+    _surfFootMarginX: 0,
+    _surfFootPeriodicWrap: false,
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -233,9 +238,44 @@ export const SimStats = {
     // direct clear-sky beam can reach. Reads UI -- safe to call from reset()/
     // ensureFootprintGrids() (both off the per-photon hot path), NOT from
     // _addSurfaceFootprint (cache the result in _surfFootFactor instead).
+    //
+    // Uses UI.getEffectiveDomainFactor() (2026-07 fix), not UI.getDomainFactor():
+    // the actual simulation (RunControl.getSimParams()) launches over the
+    // auto-clamped M (raised to getMinDomainFactor() at Θ₀>0, open boundary,
+    // when the typed M under-covers the sunward margin), so sizing this grid
+    // off the raw typed M under-covers the true landing extent by exactly the
+    // same amount -- invisible at Θ₀=0 (M_min=1) but clipping more of the real
+    // ground illumination as Θ₀ grows. See scene.js's updateWorld() for the
+    // matching fix to the rendered surface-plane geometry.
     surfaceFootFactor() {
       if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN) return SURFACE_FOOT_EXTENT;
-      return Math.min(SURF_FACTOR_CAP, Math.max(SURFACE_FOOT_EXTENT, UI.getDomainFactor()));
+      return Math.min(SURF_FACTOR_CAP, Math.max(SURFACE_FOOT_EXTENT, UI.getEffectiveDomainFactor()));
+    },
+
+    // Leeward (+x) grid-extension, Uniform domain + OPEN boundary only
+    // (2026-07 rendering fix; physics.js untouched by explicit user request --
+    // this only widens where the heatmap BINS/renders an already-computed
+    // landing position, it never alters a trajectory or consumes an RNG draw).
+    // The sunward-illumination fix (physics.js sampleEntryPoint) extends the
+    // LAUNCH window's sunward edge by exactly (tau_cloud + beta_ext*d_sfc)*
+    // tan(theta0) so the GROUND gets full coverage on that edge; every photon
+    // then drifts by this same margin before reaching the true surface, so a
+    // photon launched at the nominal leeward launch edge (+domainHalfW) lands
+    // at +domainHalfW + margin on the real ground. The grid (and the rendered
+    // surface plane, see scene.js updateWorld/buildCloudBox) were still sized
+    // symmetrically at +-domainHalfW, so this widens the leeward edge only to
+    // match, using the exact same UI.getSunwardMargin() term
+    // getMinDomainFactor() and Physics.sampleEntryPoint already share.
+    //
+    // Periodic gets 0 here -- see _surfFootPeriodicWrap below instead: its own
+    // (smaller) leeward overshoot comes only from the un-wrapped sub-cloud
+    // clear-air gap in physics.js's shared surfaceInteraction() closure, and
+    // by periodicity a landing past +domainHalfW is exactly equivalent to the
+    // same point translated back one domain-width -- wrapping the coordinate
+    // for display is correct, not widening the grid.
+    surfaceFootMarginX() {
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN || UI.getDomainBoundary() !== DomainBoundary.OPEN) return 0;
+      return UI.getSunwardMargin ? UI.getSunwardMargin() : 0;
     },
 
     // (Re)create footprint grids at the current UI resolution. Called on
@@ -276,14 +316,40 @@ export const SimStats = {
     // Landings beyond the grid (far side-wall leakage, or -- at capped M under
     // Uniform domain -- clear-direct landings past the cap) clamp to the
     // nearest edge cell, preserving direction rather than being dropped.
+    //
+    // 2026-07 rendering fix (display/binning only -- physics.js untouched):
+    //   Open boundary, Uniform domain: the grid's x-extent is widened on the
+    //     leeward (+x) side by _surfFootMarginX, matching the true asymmetric
+    //     ground footprint (flush on the sunward edge, overshooting on the
+    //     leeward edge by the same margin the sunward-illumination fix added
+    //     to the launch window -- see surfaceFootMarginX() above). No
+    //     coordinate transform needed: x bins directly into the wider grid.
+    //   Periodic boundary, Uniform domain: _surfFootMarginX is 0 (no widening
+    //     -- the true footprint is exactly the domain tile by construction),
+    //     but the raw landing x can still fall outside +-halfW because the
+    //     sub-cloud clear-air gap isn't itself wrapped by physics.js's
+    //     wraparound (that only covers the cloud-image tau range). Wrapping x
+    //     modulo the tile width here folds it back to its canonical-tile
+    //     equivalent for display -- correct by periodicity, and does not
+    //     touch physics.js, RNG, or any R/T/A/S count.
+    //   Everything else (legacy modes, y in every case -- dir.y=0 always, no
+    //     lateral throw): unchanged, reduces exactly to the pre-existing
+    //     symmetric behavior (_surfFootMarginX=0, _surfFootPeriodicWrap=false).
     _addSurfaceFootprint(x, y) {
       const f = SimStats.footSurfAbs;
       if (!f.counts) return;
       const n = f.nBins;
-      const extW = world.slabW * SimStats._surfFootFactor;
-      const extD = world.slabD * SimStats._surfFootFactor;
-      let ix = Math.floor(((x + extW / 2) / extW) * n);
-      let iy = Math.floor(((y + extD / 2) / extD) * n);
+      const halfW = world.slabW * SimStats._surfFootFactor / 2;
+      const halfD = world.slabD * SimStats._surfFootFactor / 2;
+      const extW = 2 * halfW + SimStats._surfFootMarginX;
+      const extD = 2 * halfD;
+      let xw = x;
+      if (SimStats._surfFootPeriodicWrap) {
+        const period = 2 * halfW;
+        xw = ((x + halfW) % period + period) % period - halfW;
+      }
+      let ix = Math.floor(((xw + halfW) / extW) * n);
+      let iy = Math.floor(((y + halfD) / extD) * n);
       ix = Math.max(0, Math.min(n - 1, ix));
       iy = Math.max(0, Math.min(n - 1, iy));
       f.counts[ix * n + iy]++;
@@ -324,6 +390,12 @@ export const SimStats = {
       // Cache the surface-absorption grid extent factor for the run (CODE-REVIEW
       // P6) — read once here, not per-photon; see surfaceFootFactor() above.
       SimStats._surfFootFactor = SimStats.surfaceFootFactor();
+      // Cache the leeward grid-extension and periodic-wrap flag for the run
+      // (2026-07 rendering fix) — read once here, not per-photon; see
+      // surfaceFootMarginX() above.
+      SimStats._surfFootMarginX = SimStats.surfaceFootMarginX();
+      SimStats._surfFootPeriodicWrap =
+        UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getDomainBoundary() === DomainBoundary.PERIODIC;
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};

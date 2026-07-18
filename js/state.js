@@ -53,10 +53,13 @@ export const state = {
 
 // Cloud geometry and optical properties (mutated by Scene.updateWorld).
 // domainW/domainD: full illumination-domain extent (M·W x M·D under "Uniform
-// domain" illumination; equal to slabW/slabD for legacy modes). Declared here
-// (not added dynamically in updateWorld) for shape stability/discoverability.
+// domain" illumination; equal to slabW/slabD for legacy modes). domainMarginX:
+// leeward (+x) ground-footprint overshoot beyond domainW under Uniform domain
+// + open boundary only (2026-07 rendering fix -- see Scene.updateWorld and
+// SimStats.surfaceFootMarginX()); zero otherwise. Declared here (not added
+// dynamically in updateWorld) for shape stability/discoverability.
 export const world = { tauCloud: 10, slabW: 40, slabD: 40, slabH: 10, zScale: 1,
-                       domainW: 40, domainD: 40 };
+                       domainW: 40, domainD: 40, domainMarginX: 0 };
 
 // Maximum endpoint sphere markers shown in the 3D view.
 export const DEFAULT_ENDPOINT_MARKERS = 6000;

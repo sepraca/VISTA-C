@@ -6,7 +6,7 @@ import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { SimStats } from './simstats.js';
 import { BottomPanel } from './bottomPanel.js';
-import { EntryMode } from './constants.js';
+import { EntryMode, DomainBoundary } from './constants.js';
 
 export const Scene = {
 
@@ -47,10 +47,42 @@ export const Scene = {
       // collapse to M=1, so domainW/domainD === slabW/slabD and rendering is
       // unchanged from before this was added. See TODO-direct-surface-
       // illumination.md, "Uniform domain" section, for the M·W domain definition.
+      //
+      // Uses getEffectiveDomainFactor() (2026-07 fix), not getDomainFactor():
+      // this function predates the sunward-illumination auto-clamp (M raised
+      // to getMinDomainFactor() for uniform_domain + open boundary whenever
+      // the typed M under-covers the sunward margin at Θ₀>0). Reading the raw,
+      // un-clamped M here left the rendered ground plane (and, via
+      // simstats.js's surfaceFootFactor(), the surface-absorption heatmap
+      // grid) narrower than the domain actually simulated by
+      // RunControl.getSimParams() -- invisible at Θ₀=0 (M_min=1, so the two
+      // factors agree) but increasingly wrong as Θ₀ grows and auto-clamping
+      // engages, clipping the true M·W ground illumination in both the plane
+      // geometry and the heatmap.
       const isUniformDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN;
-      const M = isUniformDomain ? UI.getDomainFactor() : 1;
+      const M = isUniformDomain ? UI.getEffectiveDomainFactor() : 1;
       world.domainW = M * L;
       world.domainD = M * L;
+
+      // Leeward (+x) ground-footprint overshoot, Uniform domain + OPEN
+      // boundary only (2026-07 rendering fix, physics.js untouched by
+      // request -- see SimStats.surfaceFootMarginX() for the full
+      // derivation). The sunward-illumination fix widens the LAUNCH
+      // window's sunward edge so the GROUND gets full coverage there, but
+      // every photon then drifts by this exact same margin
+      // ((tau_cloud + beta_ext*d_sfc)*tan(theta0)) before reaching the true
+      // surface -- so the true ground footprint is
+      // [-domainHalfW, +domainHalfW + margin], flush on the sunward side,
+      // overshooting on the leeward side by margin. The rendered surface
+      // plane (buildCloudBox below) widens by this amount and shifts right
+      // by margin/2 to match; the heatmap grid does the same via
+      // SimStats._surfFootMarginX. Zero for periodic (its own, smaller
+      // residual overshoot -- from the un-wrapped sub-cloud clear-air gap
+      // only -- is handled by wrapping the landing coordinate into the tile
+      // instead, see SimStats._addSurfaceFootprint) and for legacy modes
+      // (no domain concept to overshoot).
+      const isOpenUD = isUniformDomain && UI.getDomainBoundary() === DomainBoundary.OPEN;
+      world.domainMarginX = isOpenUD ? UI.getSunwardMargin() : 0;
     },
 
     // Reset state.camera to the default view position.
@@ -128,8 +160,15 @@ export const Scene = {
       // visually matches the M·W x M·D region photons are actually launched
       // over. For legacy modes domainW/domainD === slabW/slabD, so this is
       // pixel-identical to the pre-existing fixed-extent rendering.
+      //
+      // world.domainMarginX (2026-07 rendering fix, open boundary only) widens
+      // this plane on the leeward (+x) side to match the true, asymmetric
+      // ground footprint -- see Scene.updateWorld's domainMarginX comment.
+      // The plane geometry is built symmetric about its own origin, so the
+      // mesh is shifted +domainMarginX/2 to keep the sunward (-x) edge fixed
+      // at -domainW/2 while the leeward edge extends to +domainW/2 + margin.
       const surfaceAlbedo = UI.getSurfaceAlbedo();
-      const domainPlaneGeom = new THREE.PlaneGeometry(world.domainW, world.domainD);
+      const domainPlaneGeom = new THREE.PlaneGeometry(world.domainW + world.domainMarginX, world.domainD);
       const surfaceMat = new THREE.MeshBasicMaterial({
         color: surfaceAlbedo > 0 ? 0xa855f7 : 0x1f2937,
         transparent: true,
@@ -139,6 +178,7 @@ export const Scene = {
       });
       const surfacePlane = new THREE.Mesh(domainPlaneGeom, surfaceMat);
       surfacePlane.position.z = Coords.tauToZ(Coords.getSurfaceTau());
+      surfacePlane.position.x = world.domainMarginX / 2;
       state.cloudGroup.add(surfacePlane);
 
       const surfaceEdges = new THREE.EdgesGeometry(domainPlaneGeom);
@@ -149,6 +189,7 @@ export const Scene = {
       });
       const surfaceEdge = new THREE.LineSegments(surfaceEdges, surfaceEdgeMat);
       surfaceEdge.position.z = Coords.tauToZ(Coords.getSurfaceTau()) + 0.005;
+      surfaceEdge.position.x = world.domainMarginX / 2;
       state.cloudGroup.add(surfaceEdge);
 
       // When the surface domain is wider than the cloud (M>1), also outline the
@@ -331,30 +372,44 @@ export const Scene = {
       );
 
       // Surface-absorption heatmap: where photons are absorbed at the
-      // Lambertian surface. Shown whenever Aₛ>0 (any mode) OR under Uniform
-      // domain illumination even at Aₛ=0 (CODE-REVIEW P6) — the direct
-      // clear-sky beam still gets bookkept as a genuine surface-absorption
-      // event there (Aₛ=0 just means it doesn't reflect), and the resulting
-      // pattern shows the cloud's shadow, which is pedagogically useful in
-      // its own right. Grid extent is SimStats._surfFootFactor× the cloud
-      // extent (far/out-of-grid landings clamp to the edge cells) — cached at
-      // run start so it can track the domain factor M under Uniform domain
-      // instead of the legacy fixed 2× (see surfaceFootFactor() in
+      // Lambertian surface. Shown whenever the checkbox is on, for EVERY
+      // illumination mode and EVERY Aₛ (2026-07 fix -- previously gated on
+      // Aₛ>0 OR Uniform-domain illumination, CODE-REVIEW P6, which left the
+      // checkbox checked-but-silently-inert for the legacy modes at Aₛ=0; the
+      // P6 rationale -- "a black surface absorbs 100% of what reaches it, so
+      // the map still traces a genuine surface-absorption event, just with no
+      // reflection" -- makes no reference to illumination mode and applies
+      // exactly as well to center/top/top_side as to uniform_domain).
+      // SimStats._addSurfaceFootprint() is called from the SURFACE_ABSORBED
+      // branch in every mode regardless of Aₛ (see simstats.js record()), so
+      // footSurfAbs is always populated; this was purely a render-side gate,
+      // not a data-availability one. Grid extent is SimStats._surfFootFactor×
+      // the cloud extent (far/out-of-grid landings clamp to the edge cells) —
+      // cached at run start so it can track the domain factor M under Uniform
+      // domain instead of the legacy fixed 2× (see surfaceFootFactor() in
       // simstats.js); it rises UP from the surface plane. Relief matches the
       // reflected/base heatmaps (2.8) so all three share one height scale.
       // Trade-off: at a small sub-cloud gap (low d_sfc / β_ext) this can
       // overlap the base-crossing footprint in mid-gap — acceptable since
       // both are translucent. Light brown, geometry-independent.
-      if ((UI.getSurfaceAlbedo() > 0 || UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN) && UI.getShowSurfaceHeatmap()) {
+      if (UI.getShowSurfaceHeatmap()) {
+        // extentW widened by SimStats._surfFootMarginX (open boundary only,
+        // 2026-07 rendering fix) to match the true, leeward-overshooting
+        // ground footprint; offsetX shifts the grid to keep its sunward edge
+        // fixed while the leeward edge extends -- same offset formula as the
+        // surface-plane mesh in Scene.buildCloudBox (see SimStats.surfaceFootMarginX()
+        // for the full derivation). Zero margin (periodic/legacy) reduces
+        // exactly to the pre-existing symmetric behavior.
         Scene.addFootprintHeatmap(
           'surfAbs',
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
           0xc8a27a,
           true,
-          world.slabW * SimStats._surfFootFactor,
+          world.slabW * SimStats._surfFootFactor + SimStats._surfFootMarginX,
           world.slabD * SimStats._surfFootFactor,
-          2.8
+          2.8,
+          SimStats._surfFootMarginX / 2
         );
       } else {
         // Surface heatmap toggled off/not applicable this rebuild -- hide
@@ -499,7 +554,14 @@ export const Scene = {
     // (see _heatmapMeshFor for why that mesh is now persistent/reused).
     // `key` identifies which of the three heatmaps this is ('refl' | 'trans'
     // | 'surfAbs') so its persistent mesh can be looked up across calls.
-    addFootprintHeatmap: function(key, foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
+    // `offsetX` (2026-07 rendering fix, default 0): shifts the whole grid in
+    // world-space x without changing cell count/size -- used only by the
+    // 'surfAbs' heatmap under Uniform domain + open boundary, where extentW
+    // is asymmetrically widened on the leeward side (see
+    // SimStats.surfaceFootMarginX()) and the grid must shift by the same
+    // offsetX = margin/2 as the surface-plane mesh (Scene.buildCloudBox) so
+    // the two stay visually aligned.
+    addFootprintHeatmap: function(key, foot, zPlane, color, isTop, extentW, extentD, maxHeight, offsetX = 0) {
       if (!foot || !foot.counts) return;
       const nBins = foot.nBins;
       const counts = foot.counts;
@@ -549,7 +611,7 @@ export const Scene = {
 
             const frac = c / maxCount;
             const h = 0.045 + reliefHeight * frac;
-            const x = -halfW + cellW * (ix + 0.5);
+            const x = offsetX - halfW + cellW * (ix + 0.5);
             const y = -halfD + cellD * (iy + 0.5);
             const z = isTop ? zPlane + h / 2 : zPlane - h / 2;
 

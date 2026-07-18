@@ -424,7 +424,7 @@
     </select>
 
     <div id="domainFactorGroup" style="display:none">
-      <label style="padding-left: 10px">Domain factor M (domain width = M × cloud width)</label>
+      <label style="padding-left: 10px; color: #f7f44a">Domain factor M (domain width = M × cloud width)</label>
       <!-- Applied M = world.domainW / world.slabW (synced at every run start;
            this input is only reachable under Uniform-domain illumination). -->
       <input id="domainFactor" type="number" value="4" min="1" max="50" step="0.1" onblur="UI.updateDomainMarginWarning(); if (Math.abs(UI.getDomainFactor() - world.domainW / world.slabW) > 1e-12) RunControl.resetScene()">
@@ -432,7 +432,7 @@
     </div>
 
     <div id="domainBoundaryGroup" style="display:none">
-      <label style="padding-left: 10px">Domain boundary (Uniform domain only)</label>
+      <label style="padding-left: 10px; color: #f7f44a">Domain boundary (Uniform domain only)</label>
       <!-- Phase 3: open (isolated launch region) vs. periodic (the domain
            tiled infinitely in both horizontal directions -- a regular/broken
            cloud field, M doing double duty as the tile period). Same

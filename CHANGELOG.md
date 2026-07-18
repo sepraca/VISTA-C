@@ -6,6 +6,45 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (UI/rendering tweaks, physics.js untouched)
+
+- **Domain-factor auto-clamp not reflected in rendering:** `scene.js`'s `updateWorld()`
+  (rendered ground plane) and `simstats.js`'s `surfaceFootFactor()` (surface-absorption
+  heatmap grid) both sized themselves off the raw, typed `UI.getDomainFactor()` instead of
+  `UI.getEffectiveDomainFactor()` — the auto-clamped M that `RunControl.getSimParams()`
+  actually simulates with whenever Θ₀>0 (open boundary) needs a wider sunward margin than
+  the typed M provides. Invisible at Θ₀=0 (M_min=1, so the two agree) but increasingly
+  wrong as Θ₀ grows, clipping the true M·W ground illumination in both the 3D plane and the
+  heatmap. Both now use the effective factor.
+- **Surface-absorption heatmap checkbox inert at Aₛ=0 for legacy illumination modes:**
+  `Scene.rebuildHistograms()`'s render gate (`Aₛ>0 || uniform_domain`) left the checkbox
+  checked-but-silently-showing-nothing for center/top/top_side at Aₛ=0, even though
+  `SimStats._addSurfaceFootprint()` is populated unconditionally in every mode (a black
+  surface still genuinely absorbs 100% of what reaches it — the same reasoning already
+  applied to uniform_domain in the earlier P6 fix, just never extended to legacy modes).
+  Gate removed; the checkbox now works for every illumination mode.
+- **Surface heatmap/ground plane don't cover the true leeward ground footprint at Θ₀>0,
+  open boundary (rendering-only fix, no physics.js change):** the sunward-illumination fix
+  extends the *launch* window's sunward edge by `margin = (τ_cloud + β_ext·d_sfc)·tanΘ₀` so
+  the ground gets full coverage on that edge, but every photon then drifts by this same
+  margin before reaching the true surface — so the actual ground footprint is
+  `[-M·halfW, +M·halfW + margin]`, flush on the sunward side and overshooting by `margin`
+  on the leeward side. The rendered surface plane and the heatmap grid were both still
+  sized symmetrically at `±M·halfW`, leaving genuine surface-absorbed landings (visible as
+  endpoint markers) stranded outside the drawn box/grid. Both are now widened and shifted
+  on the leeward side by the same margin (`UI.getSunwardMargin()`, factored out of
+  `getMinDomainFactor()` for reuse). Periodic boundary needed a different fix: its own,
+  smaller residual overshoot comes from the sub-cloud clear-air gap only (not itself
+  subject to the periodic wraparound, which covers just the cloud-image τ range) — the
+  landing x is instead wrapped modulo the domain width into its canonical-tile equivalent
+  before binning, which by periodicity is exactly correct rather than an approximation.
+  Verified by direct simulation at the reported settings (UD, M=3, Θ₀=60°, τ=10, W=40,
+  β_ext=10, d_sfc=0.5): 20.5% of open-boundary surface-absorbed landings and 8.7% of
+  periodic landings fell outside the old symmetric grid; 0% fall outside after the fix.
+- **UD sub-menu labels not visually distinguished:** "Domain factor M" and "Domain
+  boundary" labels now render in the same yellow (`#f7f44a`) as the Reset button when
+  Illumination = Uniform domain (the only time they're shown at all).
+
 ### Refactored
 
 - **R3 (stats-panel/accumulation split):** moved all DOM/presentation code out of
