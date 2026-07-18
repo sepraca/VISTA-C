@@ -161,6 +161,12 @@ photon exit counts are aggregated, not the simulated trajectories. A user can se
 
 *(Prior to v6.0.0, a third choice, "Entire scene," folded the surface-reflected bypass into R as well, so S = 0 by definition — but the code had no way to launch surface-incident photons, so there was no physically meaningful observation it corresponded to. It has been removed as a selectable Observation geometry. Uniform domain illumination (v6.0.2, see above) now provides an always-shown, dropdown-independent **ENTIRE DOMAIN** report block instead, described next, which finally gives that whole-scene total a real physical source population to draw from.)*
 
+**See also**: [`docs/illumination-observation-geometry.pdf`](docs/illumination-observation-geometry.pdf) — a
+graphical reference table cross-referencing every Illumination-geometry × Observation-geometry
+combination (which panel/control is available vs. N/A under each, and how Final Outcome vs.
+Radiative Components each relate to the Observation-geometry dropdown), verified cell-by-cell
+against this codebase (2026-07-18).
+
 #### R/T/A component breakdown and the ENTIRE DOMAIN block
 
 A **"Show R/T/A components"** toggle (default off) expands R, T, and A each into their
