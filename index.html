@@ -82,7 +82,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #94a3b8;
+    color: #bacce6;
     margin-top: 6px;
     padding-top: 8px;
     border-top: 1px solid rgba(148, 163, 184, 0.35);
@@ -156,9 +156,9 @@
   /* Run-control accent colors: distinct at a glance, still readable against
      the blue button fill. Pause = light orange (temporary/reversible),
      Stop = light red (terminal), Reset = yellow (start-over). */
-  #pauseBtn { color: #fdba74; }
+  #pauseBtn { color: #ebb025; }
   #stopBtn  { color: #f87171; }
-  #resetBtn { color: #fde047; }
+  #resetBtn { color: #f7f44a; }
 
   .button-row {
     display: flex;
@@ -446,7 +446,7 @@
     </div>
 
     <label>Observation geometry</label>
-    <select id="observationGeometry" onchange="SimStats.updateDisplay()">
+    <select id="observationGeometry" onchange="StatsPanel.updateDisplay()">
       <option value="top-base_faces" selected>Cloud top/base faces only</option>
       <option value="all_faces">Cloud top/base/side faces (cloud element)</option>
     </select>
@@ -462,7 +462,7 @@
          cached when a run starts (Launch Ensemble / Reset both call
          SimStats.reset()). Until then the stats panel shows a "pending" note.
          The blur handler only clamps and refreshes the display. -->
-    <input id="pixelFraction" type="number" value="1.00" min="0.05" max="1" step="0.05" onblur="UI.getPixelFraction(); SimStats.updateDisplay()">
+    <input id="pixelFraction" type="number" value="1.00" min="0.05" max="1" step="0.05" onblur="UI.getPixelFraction(); StatsPanel.updateDisplay()">
 
     <label>HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
@@ -545,7 +545,7 @@
 
   <div class="component-checkbox-row">
     <label for="showDomainComponents">Show R/T/A components</label>
-    <input id="showDomainComponents" type="checkbox" onchange="SimStats.updateDisplay()">
+    <input id="showDomainComponents" type="checkbox" onchange="StatsPanel.updateDisplay()">
   </div>
 
   <div id="statsMain"></div>

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Refactored
+
+- **R3 (stats-panel/accumulation split):** moved all DOM/presentation code out of
+  `simstats.js` into a new `js/statsPanel.js`. `updateDisplay()`, `buildDomainBlockText()`,
+  and `buildComponentBreakdownText()` — along with the BottomPanel draw-callback wiring
+  (`setDrawPanelCallback`/`_drawPanelCallback`) — now live in `StatsPanel`; `simstats.js`
+  keeps only the `stats` accumulator, bin arrays, `reset()`/`record()`/`register*()`, and
+  the pure combiner functions (`rComponents`, `tComponents`, `reflectedMuBins`, etc.), with
+  zero remaining `document.*` references. `main.js`, `runControl.js`, `photons.js`, and
+  `index.html`'s inline `onchange`/`onblur` handlers now call `StatsPanel.updateDisplay()`
+  instead of `SimStats.updateDisplay()`; `window.StatsPanel` is exposed alongside
+  `window.SimStats`. Pure code-organization move — no change to RNG draws, physics, or
+  accumulated statistics. Verified bit-identical: legacy/UD/periodic golden snapshots and
+  the Phase 3 + Phase 4 gate suites all pass exact-match, unchanged from pre-refactor.
+
 ## [v6.0.3] — 2026-07-14
 
 ### Fixed (sunward ground-illumination asymmetry under Uniform domain, open boundary, user report)

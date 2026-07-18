@@ -78,7 +78,7 @@ export const UI = {
     // "showDomainComponents" for continuity): expands the (a)/(b)/(c)/(d)-style
     // R/T/A component breakdown, same collapsed-by-default pattern as "Show
     // surface heatmap". Two call sites, mutually exclusive per run (see
-    // SimStats.updateDisplay()): under Illumination = "Uniform domain", expands
+    // StatsPanel.updateDisplay()): under Illumination = "Uniform domain", expands
     // the ENTIRE DOMAIN block; under any other (legacy) illumination mode,
     // appends the breakdown under FINAL OUTCOMES instead (v6.0.1 -- see TODO
     // "2.B/2.C" discussion). The underlying counters are general-purpose and
@@ -241,7 +241,7 @@ export const UI = {
     // ("Entire scene") never fit as a peer of these two (it needs a clear-sky-
     // sourced photon population that only exists under "Uniform domain"
     // illumination); it's now the always-shown "ENTIRE DOMAIN" stats-panel block
-    // instead (see SimStats.buildDomainBlockText), independent of this selector.
+    // instead (see StatsPanel.buildDomainBlockText), independent of this selector.
     //   "top-base_faces" (a) — cloud top/base faces only (sides + surface bypass → S)
     //   "all_faces"      (b) — cloud element: top/base/side faces → R/T; surface-
     //                          reflected upward bypass (no cloud face) stays in S

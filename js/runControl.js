@@ -7,6 +7,7 @@ import { RNG } from './rng.js';
 import { Coords } from './coords.js';
 import { Physics } from './physics.js';
 import { SimStats } from './simstats.js';
+import { StatsPanel } from './statsPanel.js';
 import { UI, showLimitWarning } from './ui.js';
 import { Scene } from './scene.js';
 import { Photons } from './photons.js';
@@ -82,7 +83,7 @@ export const RunControl = {
 
       Scene.buildCloudBox();
       RunControl.refreshEndpointDisplay();
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
 
       window.addEventListener("resize", RunControl.onWindowResize);
     },
@@ -103,14 +104,14 @@ export const RunControl = {
 
       Photons.trimEndpointMarkers();
       Photons.applyEndpointFade();
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
     },
 
     togglePause: function() {
       state.isPaused = !state.isPaused;
       const btn = document.getElementById("pauseBtn");
       if (btn) btn.textContent = state.isPaused ? "Resume" : "Pause";
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
     },
 
     // Stop: hard-terminates the in-flight run (instant-batch chunk loop or
@@ -124,7 +125,7 @@ export const RunControl = {
       state.stepRequested = false;
       const pauseBtn = document.getElementById("pauseBtn");
       if (pauseBtn) pauseBtn.textContent = "Pause";
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
     },
 
     stepPhoton: function() {
@@ -183,7 +184,7 @@ export const RunControl = {
 
       Photons.finalizeEndpoints();
       Scene.rebuildHistograms();
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
     },
 
     runEnsemble: async function() {
@@ -221,7 +222,7 @@ export const RunControl = {
           await Photons.addAnimatedPath(result);
           Photons.finalizeEndpoints();
           Scene.rebuildHistograms();
-          SimStats.updateDisplay();
+          StatsPanel.updateDisplay();
         }
 
         const remaining = n - nAnimated;
@@ -231,7 +232,7 @@ export const RunControl = {
 
         state.isAnimating = false;
         Scene.rebuildHistograms();
-        SimStats.updateDisplay();
+        StatsPanel.updateDisplay();
         return;
       }
 
@@ -265,7 +266,7 @@ export const RunControl = {
         // the only way forward from here.
         if (state.isStopped) {
           Scene.rebuildHistograms();
-          SimStats.updateDisplay();
+          StatsPanel.updateDisplay();
           return;
         }
         // Honor Pause/Step in instant mode: while paused, idle until Resume
@@ -297,7 +298,7 @@ export const RunControl = {
         const finished = remaining <= 0;
         if (finished || steppingOnce || chunksDone % DISPLAY_EVERY_CHUNKS === 0) {
           Scene.rebuildHistograms();
-          SimStats.updateDisplay();
+          StatsPanel.updateDisplay();
         }
 
         if (!finished) {
@@ -333,7 +334,7 @@ export const RunControl = {
       BottomPanel.drawBottomPanel();
       Scene.buildCloudBox();
       RunControl.refreshEndpointDisplay();
-      SimStats.updateDisplay();
+      StatsPanel.updateDisplay();
     },
 
     animate: function() {

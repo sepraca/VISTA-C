@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { state, world } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
-import { SimStats } from './simstats.js';
+import { StatsPanel } from './statsPanel.js';
 import { Status } from './constants.js';
 
 // Stored-endpoint buffer cap = the "Endpoint caps shown" slider maximum. Storage
@@ -450,7 +450,7 @@ export const Photons = {
         state.activePhotonStep = 0;
         state.activePhotonTotalSteps = worldPts.length - 1;
         state.activePhotonStatus = result.status;
-        SimStats.updateDisplay();
+        StatsPanel.updateDisplay();
 
         let activeTube = null;
         let photonHead = Photons.makePhotonHead(activeColor);
@@ -509,7 +509,7 @@ export const Photons = {
 
           Photons.addEndpoint(result);
           state.activePhotonStep = state.activePhotonTotalSteps;
-          SimStats.updateDisplay();
+          StatsPanel.updateDisplay();
           resolve();
         }
 
@@ -543,7 +543,7 @@ export const Photons = {
             replaceActiveTail(currentPts);
 
             state.activePhotonStep = i;
-            SimStats.updateDisplay();
+            StatsPanel.updateDisplay();
 
             // Each stored path vertex after the first corresponds to a boundary point
             // or a scattering/absorption site. Flash interior interaction points.

@@ -1,7 +1,7 @@
 // main.js — Entry point. Imports all modules, wires callbacks, sets up
 // window.* globals for HTML event attributes, and starts the simulation.
 
-import { setDrawPanelCallback } from './simstats.js';
+import { setDrawPanelCallback } from './statsPanel.js';
 import { world } from './state.js';
 import { BottomPanel } from './bottomPanel.js';
 import { RunControl } from './runControl.js';
@@ -10,9 +10,10 @@ import { Photons } from './photons.js';
 import { Export } from './exportUtils.js';
 import { UI } from './ui.js';
 import { SimStats } from './simstats.js';
+import { StatsPanel } from './statsPanel.js';
 
 try {
-  // Wire BottomPanel into SimStats.updateDisplay() without a circular import.
+  // Wire BottomPanel into StatsPanel.updateDisplay() without a circular import.
   setDrawPanelCallback(() => BottomPanel.drawBottomPanel());
 
   // Expose namespaces globally so HTML onchange/onclick/onblur attributes work.
@@ -27,6 +28,7 @@ try {
   window.Export      = Export;
   window.RunControl  = RunControl;
   window.SimStats    = SimStats;
+  window.StatsPanel  = StatsPanel;
 
   // Legacy shorthands used by some HTML event attributes.
   window.runOne                = RunControl.runOne;
