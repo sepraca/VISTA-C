@@ -520,11 +520,13 @@ escapes, a full legend reorganization into Intermediate/Terminal event sections 
 wider, shorter layout (on-screen and in exported PNGs), and a data-driven replacement for
 the export-button/legend collision breakpoint (previously a hand-picked viewport width,
 now a real `getBoundingClientRect()` check). See CHANGELOG.md's `[v6.0.4]` section and
-[RELEASE_NOTES_v6.0.4.md](RELEASE_NOTES_v6.0.4.md) for the full history. **v6.0.3**
+the [v6.0.4 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.4) for
+the full history. **v6.0.3**
 (2026-07-14) fixed a sunward ground-illumination asymmetry under Uniform domain
 illumination (open boundary) at large cloud optical thickness and solar zenith angle — see
 CHANGELOG.md's `[v6.0.3]` section and
-[RELEASE_NOTES_v6.0.3.md](RELEASE_NOTES_v6.0.3.md). **v6.0.2** (also 2026-07-14) added
+the [v6.0.3 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.3).
+**v6.0.2** (also 2026-07-14) added
 Uniform domain illumination (direct clear-sky surface illumination, selectable
 open/isolated or periodic domain boundary), the general-purpose R/T/A component breakdown,
 and rigorous BRF/BTF normalization (Phase 4) — see CHANGELOG.md's `[v6.0.2]` section.
