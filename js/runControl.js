@@ -34,6 +34,30 @@ export const RunControl = {
       root.setProperty("--ui-scale", scale.toFixed(3));
       root.setProperty("--ui-panel-w", panelW + "px");
       setUiPanelWidth(panelW);
+      RunControl.updateExportButtonsLayout();
+    },
+
+    // Stacks #exportButtons vertically once its row form would actually
+    // collide with #legend, measured live via getBoundingClientRect() rather
+    // than a fixed viewport-width breakpoint (see index.html's #exportButtons
+    // CSS comment for why: a hand-picked breakpoint goes stale the moment
+    // either element's real size changes, which is exactly what happened
+    // when the legend's 2026-07 relayout widened it). Removing the
+    // "stacked" class before measuring gives the row form's true natural
+    // width even if it's currently stacked -- synchronous, so no visible
+    // flash before the class is reapplied (or not) in the same frame.
+    updateExportButtonsLayout: function() {
+      const btns = document.getElementById("exportButtons");
+      const legend = document.getElementById("legend");
+      if (!btns || !legend) return;
+
+      const GAP_PX = 24; // minimum breathing room between the two, in real screen px
+      btns.classList.remove("stacked");
+      const btnsRect = btns.getBoundingClientRect();
+      const legendRect = legend.getBoundingClientRect();
+      if (btnsRect.right + GAP_PX > legendRect.left) {
+        btns.classList.add("stacked");
+      }
     },
 
     init: function() {

@@ -352,6 +352,20 @@ export const Physics = {
       const cloudBaseTransmissions = [];
       const localSurfaceEvents     = [];
       const surfaceReflectionDirs  = [];
+      // Rendering-only bookkeeping (2026-07, periodic SIDE_ESCAPE marker
+      // placement fix): the cloud's own side-wall crossing point (xb,yb,taub
+      // below), overwritten -- not appended -- on every crossing, unlike
+      // `path` (which only records this when storePath is true, i.e. for the
+      // first ~maxPaths photons of a run; the vast majority run with
+      // storePath=false for performance, so `path` alone can't supply this
+      // point for most photons). O(1) per photon: one small object,
+      // overwritten in place, no growth, no RNG draws -- does not feed any
+      // SimStats accumulation, consumed only by Photons.addEndpoint() to
+      // reposition a periodic-boundary SIDE_ESCAPE terminal marker (which
+      // physics.js reports at the wrapped tau=0 top-of-domain clearance
+      // point -- correct for the terminal status/stats bucket, but not a
+      // "side" location) back onto the actual cloud wall it last crossed.
+      let lastWallCrossing = null;
 
       const { tauCloud, slabW, slabD, theta0, g, omega0,
               surfaceAlbedo, betaExt, surfaceDistanceKm, entryMode,
@@ -483,7 +497,7 @@ export const Physics = {
             // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
             const missPos = wrapResult.miss;
             if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: wrapResult.wrapped});
-            return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace}};
+            return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace, lastWallCrossing}};
           }
 
           const entry = Physics.rayBoxEntry({x: xs, y: ys, tau: tauSurface}, dir, halfW, halfD, tauCloud);
@@ -656,6 +670,7 @@ export const Physics = {
           const taub = tau + f * (tauNew - tau);
           totalPath += s * f;
           if (storePath) path.push({x: xb, y: yb, tau: taub});
+          lastWallCrossing = {x: xb, y: yb, tau: taub};
 
           // Periodic domain boundary (Phase 3): a photon exiting the cloud's
           // OWN side wall -- whether still descending (dir.z > 0) or already
@@ -711,7 +726,7 @@ export const Physics = {
               x = out.reenter.x; y = out.reenter.y; tau = out.reenter.tau;
               continue;
             }
-            return {status: Status.SIDE_ESCAPE, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
+            return {status: Status.SIDE_ESCAPE, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace, lastWallCrossing};
           }
 
           // Over a reflective surface, a DOWNWARD side-escaper continues

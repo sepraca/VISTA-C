@@ -205,10 +205,20 @@
 
   /* Below a wide monitor, the top row can't fit the 3 download buttons AND the
      legend side by side, so the buttons collide with the legend. Stack them
-     vertically there (a narrow column at top-left of the 3-D area). */
-  @media (max-width: 1700px) {
-    #exportButtons { flex-direction: column; align-items: flex-start; }
-  }
+     vertically there (a narrow column at top-left of the 3-D area).
+     2026-07: this used to be a fixed `@media (max-width: 1700px)` breakpoint,
+     hand-picked against the legend's old, narrower footprint -- exactly the
+     "hand-guessed number goes stale when the content it was tuned against
+     changes" bug class this codebase has hit before (see exportUtils.js's
+     legend-box-sizing history). The legend's relayout this session widened
+     it enough that the fixed 1700px threshold no longer matched reality (the
+     user reported buttons staying in a row well past the point of actually
+     overlapping the legend). Replaced with a `.stacked` class toggled at
+     runtime by RunControl.updateExportButtonsLayout(), which measures the
+     REAL rendered gap between the two elements (via getBoundingClientRect(),
+     so it also accounts for --ui-scale's transform:scale()) instead of
+     guessing a viewport width -- see runControl.js. */
+  #exportButtons.stacked { flex-direction: column; align-items: flex-start; }
 
   #exportButtons button {
     background: rgba(37, 99, 235, 0.92);
@@ -222,6 +232,22 @@
     background: rgba(29, 78, 216, 0.98);
   }
 
+  /* #legend (2026-07 relayout, user-driven mockup via PPT iteration): the
+     previous version was one flat CSS Grid (grid-template-columns: auto
+     auto) with {header} rows spanning grid-column:1/-1 -- a single column
+     count for all 16 entries top to bottom. The user asked to condense the
+     box's overall vertical footprint, which meant moving from "one wide
+     column-pair, stacked full height" to a wider, shorter layout: the
+     Intermediate/Animation blocks now sit SIDE BY SIDE in a top row (instead
+     of stacked), and the Terminal block below uses 3 independently-stacked
+     columns of UNEVEN height (3/2/2 items, each column pairing a terminal
+     dot with its own footprint square where one exists). A single grid with
+     auto-flow can't express uneven column heights, so #legend is now a plain
+     flex column of purpose-built sub-containers instead -- each visual
+     column (.legendIntermediate, each .legendCol) is just its own
+     flex-direction:column stack, which trivially supports different item
+     counts per column with no layout math. See exportUtils.js's
+     LEGEND_LAYOUT for the PNG-export mirror of this same structure. */
   #legend {
     position: absolute;
     right: 18px;
@@ -236,11 +262,68 @@
     font-size: 13px;
     line-height: 1.45;
     backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    /* No max-width (2026-07): the box now grows to fit its content instead
+       of a fixed cap that could compress a CSS Grid/flex item below its
+       natural width and force a wrap -- e.g. the section titles or a long
+       entry like "Incident surface-absorbed" wrapping mid-word. Paired with
+       white-space: nowrap below, this guarantees every title and entry
+       renders on a single line; the box simply widens as needed (per user
+       request) rather than the alternative of hand-picking a width. */
+    white-space: nowrap;
+  }
+
+  .legendTopRow {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .legendSectionTitle {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+  }
+
+  .legendIntermediate {
+    display: flex;
+    flex-direction: column;
+    row-gap: 4px;
+    padding-right: 16px;
+  }
+
+  .legendVDivider {
+    align-self: stretch;
+    border-left: 1px dotted rgba(203, 213, 225, 0.6);
+    margin: 0 16px;
+  }
+
+  .legendAnimationGrid {
     display: grid;
     grid-template-columns: auto auto;
-    column-gap: 18px;
+    column-gap: 24px;
     row-gap: 4px;
-    max-width: 640px;
+  }
+
+  .legendHDivider {
+    border-top: 1px dotted rgba(203, 213, 225, 0.6);
+    margin: 10px 0 8px;
+  }
+
+  .legendTerminalCols {
+    display: flex;
+    flex-direction: row;
+    column-gap: 24px;
+  }
+
+  .legendCol {
+    display: flex;
+    flex-direction: column;
+    row-gap: 4px;
   }
 
   .swatch {
@@ -558,23 +641,49 @@
 </div>
 
 <div id="legend">
-  <div><span class="swatch" style="background:#60a5fa"></span>Reflected photon paths</div>
-  <div><span class="swatch" style="background:#86efac"></span>Transmitted photon paths</div>
-  <div><span class="swatch" style="background:#f97316"></span>Side-escape photon paths</div>
-  <div><span class="swatch" style="background:#7c2d12"></span>Surface-absorbed photon paths</div>
-  <div><span class="swatch" style="background:#94a3b8"></span>Absorbed (cloud) photon paths</div>
-  <div><span class="dot" style="background:#60a5fa"></span>upward cloud-top crossings</div>
-  <div><span class="dot" style="background:#22c55e"></span>downward cloud-base crossings</div>
-  <div><span class="dot" style="background:#111827"></span>absorption locations</div>
-  <div><span class="dot" style="background:#f97316"></span>side boundary escape</div>
-  <div><span class="square" style="background:#60a5fa"></span>reflected 2-D top footprint</div>
-  <div><span class="square" style="background:#86efac"></span>downward cloud-base crossings footprint</div>
-  <div><span class="square" style="background:#c8a27a"></span>surface-absorbed footprint</div>
-  <div><span class="swatch" style="background:#fff700;height:8px"></span>glowing photon head / active trail</div>
-  <div><span style="color:#fef08a">✦</span> scattering-event flash</div>
-  <div><span style="color:#f7d4bc">●</span> last scatter marker while paused</div>
-  <div><span class="dot" style="background:#a855f7"></span>surface reflected events</div>
-  <div><span class="dot" style="background:#7c2d12"></span>surface absorbed endpoints</div>
+  <div class="legendTopRow">
+    <div class="legendIntermediate">
+      <div class="legendSectionTitle">Intermediate events (can recur, photon continues)</div>
+      <div><span class="dot" style="background:#a855f7"></span>surface reflected event</div>
+      <div><span class="dot" style="background:#22c55e"></span>downward cloud-base crossing</div>
+      <div><span class="square" style="background:#86efac"></span>downward cloud-base crossings 2D footprint</div>
+    </div>
+
+    <div class="legendVDivider"></div>
+
+    <div class="legendAnimation">
+      <div class="legendSectionTitle">Animation photon paths</div>
+      <div class="legendAnimationGrid">
+        <div><span class="swatch" style="background:#60a5fa"></span>Reflected</div>
+        <div><span class="swatch" style="background:#86efac"></span>Transmitted</div>
+        <div><span class="swatch" style="background:#f97316"></span>Side-escape</div>
+        <div><span class="swatch" style="background:#f9a8d4"></span>Surface-reflected escape</div>
+        <div><span class="swatch" style="background:#8a6f53"></span>Incident surface-absorbed</div>
+        <div><span class="swatch" style="background:#94a3b8"></span>Absorbed (cloud)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legendHDivider"></div>
+
+  <div class="legendTerminal">
+    <div class="legendSectionTitle">Terminal events (end the photon's simulated path)</div>
+    <div class="legendTerminalCols">
+      <div class="legendCol">
+        <div><span class="dot" style="background:#60a5fa"></span>reflected (upward cloud-top crossing)</div>
+        <div><span class="square" style="background:#60a5fa"></span>reflected 2D top footprint</div>
+        <div><span class="dot" style="background:#f9a8d4"></span>surface-reflected escape (no cloud face)</div>
+      </div>
+      <div class="legendCol">
+        <div><span class="dot" style="background:#8a6f53"></span>surface absorbed endpoint</div>
+        <div><span class="square" style="background:#8a6f53"></span>surface-absorbed 2D footprint</div>
+      </div>
+      <div class="legendCol">
+        <div><span class="dot" style="background:#111827"></span>cloud absorption location</div>
+        <div><span class="dot" style="background:#f97316"></span>side boundary escape</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="muPanel">

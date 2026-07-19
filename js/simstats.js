@@ -200,6 +200,14 @@ export const SimStats = {
     // read live (UI.*) in _addSurfaceFootprint; that's the per-photon hot path.
     _surfFootMarginX: 0,
     _surfFootPeriodicWrap: false,
+    // TRUE simulated tile half-width for periodic wrapping (world.slabW/2 ×
+    // effective M), cached at reset() -- deliberately independent of
+    // _surfFootFactor (the heatmap's own DISPLAY extent, which clamps to
+    // [SURFACE_FOOT_EXTENT, SURF_FACTOR_CAP] and so can differ from the true
+    // M outside that range). The physical wraparound period is what it is
+    // regardless of how wide the grid chooses to render itself. See
+    // wrapPeriodicX() below.
+    _periodicWrapHalfW: 0,
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
     footTrans: {nBins: 0, counts: null},
@@ -343,16 +351,33 @@ export const SimStats = {
       const halfD = world.slabD * SimStats._surfFootFactor / 2;
       const extW = 2 * halfW + SimStats._surfFootMarginX;
       const extD = 2 * halfD;
-      let xw = x;
-      if (SimStats._surfFootPeriodicWrap) {
-        const period = 2 * halfW;
-        xw = ((x + halfW) % period + period) % period - halfW;
-      }
+      const xw = SimStats.wrapPeriodicX(x);
       let ix = Math.floor(((xw + halfW) / extW) * n);
       let iy = Math.floor(((y + halfD) / extD) * n);
       ix = Math.max(0, Math.min(n - 1, ix));
       iy = Math.max(0, Math.min(n - 1, iy));
       f.counts[ix * n + iy]++;
+    },
+
+    // Wrap x into its canonical-tile equivalent under Uniform domain +
+    // periodic boundary (2026-07 rendering fix); identity (no-op) otherwise.
+    // Uses the TRUE simulated tile half-width (_periodicWrapHalfW, cached at
+    // reset() from world.slabW/2 × the EFFECTIVE domain factor) -- kept
+    // deliberately separate from _surfFootFactor (the heatmap's own display
+    // extent, which clamps to [SURFACE_FOOT_EXTENT, SURF_FACTOR_CAP] and so
+    // can disagree with the true M outside that range). Display-only: no
+    // RNG draw, no change to any R/T/A/S count, no touch to physics.js.
+    // Shared by _addSurfaceFootprint (heatmap binning) and
+    // Photons.addEndpoint (the per-photon surface-landing marker) so both
+    // agree on where a given photon "really" lands -- the heatmap cells
+    // were wrapped (2026-07) but the raw per-photon marker was not, leaving
+    // the dots still stranded past the leeward edge even after the grid fix
+    // (user report, 2026-07).
+    wrapPeriodicX(x) {
+      if (!SimStats._surfFootPeriodicWrap) return x;
+      const halfW = SimStats._periodicWrapHalfW;
+      const period = 2 * halfW;
+      return ((x + halfW) % period + period) % period - halfW;
     },
 
     // Reset all counters and accumulators to their initial empty state.
@@ -396,6 +421,9 @@ export const SimStats = {
       SimStats._surfFootMarginX = SimStats.surfaceFootMarginX();
       SimStats._surfFootPeriodicWrap =
         UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getDomainBoundary() === DomainBoundary.PERIODIC;
+      SimStats._periodicWrapHalfW = SimStats._surfFootPeriodicWrap
+        ? (world.slabW / 2) * UI.getEffectiveDomainFactor()
+        : 0;
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};

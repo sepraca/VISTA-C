@@ -404,7 +404,7 @@ export const Scene = {
           'surfAbs',
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
-          0xc8a27a,
+          0x8a6f53,
           true,
           world.slabW * SimStats._surfFootFactor + SimStats._surfFootMarginX,
           world.slabD * SimStats._surfFootFactor,
@@ -647,13 +647,20 @@ export const Scene = {
       // object paint-order tie-break against other scene geometry.
 
       // Outline frame so the heatmap domain boundary is visually clear.
+      // offsetX (2026-07 rendering fix) must match the same shift applied to
+      // the per-cell x position above -- this frame is a SEPARATE geometry
+      // from the ground-plane edge in Scene.buildCloudBox, and was missed in
+      // the original offsetX pass, leaving it drawn at the old symmetric
+      // bounds while the cells themselves were correctly widened/shifted
+      // (user report: the tan/gold 'surfAbs' frame visually "detached" from
+      // the actual cell coverage on both edges).
       const zFrame = isTop ? zPlane + 0.01 : zPlane - 0.01;
       const framePts = [
-        new THREE.Vector3(-halfW, -halfD, zFrame),
-        new THREE.Vector3( halfW, -halfD, zFrame),
-        new THREE.Vector3( halfW,  halfD, zFrame),
-        new THREE.Vector3(-halfW,  halfD, zFrame),
-        new THREE.Vector3(-halfW, -halfD, zFrame)
+        new THREE.Vector3(offsetX - halfW, -halfD, zFrame),
+        new THREE.Vector3(offsetX + halfW, -halfD, zFrame),
+        new THREE.Vector3(offsetX + halfW,  halfD, zFrame),
+        new THREE.Vector3(offsetX - halfW,  halfD, zFrame),
+        new THREE.Vector3(offsetX - halfW, -halfD, zFrame)
       ];
       const frame = Scene.makeLine(framePts, color, 0.95);
       state.histogramGroup.add(frame);

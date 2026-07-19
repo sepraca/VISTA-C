@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.0.3** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.0.4** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -272,7 +272,7 @@ not merely as an x-axis change of variable.
 The colored spherical markers in the 3-D view indicate two distinct types of transport: *net crossings* (where a photon can pass through a plane one or more times) and *terminal endpoints* (where a photon's trajectory ends; one per photon).
 
 - **Downward cloud-base crossings** (green) are drawn at *every* downward crossing
-  of the cloud base. Here, the markers show **each** downward crossings, e.g., a trajectory where a surface reflected photon re-enters the cloud and scatters back towards the surface again (or multiple times). The marker numbers are 1:1 with the green *downward cloud-base crossings footprint* heat map up to the number indicated in the "Endpoint caps shown" selection. For Aₛ = 0, each transmitted photon crosses the cloud base only once, so a crossing coincides with a photon's termination.
+  of the cloud base. Here, the markers show **each** downward crossings, e.g., a trajectory where a surface reflected photon re-enters the cloud and scatters back towards the surface again (or multiple times). The marker numbers are 1:1 with the green *downward cloud-base crossings 2D footprint* heat map up to the number indicated in the "Endpoint caps shown" selection. For Aₛ = 0, each transmitted photon crosses the cloud base only once, so a crossing coincides with a photon's termination.
 - **Upward cloud-top crossings** (blue): a reflected photon crosses the cloud top boundary exactly once, so these are simultaneously a crossing *and* a terminal endpoint.
 - **Terminal endpoints**: surface-absorbed (brown) — when Aₛ > 0 (any mode), or
   at Aₛ = 0 under **Uniform domain** illumination, where every clear-sky-direct
@@ -511,17 +511,24 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.0.3** (2026-07-14, patch release — bug fixes and internal
-refactors only, no new capabilities). Headline fix: a sunward ground-illumination
-asymmetry under Uniform domain illumination (open boundary) at large cloud optical
-thickness and solar zenith angle, decoupling the launch-domain sunward margin from the
-cloud's own optical thickness — see CHANGELOG.md's `[v6.0.3]` section and
-[RELEASE_NOTES_v6.0.3.md](RELEASE_NOTES_v6.0.3.md) for the full history. **v6.0.2**
-(also 2026-07-14) added Uniform domain illumination (direct clear-sky surface
-illumination, selectable open/isolated or periodic domain boundary), the general-purpose
-R/T/A component breakdown, and rigorous BRF/BTF normalization (Phase 4) — see
-CHANGELOG.md's `[v6.0.2]` section. v6.0.3 is the version currently on `main` and in the
-hosted demo.
+Latest tagged release: **v6.0.4** (2026-07-18, patch release — UI/rendering fixes and
+labeling consistency only, no new capabilities, no physics/statistics changes). Headline
+items: a periodic-boundary SIDE_ESCAPE marker placement fix (endpoint markers now land on
+the true cloud-side-wall crossing rather than at cloud-top height), a visual/legend
+distinction between genuine cloud-side escapes and surface-reflection-driven "bypass"
+escapes, a full legend reorganization into Intermediate/Terminal event sections with a
+wider, shorter layout (on-screen and in exported PNGs), and a data-driven replacement for
+the export-button/legend collision breakpoint (previously a hand-picked viewport width,
+now a real `getBoundingClientRect()` check). See CHANGELOG.md's `[v6.0.4]` section and
+[RELEASE_NOTES_v6.0.4.md](RELEASE_NOTES_v6.0.4.md) for the full history. **v6.0.3**
+(2026-07-14) fixed a sunward ground-illumination asymmetry under Uniform domain
+illumination (open boundary) at large cloud optical thickness and solar zenith angle — see
+CHANGELOG.md's `[v6.0.3]` section and
+[RELEASE_NOTES_v6.0.3.md](RELEASE_NOTES_v6.0.3.md). **v6.0.2** (also 2026-07-14) added
+Uniform domain illumination (direct clear-sky surface illumination, selectable
+open/isolated or periodic domain boundary), the general-purpose R/T/A component breakdown,
+and rigorous BRF/BTF normalization (Phase 4) — see CHANGELOG.md's `[v6.0.2]` section.
+v6.0.4 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -544,4 +551,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.3). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.4). GitHub. https://github.com/sepraca/VISTA-C

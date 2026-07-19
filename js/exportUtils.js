@@ -7,31 +7,164 @@ import { RNG } from './rng.js';
 import { EntryMode } from './constants.js';
 import { BottomPanel } from './bottomPanel.js';
 
-// Legend box geometry, shared between drawExportLegend() and
-// drawExportLegendBottomCentered() so the two can never drift out of sync (a
-// literal duplicated-constant mismatch bit us earlier this session with the
-// old top-right legend's hardcoded width). LEGEND_COL_W=560 (up from an
-// original 340) leaves generous room for the longest label, "Downward
-// cloud-base crossings footprint" (39 characters) plus its swatch, at 20px
-// font -- the previous 340 let that label's text run past the column's own
-// boundary and out past the box's right edge entirely (confirmed by the
-// user's export: "the right edge of the legend box overlaps with a line of
-// text"). Exact glyph metrics aren't available outside a real browser canvas
-// (no headless canvas/measureText in this dev environment), so this is sized
-// with a deliberately generous safety margin (~14px/character allowance at
-// 20px font, well above a typical sans-serif's actual per-character width)
-// rather than tuned to the pixel -- comfortably fits, with room to spare.
-const LEGEND_COL_W = 560;
-const LEGEND_ROW_H = 32;
-const LEGEND_PAD = 10;
-const LEGEND_ROWS = 8;   // 16 entries / 2 columns (user report, 2026-07: added
-                          // Side-escape/Surface-absorbed path entries -- this
-                          // constant does NOT auto-derive from entries.length
-                          // (see drawExportLegend), so it must be kept in sync
-                          // by hand; this exact mismatch class of bug already
-                          // bit this file once before (review E10 note above).
-const LEGEND_BOX_W = LEGEND_COL_W * 2 + 2 * LEGEND_PAD;
-const LEGEND_BOX_H = LEGEND_ROWS * LEGEND_ROW_H + 2 * LEGEND_PAD;
+// Legend box geometry (2026-07 relayout, driven by a user PPT mockup
+// iteration). The previous layout was one flat row-major grid across all 16
+// entries; the user asked to condense the box's overall vertical footprint,
+// which meant restructuring into three purpose-built blocks instead of one
+// uniform grid:
+//   - Intermediate events: single stacked column (3 items)
+//   - Animation photon paths: 2-column grid (6 items, row-major, sits beside
+//     Intermediate in a shared top row rather than stacked below it)
+//   - Terminal events: 3 INDEPENDENTLY-stacked columns of uneven height
+//     (3/2/2 items -- each column pairs a terminal dot with its own
+//     footprint square where one exists, e.g. "reflected" + "reflected 2D
+//     top footprint" share column 1)
+// A single generic row-major grid can't express uneven column heights, so
+// LEGEND_LAYOUT below replaces the old flat LEGEND_ENTRIES array with this
+// explicit block/column structure, and measureLegendGeometry independently
+// measures each column's real ctx.measureText() width -- same reasoning as
+// the old measureLegendColumnWidths (a hand-guessed width previously caused
+// two separate clipping/asymmetry bugs), just generalized to N independent
+// columns across 3 blocks instead of a fixed 2. See index.html's #legend
+// CSS (.legendIntermediate / .legendAnimationGrid / .legendTerminalCols /
+// .legendCol) for the on-screen mirror of this exact structure.
+const LEGEND_ROW_H = 28;
+const LEGEND_TITLE_H = 24;
+const LEGEND_PAD = 12;
+const LEGEND_COL_GAP = 28;
+const LEGEND_BLOCK_GAP = 26;
+const LEGEND_SECTION_GAP = 18;
+// Extra breathing room after the longest label in a column, before the
+// gutter to the next column (or the box's outer edge) -- NOT a glyph-width
+// guess (ctx.measureText already gives the exact width); just visual
+// spacing so text doesn't touch the edge it's closest to.
+const LEGEND_COL_BUFFER = 24;
+// Horizontal offset from a column's left edge to where its label text
+// starts, matching drawLegendDot's own layout (icon/swatch region + gap).
+const LEGEND_LABEL_OFFSET = 28;
+
+// All three surface-absorbed markers (path line, endpoint dot, footprint)
+// share one unified brown, #8a6f53 (user-picked) -- see ui.js's
+// getOutcomeColor, photons.js's addEndpoint, and scene.js's surfAbs heatmap
+// for the other three places this color lives.
+const LEGEND_LAYOUT = {
+  intermediate: {
+    title: "Intermediate events (can recur, photon continues)",
+    items: [
+      ["#a855f7", "surface reflected event", "dot"],
+      ["#22c55e", "downward cloud-base crossing", "dot"],
+      ["#86efac", "downward cloud-base crossings 2D footprint", "square"]
+    ]
+  },
+  animation: {
+    // Labels drop "photon paths" here (redundant with the section title) --
+    // Terminal entries below keep their fuller wording since they stand
+    // alone without a shared title supplying that context.
+    title: "Animation photon paths",
+    items: [
+      ["#60a5fa", "Reflected", "line"],
+      ["#86efac", "Transmitted", "line"],
+      ["#f97316", "Side-escape", "line"],
+      ["#f9a8d4", "Surface-reflected escape", "line"],
+      ["#8a6f53", "Incident surface-absorbed", "line"],
+      ["#94a3b8", "Absorbed (cloud)", "line"]
+    ]
+  },
+  terminal: {
+    title: "Terminal events (end the photon's simulated path)",
+    columns: [
+      [
+        ["#60a5fa", "reflected (upward cloud-top crossing)", "dot"],
+        ["#60a5fa", "reflected 2D top footprint", "square"],
+        ["#f9a8d4", "surface-reflected escape (no cloud face)", "dot"]
+      ],
+      [
+        ["#8a6f53", "surface absorbed endpoint", "dot"],
+        ["#8a6f53", "surface-absorbed 2D footprint", "square"]
+      ],
+      [
+        ["#111827", "cloud absorption location", "dot"],
+        ["#f97316", "side boundary escape", "dot"]
+      ]
+    ]
+  }
+};
+
+function measureItemWidth(ctx, label) {
+  return LEGEND_LABEL_OFFSET + ctx.measureText(label).width + LEGEND_COL_BUFFER;
+}
+
+// Single source of truth for the legend box's full geometry (widths of every
+// independent column + overall box size), computed once per draw from real
+// font metrics, so drawExportLegend and drawExportLegendBottomCentered can
+// never see two different sizes for the same content.
+function measureLegendGeometry(ctx) {
+  ctx.save();
+  ctx.font = "20px system-ui, -apple-system, Segoe UI, sans-serif";
+
+  const intermediateW = Math.max(...LEGEND_LAYOUT.intermediate.items.map(it => measureItemWidth(ctx, it[1])));
+
+  // Animation grid fills row-major, 2 columns -- even indices land in col 0,
+  // odd indices in col 1 (matches index.html's CSS Grid auto-flow).
+  const animItems = LEGEND_LAYOUT.animation.items;
+  const animCol0W = Math.max(...animItems.filter((_, i) => i % 2 === 0).map(it => measureItemWidth(ctx, it[1])));
+  const animCol1W = Math.max(...animItems.filter((_, i) => i % 2 === 1).map(it => measureItemWidth(ctx, it[1])));
+
+  const termColWidths = LEGEND_LAYOUT.terminal.columns.map(col =>
+    Math.max(...col.map(it => measureItemWidth(ctx, it[1])))
+  );
+
+  // Canvas text never auto-wraps (drawSectionTitle is a single fillText
+  // call), so a block's own title -- not just its item labels -- must fit
+  // within the width that block is given, or it would silently run past
+  // the block into whatever sits next to it. Measured in the same bold
+  // font drawSectionTitle actually renders in, uppercased to match.
+  ctx.font = "700 15px system-ui, -apple-system, Segoe UI, sans-serif";
+  const intermediateTitleW = ctx.measureText(LEGEND_LAYOUT.intermediate.title.toUpperCase()).width;
+  const animationTitleW = ctx.measureText(LEGEND_LAYOUT.animation.title.toUpperCase()).width;
+  const terminalTitleW = ctx.measureText(LEGEND_LAYOUT.terminal.title.toUpperCase()).width;
+
+  ctx.restore();
+
+  const intermediateBlockW = Math.max(intermediateW, intermediateTitleW);
+  // Item positions within a block are always laid out from real item widths
+  // only (animCol0W/animCol1W/termColWidths) -- a title wider than its
+  // block's items just reserves extra trailing whitespace after the last
+  // item, exactly like a CSS block whose heading is wider than its content.
+  // Only intermediateBlockW is actually used for positioning downstream (the
+  // vertical divider and the animation block's start x both key off it).
+  const animationItemsW = animCol0W + LEGEND_COL_GAP + animCol1W;
+  const animationBlockW = Math.max(animationItemsW, animationTitleW);
+
+  const topRowW = intermediateBlockW + LEGEND_BLOCK_GAP + animationBlockW;
+  const terminalItemsW = termColWidths.reduce((a, b) => a + b, 0) + LEGEND_COL_GAP * (termColWidths.length - 1);
+  const terminalRowW = Math.max(terminalItemsW, terminalTitleW);
+  const boxW = 2 * LEGEND_PAD + Math.max(topRowW, terminalRowW);
+
+  const intermediateRows = LEGEND_LAYOUT.intermediate.items.length;
+  const animationRows = Math.ceil(animItems.length / 2);
+  const topBandRows = Math.max(intermediateRows, animationRows);
+  const terminalRows = Math.max(...LEGEND_LAYOUT.terminal.columns.map(c => c.length));
+
+  const topBandH = LEGEND_TITLE_H + topBandRows * LEGEND_ROW_H;
+  const terminalH = LEGEND_TITLE_H + terminalRows * LEGEND_ROW_H;
+  const boxH = 2 * LEGEND_PAD + topBandH + LEGEND_SECTION_GAP + terminalH;
+
+  return {boxW, boxH, intermediateBlockW, animCol0W, animCol1W, termColWidths, topBandH, terminalH};
+}
+
+// Manual rounded-rect path (arcTo-based rather than ctx.roundRect()) so this
+// draws identically on any canvas implementation, matching index.html's
+// #legend border-radius:12px on-screen.
+function tracePath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
 
 export const Export = {
     downloadDataURL: function(dataURL, filename) {
@@ -209,60 +342,95 @@ export const Export = {
       ctx.restore();
     },
 
-    drawExportLegend: function(ctx, x, y) {
-      const entries = [
-        ["#60a5fa", "Reflected paths", "line"],
-        ["#86efac", "Transmitted paths", "line"],
-        // Side-escape and surface-absorbed paths draw in these colors too
-        // (getOutcomeColor(), ui.js) but this export legend, like the
-        // on-screen #legend before it, only listed 3 path colors -- user
-        // report, 2026-07: exported PNGs showed maroon "surface-absorbed"
-        // paths through/near the cloud with no matching legend entry (the
-        // on-screen #legend was already fixed earlier in the same report;
-        // this export-canvas legend is a SEPARATE hardcoded array and was
-        // missed then).
-        ["#f97316", "Side-escape paths", "line"],
-        ["#7c2d12", "Surface-absorbed paths", "line"],
-        ["#94a3b8", "Absorbed (cloud) paths", "line"],
-        ["#60a5fa", "Upward cloud-top crossings", "dot"],
-        ["#22c55e", "Downward cloud-base crossings", "dot"],
-        ["#111827", "Absorption locations", "dot"],
-        ["#f97316", "Side boundary escape", "dot"],
-        ["#60a5fa", "Reflected 2-D footprint", "square"],
-        ["#86efac", "Downward cloud-base crossings footprint", "square"],
-        ["#c8a27a", "Surface-absorbed footprint", "square"],
-        ["#fff700", "Photon tracer", "line"],
-        ["#fef08a", "Scattering flash", "star"],
-        // Review E10: these two marker types were drawn in A_s>0 exports but
-        // missing from the export legend (present in the on-screen #legend).
-        // The screen-only "last scatter marker while paused" note is
-        // deliberately not exported (pause state doesn't apply to a PNG).
-        ["#a855f7", "Surface reflected events", "dot"],
-        ["#7c2d12", "Surface absorbed endpoints", "dot"]
-      ];
+    // Plain section-title text (2026-07 relayout): the divider rule that
+    // used to be baked into this function is now drawn separately by
+    // drawExportLegend itself (drawDivider below), since dividers here sit
+    // BETWEEN blocks rather than always directly above a title -- e.g. the
+    // vertical divider between Intermediate and Animation runs alongside
+    // both titles, not above either one.
+    drawSectionTitle: function(ctx, x, y, text) {
+      ctx.save();
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "700 15px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(text.toUpperCase(), x, y);
+      ctx.restore();
+    },
 
-      const colW = LEGEND_COL_W;
-      const rowH = LEGEND_ROW_H;
-      const rows = Math.ceil(entries.length / 2);
+    drawDivider: function(ctx, x1, y1, x2, y2) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(203, 213, 225, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([1, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.restore();
+    },
+
+    // Draws a single stacked column of dot/square entries starting just
+    // below a title, top to bottom -- used for the Intermediate block and
+    // each of the Terminal block's 3 independent columns.
+    drawLegendColumn: function(ctx, x, topY, items) {
+      items.forEach((it, i) => {
+        Export.drawLegendDot(ctx, x, topY + i * LEGEND_ROW_H + 14, it[0], it[1], it[2]);
+      });
+    },
+
+    // Legend box (2026-07 relayout -- see LEGEND_LAYOUT/measureLegendGeometry
+    // above for the full rationale): Intermediate events and Animation photon
+    // paths sit side by side in a top row; Terminal events spans the full
+    // width below as 3 independently-stacked columns. Rounded corners match
+    // index.html's #legend (border-radius: 12px).
+    drawExportLegend: function(ctx, x, y) {
+      const geo = measureLegendGeometry(ctx);
       const pad = LEGEND_PAD;
-      const boxW = LEGEND_BOX_W;
-      const boxH = LEGEND_BOX_H;
 
       ctx.save();
+      tracePath(ctx, x, y, geo.boxW, geo.boxH, 12);
       ctx.fillStyle = "rgba(71, 85, 105, 0.88)";
+      ctx.fill();
       ctx.strokeStyle = "rgba(203, 213, 225, 0.7)";
       ctx.lineWidth = 1;
-      ctx.fillRect(x, y, boxW, boxH);
-      ctx.strokeRect(x, y, boxW, boxH);
+      ctx.stroke();
 
-      entries.forEach((e, idx) => {
-        const col = idx < rows ? 0 : 1;
-        const row = idx < rows ? idx : idx - rows;
-        Export.drawLegendDot(ctx, x + pad + col * colW, y + pad + row * rowH + 14, e[0], e[1], e[2]);
+      // --- Top row: Intermediate (left) | Animation (right) ---
+      const topY = y + pad;
+      const rowsTopY = topY + LEGEND_TITLE_H;
+
+      Export.drawSectionTitle(ctx, x + pad, topY + 14, LEGEND_LAYOUT.intermediate.title);
+      Export.drawLegendColumn(ctx, x + pad, rowsTopY, LEGEND_LAYOUT.intermediate.items);
+
+      const dividerX = x + pad + geo.intermediateBlockW + LEGEND_BLOCK_GAP / 2;
+      Export.drawDivider(ctx, dividerX, topY, dividerX, topY + geo.topBandH);
+
+      const animX = x + pad + geo.intermediateBlockW + LEGEND_BLOCK_GAP;
+      Export.drawSectionTitle(ctx, animX, topY + 14, LEGEND_LAYOUT.animation.title);
+      LEGEND_LAYOUT.animation.items.forEach((it, i) => {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const colX = col === 0 ? animX : animX + geo.animCol0W + LEGEND_COL_GAP;
+        Export.drawLegendDot(ctx, colX, rowsTopY + row * LEGEND_ROW_H + 14, it[0], it[1], it[2]);
       });
+
+      // --- Horizontal divider, full box width ---
+      const hDividerY = topY + geo.topBandH + LEGEND_SECTION_GAP / 2;
+      Export.drawDivider(ctx, x + pad, hDividerY, x + geo.boxW - pad, hDividerY);
+
+      // --- Terminal events: 3 independent columns ---
+      const termTopY = topY + geo.topBandH + LEGEND_SECTION_GAP;
+      const termRowsTopY = termTopY + LEGEND_TITLE_H;
+      Export.drawSectionTitle(ctx, x + pad, termTopY + 14, LEGEND_LAYOUT.terminal.title);
+
+      let colX = x + pad;
+      LEGEND_LAYOUT.terminal.columns.forEach((col, i) => {
+        Export.drawLegendColumn(ctx, colX, termRowsTopY, col);
+        colX += geo.termColWidths[i] + LEGEND_COL_GAP;
+      });
+
       ctx.restore();
 
-      return {width: boxW, height: boxH};
+      return {width: geo.boxW, height: geo.boxH};
     },
 
     // Bottom-of-image legend layout (v6.0 follow-up): the top-right corner
@@ -280,11 +448,12 @@ export const Export = {
     // justified there instead).
     drawExportLegendBottomCentered: function(ctx, canvasWidth, canvasHeight) {
       const margin = 60;
-      // drawExportLegend's box size is fixed (LEGEND_BOX_W/H above, no
-      // measureText involved), so it can be computed directly rather than
-      // drawing once just to read back the size.
-      const x = (canvasWidth - LEGEND_BOX_W) / 2;
-      const y = canvasHeight - LEGEND_BOX_H - margin;
+      // Both width and height now come from measureLegendGeometry(ctx) --
+      // real measured text, real row counts -- so this can never see a
+      // different box size than what drawExportLegend actually draws.
+      const {boxW, boxH} = measureLegendGeometry(ctx);
+      const x = (canvasWidth - boxW) / 2;
+      const y = canvasHeight - boxH - margin;
       return Export.drawExportLegend(ctx, x, y);
     },
 

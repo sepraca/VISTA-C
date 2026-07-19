@@ -6,8 +6,90 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Fixed (UI/rendering tweaks, physics.js untouched)
+## [v6.0.4] — 2026-07-18
 
+### Fixed (UI/rendering tweaks)
+
+- **Export-button stacking breakpoint replaced with a real collision check (user report):**
+  `#exportButtons` used a fixed `@media (max-width: 1700px)` rule to stack its 3 download
+  buttons vertically once they'd otherwise collide with `#legend` -- hand-picked against
+  the legend's OLD, narrower footprint. This session's legend relayout widened it, and the
+  user correctly diagnosed the result: narrowing the browser window no longer stacked the
+  buttons until the legend was already overlapping the JSON button, well past where the old
+  1700px threshold assumed the collision would start. Rather than re-tuning the same magic
+  number against the new width (which would just go stale again the next time the legend's
+  content changes), replaced it with `RunControl.updateExportButtonsLayout()`
+  (`runControl.js`), called at the end of `applyUiScale()` (so it re-runs on every resize
+  and at init): it measures the REAL rendered gap between `#exportButtons` and `#legend` via
+  `getBoundingClientRect()` -- which also correctly accounts for `--ui-scale`'s
+  `transform: scale()`, unlike a viewport-width media query -- and toggles a `.stacked`
+  class only when the two would actually be closer than 24px apart. No physics/stats
+  impact; not covered by the golden/gate suite (pure DOM layout), but the suite was
+  re-run anyway to confirm the unrelated `runControl.js` edit didn't disturb the
+  simulation loop -- still exact-match.
+- **Footprint labels standardized to "2D" (user request, for labeling consistency):**
+  "surface-absorbed footprint" -> "surface-absorbed 2D footprint" and "downward
+  cloud-base crossings footprint" -> "downward cloud-base crossings 2D footprint," in
+  both `index.html` and `exportUtils.js`'s `LEGEND_LAYOUT`. The third footprint entry
+  already read "reflected 2-D top footprint" (hyphenated) -- flagged the mismatch and,
+  per the user's choice, dropped the hyphen there too so all three footprint entries now
+  share the identical "2D" spelling. Text-only change; full golden/gate regression suite
+  re-verified exact-match.
+- **Legend titles/entries forced to a single line, box widens instead of wrapping (user
+  follow-up):** "Intermediate events (can recur, photon continues)" was wrapping to 2
+  lines on-screen, and long entries like "Incident surface-absorbed" risked the same,
+  because #legend's `max-width: 760px` could compress a flex/grid item below its natural
+  content width. Removed the cap and added `white-space: nowrap` on `#legend` (inherited by
+  every title and entry) -- the box now grows to fit its content instead of a fixed width
+  forcing a wrap, per user request. On the canvas side, `measureLegendGeometry()` in
+  `exportUtils.js` previously sized each block from its item labels only, never checking
+  whether a block's OWN section title was wider than its items -- harmless by luck so far,
+  but canvas text never auto-wraps (unlike CSS), so a wide-enough title would have silently
+  overrun into whatever sat next to it with no warning. Now measures each title in its
+  actual bold 15px font and widens the block (`intermediateBlockW`, `animationBlockW`,
+  `terminalRowW`) to fit if the title is the wider of the two, closing off that latent
+  overflow case before it could ever surface. Full golden/gate regression suite
+  re-verified exact-match.
+- **Legend box relayout to condense vertical footprint (user request, iterated via a
+  shared PPT mockup):** the legend was one flat, tall column-pair stack (16 entries + 2
+  headers, 11 effective rows). Restructured into three purpose-built blocks instead: (1)
+  Intermediate events -- single stacked column, 3 items; (2) Animation photon paths -- a
+  new section (previously the 6 path-line entries had no header at all) sitting BESIDE
+  Intermediate events in a shared top row rather than stacked below it, 2-column grid, and
+  with "photon paths" dropped from each label (e.g. "Reflected photon paths" ->
+  "Reflected") since it's redundant with the section title -- Terminal entries keep their
+  fuller wording since they stand alone; (3) Terminal events -- 3 INDEPENDENTLY-stacked
+  columns of uneven height (3/2/2 items), each pairing a terminal dot with its own
+  footprint square where one exists (e.g. "reflected" + "reflected 2-D top footprint"
+  share a column), rather than a plain row-major fill. `index.html`'s `#legend` moved from
+  a single CSS Grid to a flex column of purpose-built sub-containers
+  (`.legendIntermediate`, `.legendAnimationGrid`, `.legendTerminalCols` > `.legendCol`) --
+  a plain grid can't express uneven column heights, but independent flex-column stacks
+  support any item count per column with no extra layout math.
+  `exportUtils.js` mirrors the same structure: the old flat `LEGEND_ENTRIES` array +
+  generic row-major `buildLegendLayout()` are replaced by an explicit `LEGEND_LAYOUT`
+  (blocks/columns spelled out directly) and `measureLegendGeometry()`, which still uses
+  real `ctx.measureText()` per independent column (not a hand-guessed width) and adds a
+  manual rounded-rect path (`tracePath()`, arcTo-based) so the exported PNG's legend box
+  now has the same 12px rounded corners as the on-screen box, which it previously lacked.
+  Net effect: legend box height in the mock geometry check drops from ~372px to ~258px
+  (~31% shorter) for equivalent content. No physics/stats impact -- full golden/gate
+  regression suite (`gen_golden`, `check_golden_ud`, `check_golden_periodic`,
+  `verify_phase3`, `verify_phase4`) re-verified exact-match after the rewrite.
+- **"Surface-absorbed photon paths" legend label clarified to "Incident surface-absorbed
+  photon paths" (user follow-up):** the brown path-line legend entry was ambiguous about
+  when it's actually reachable. At Aₛ=0, legacy illumination modes (center/top/top_side)
+  never produce a brown path — every surface landing there goes through physics.js's
+  dedicated cloud-base "fast path" and returns `Status.TRANSMITTED` (green), since the
+  reflection draw could never succeed anyway (verified: 0% `SURFACE_ABSORBED` across four
+  legacy-mode/Θ₀ configurations, 20,000 photons each). The only route that calls
+  `surfaceInteraction()` unconditionally regardless of Aₛ is Uniform Domain's clear-direct
+  launch — a photon launched outside the cloud's own footprint, missing it entirely, landing
+  directly on open ground (verified: 17,439 `SURFACE_ABSORBED` vs. 846 `TRANSMITTED` under
+  UD/open/Θ₀=60°/Aₛ=0). So the brown path is specifically the *incident*-on-open-ground case,
+  not a general "reached the surface" case — relabeled in both `index.html` and
+  `exportUtils.js`'s `LEGEND_ENTRIES` to say so. Text-only change; full golden/gate
+  regression suite re-verified exact-match.
 - **Domain-factor auto-clamp not reflected in rendering:** `scene.js`'s `updateWorld()`
   (rendered ground plane) and `simstats.js`'s `surfaceFootFactor()` (surface-absorption
   heatmap grid) both sized themselves off the raw, typed `UI.getDomainFactor()` instead of
@@ -41,9 +123,185 @@ All notable changes to this project are documented here. The format is based on
   Verified by direct simulation at the reported settings (UD, M=3, Θ₀=60°, τ=10, W=40,
   β_ext=10, d_sfc=0.5): 20.5% of open-boundary surface-absorbed landings and 8.7% of
   periodic landings fell outside the old symmetric grid; 0% fall outside after the fix.
+- **Periodic surface-absorbed endpoint markers not wrapped (follow-up, same session):** the
+  fix above wrapped the heatmap's own per-cell binning (`SimStats._addSurfaceFootprint`),
+  but the per-photon endpoint marker (`Photons.addEndpoint`) still placed its dot at the
+  raw, unwrapped `xExit`, so individual markers still landed past the leeward edge even
+  after the grid itself was corrected (user report, follow-up screenshot). Factored the
+  wrap into a shared `SimStats.wrapPeriodicX()`, using the TRUE simulated tile half-width
+  (`_periodicWrapHalfW`, cached from the effective M) rather than the heatmap's own
+  display-clamped extent, and applied it to both the heatmap bin and the
+  TRANSMITTED/SURFACE_ABSORBED endpoint marker positions. Verified: 8.2% of surface-landing
+  endpoints fell outside the tile before, 0% after. (Also investigated a visually "empty"
+  band the user flagged in the open-boundary heatmap: direct inspection of the accumulated
+  grid's column sums shows a smooth density gradient with no true zero-count band — a
+  soft-edged cloud shadow, physically expected at COT=10 with forward-peaked g=0.85
+  scattering, not a rendering artifact.)
+- **Surface-heatmap outline frame not shifted with the widened grid (follow-up, same
+  session):** `Scene.addFootprintHeatmap()` draws its own outline frame around each
+  heatmap's cells (colored per-heatmap — `0xc8a27a`, tan/gold, for `surfAbs`), separate
+  from the ground-plane edge in `Scene.buildCloudBox()`. The `offsetX` shift added for the
+  open-boundary widening was applied to the per-cell positions but missed this frame, so it
+  stayed drawn at the old symmetric bounds while the cells themselves were correctly
+  widened and shifted — visually detaching the frame from the actual cell coverage on both
+  edges (user report: the frame appeared offset from the heatmap on both the sunward and
+  leeward zoom). Frame corner points now use the same `offsetX`; since its width/offset
+  formulas reduce to exactly the ground plane's, the two now coincide for any M within the
+  normal display-clamp range.
 - **UD sub-menu labels not visually distinguished:** "Domain factor M" and "Domain
   boundary" labels now render in the same yellow (`#f7f44a`) as the Reset button when
   Illumination = Uniform domain (the only time they're shown at all).
+- **Periodic-boundary SIDE_ESCAPE endpoint marker rendered at cloud-top height instead of
+  the cloud's own side wall (small, deliberate physics.js addition — see below):** under
+  Uniform domain + periodic boundary, `wrapAndFindBoxEntry`'s only terminal SIDE_ESCAPE
+  outcome is an upward ray genuinely clearing τ=0 (cloud-top height) after exhausting every
+  neighboring-tile re-entry attempt — correct for the R/T/A/S bucket, but `xExit/yExit/
+  tauExit` reports that wrapped τ=0 clearance point, not a location on any cloud wall, so
+  the marker visually read as a top-face escape rather than a side escape (user report,
+  2026-07). A first attempt repositioned the marker to `result.path`'s last vertex, which is
+  correct in principle (physics.js already computes the true wall-crossing point, `xb,yb,
+  taub`, before the periodic wrap search runs) but broke for the vast majority of photons in
+  a real run: `runControl.js` only passes `storePath=true` for the first ~`maxPaths`
+  (default 250) photons — a pre-existing performance cap — so `path` never accumulates past
+  its single launch-point element for everything beyond that, and the fix silently fell back
+  to plotting the launch position instead (a differently-distributed but still-scattered
+  field at ~cloud-top height, which is why it looked like the artifact had just moved sides
+  rather than being fixed). Root-caused via direct simulation with `storePath=false` — the
+  actual condition ~99% of photons in a typical run experience — reproducing the exact
+  visual symptom before touching any code.
+  Fixed properly with a minimal, deliberately scoped physics.js addition: `lastWallCrossing`,
+  a single `{x,y,tau}` object overwritten (not appended) at every cloud-side-wall crossing,
+  populated unconditionally regardless of `storePath` (O(1) per photon — no array growth, no
+  RNG draws, not read by any SimStats accumulation, so no golden-snapshot or gate-suite
+  impact — confirmed exact-match on the full regression suite after the change). Falls back
+  to the wrapped τ=0 point on the rare periodic SIDE_ESCAPE that never touched a cloud wall
+  at all (a surface-reflection-driven escape, Aₛ>0, launched directly into the clear region)
+  — an honest description of that specific event. Verified directly: with `storePath=false`,
+  100% of 327 sampled periodic side-escapes landed exactly on a cloud wall face (|x| or |y|
+  = halfW) at genuine mid-depth τ (previously 100% at τ≈0).
+- **SIDE_ESCAPE rendering conflated two physically distinct events (follow-up, same
+  session):** verifying the fix above at Aₛ≠0 (not previously tested in this thread) surfaced
+  a separate, pre-existing issue — not a regression, confirmed by diffing today's physics.js
+  changes against the prior commit — affecting every illumination mode and both domain
+  boundaries. `Status.SIDE_ESCAPE` covers two different terminal events that physics.js
+  already tags separately (`result.bypass`; `simstats.js` has kept these in separate
+  R/T/A/S buckets and separate path-length pools, `sideEscapeUpPaths` vs. `bypassPaths`,
+  since the Aₛ>0 feature was added): a genuine cloud-side-wall crossing (bounded to the
+  cloud's own wall) vs. a surface-reflected photon that ascends without ever touching a
+  cloud face again (`bypass: true`). Because the modeled surface is infinite and the
+  Lambertian reflection angle can be arbitrarily close to grazing, the latter's landing
+  position is effectively unbounded — measured directly (Aₛ=0.3, same test geometry): legacy
+  top-face launch mode alone produced bypass escapes with x ranging from −1387 to +36865.
+  The rendering layer (and the on-screen/export legends) never read `bypass`, coloring and
+  labeling both "side boundary escape" identically — nonsensical once Aₛ>0 makes the bypass
+  population visible (orange dots scattered across a huge area at a fixed height, nowhere
+  near any cloud side; user report, 2026-07). `UI.getOutcomeColor()` now takes an optional
+  `bypass` argument and returns a distinct pink (`#f9a8d4` — lightened from an initial `#f472b6`
+  per user follow-up: too close to the orange `#f97316` genuine-side-escape color to
+  distinguish on their monitor) for bypass events; `photons.js`'s
+  `addEndpoint()`/`addStaticPath()` and both the on-screen (`index.html`) and export-canvas
+  (`exportUtils.js` — a separate hardcoded legend array, previously missed by an earlier
+  legend fix for the same reason) legends now carry a distinct "Surface-reflected escape (no
+  cloud face)" entry alongside "Side boundary escape." Also closed a related gap the review
+  surfaced: the periodic wall-crossing repositioning fix above did not originally exclude
+  bypass events, so a photon that touched a cloud wall earlier in its trajectory and only
+  later reflected off the surface and escaped could have had its marker misplaced at that
+  stale, unrelated crossing point; `useWallCrossing` now requires `!result.bypass`. Verified
+  directly: of 1942 sampled periodic bypass escapes, 73 did carry a stale `lastWallCrossing`
+  from earlier in their trajectory, and 100% correctly used their true exit position instead;
+  all 190 sampled genuine periodic side-escapes still land exactly on a wall face, colored
+  orange. Full golden/gate regression suite re-verified exact-match after this fix too.
+- **Lightened bypass-escape color (follow-up):** `#f472b6` was too close to the genuine
+  side-escape orange (`#f97316`) to distinguish at a glance; changed to a lighter
+  `#f9a8d4` across `ui.js`, `photons.js`, both legends, and the CHANGELOG entry above.
+- **On-screen legend reorganized into Intermediate/Terminal event sections (user request):**
+  clarifying which dot markers end a photon's simulated path (blue reflected, orange side
+  escape, pink bypass escape, brown surface-absorbed, black cloud-absorbed — each drawn
+  exactly once, via `Photons.addEndpoint()`, always the last thing recorded for that photon)
+  versus which are non-terminal events that can recur any number of times while the photon
+  keeps going (green downward base-crossings, purple surface-reflection bounces). Added a
+  `.legendHeader` CSS class (spans both grid columns) and two header rows to `index.html`'s
+  `#legend`; the export-canvas legend (`exportUtils.js`) was left in its existing flat order
+  for now, pending discussion — its fixed 2-column layout splits entries strictly by index
+  (`col = idx < rows ? 0 : 1`), so inserting full-width header rows there needs real
+  restructuring, not just new entries.
+- **Fixed a stale `LEGEND_ROWS` mismatch in the export-canvas legend (caught during the
+  reorg above):** `LEGEND_ROWS` (used only to size `LEGEND_BOX_H`, the background
+  rectangle) was left at `8` when the bypass-escape path/dot entries were added earlier this
+  session, growing `entries.length` from 16 to 18 without updating this hand-maintained
+  constant — exactly the class of bug its own comment already warned about. With 18 entries
+  needing `Math.ceil(18/2)=9` rows, the box was one row too short, so the last legend row
+  ("Scattering flash" / "Surface absorbed endpoints") would have drawn below the background
+  box's bottom edge in exported PNGs. Corrected to `9`.
+- **Trimmed 3 self-evident on-screen legend entries (user request):** "glowing photon head /
+  active trail," "scattering-event flash," and "last scatter marker while paused" removed
+  from `index.html`'s `#legend` — all three are only visible during live photon animation,
+  where they're self-explanatory to a user watching it happen, so the legend entries were
+  redundant screen real estate. `index.html`'s `#legend` now has 16 entries (was 19); the
+  export-canvas legend (`exportUtils.js`) is untouched by this — it never carried the
+  screen-only "last scatter marker while paused" entry to begin with, and still lists
+  "Photon tracer" / "Scattering flash" pending a decision on whether those two make sense to
+  keep for a static PNG export.
+- **Export-canvas legend now matches the on-screen legend exactly (user request):** same 16
+  entries, same "Intermediate events" / "Terminal events" section headers, same order,
+  including "Photon tracer" and "Scattering flash" now dropped there too (consistent with the
+  trim above). Rewrote `exportUtils.js`'s legend around a shared `LEGEND_ENTRIES` array and a
+  new `buildLegendLayout()` that replicates the on-screen CSS grid's actual row-major,
+  2-column flow (`grid-template-columns: auto auto`) — entries fill left-to-right then wrap,
+  and a `{header}` entry forces a full-width row, closing out any dangling single-item row
+  first — rather than the old fixed 2-column split (first half of the array in column 0,
+  second half in column 1), which had no way to represent header rows at all. Box height is
+  now derived from the layout's actual row count (`legendBoxHeight()`) instead of a
+  hand-maintained `LEGEND_ROWS` constant, permanently closing the "forgot to update the row
+  count" bug class this file has been bitten by twice this session (once causing the
+  right-edge-clipping fix, and again for the just-fixed stale-height bug above). Verified the
+  layout algorithm directly: 16 entries + 2 headers, 11 total rows, zero (row,col) collisions,
+  and the one dangling single-item row ("Surface reflected event") correctly does not bleed
+  into the following header's row — matching the on-screen grid's actual behavior.
+- **"Surface absorbed endpoint" recolored from `#7c2d12` to `#c8a27a` (user report: it read as
+  red, not brown):** changed in `photons.js`'s `addEndpoint()` for both branches that produce
+  it — the `SURFACE_ABSORBED` terminal status and the A_s=0 fast-path `TRANSMITTED` branch
+  (documented as sharing the same color/radius since they're the same physical event reached
+  two different ways) — now matching "Surface-absorbed footprint"'s color exactly, per the
+  user's specific request for consistency between those two markers. Deliberately left the
+  PATH LINE color unchanged (`ui.js`'s `getOutcomeColor()`, "Surface-absorbed photon paths" in
+  both legends, still `#7c2d12`) since the user's report was specifically about the endpoint
+  dot, not the path line — the path and its own terminal dot now render in two different
+  browns. Both legends' swatches updated to `#c8a27a` to match. No physics/stats impact
+  (purely a Three.js material color); full golden/gate regression suite re-verified
+  exact-match.
+- **Moved "downward cloud-base crossings footprint" into the Intermediate events section
+  (user follow-up):** this footprint accumulates the same non-terminal, can-recur downward
+  base-crossing population as the green dot right above it, unlike "reflected 2-D top
+  footprint" and "surface-absorbed footprint," which accumulate terminal-event populations —
+  moved in both `index.html` and the now-matching export-canvas legend so footprints sit next
+  to the dot/event type they actually visualize.
+- **Surface-absorbed brown fully unified to `#8a6f53` (user follow-up, user-picked color):**
+  the previous fix left the path-line color at `#7c2d12` and only recolored the endpoint dot
+  to `#c8a27a` (matching the footprint); the user then asked for full consistency across all
+  three. All three — `ui.js`'s `getOutcomeColor()` (path line / "Surface-absorbed photon
+  paths" in both legends), `photons.js`'s `addEndpoint()` (both branches producing the
+  endpoint dot), and `scene.js`'s `surfAbs` heatmap (which also drives its outline frame,
+  same color parameter) — now render `#8a6f53`. No physics/stats impact; full golden/gate
+  regression suite re-verified exact-match.
+- **Export-canvas legend box sizing switched from a hand-guessed width to real
+  `ctx.measureText()` (user report: exported PNG showed a visibly asymmetric, unused margin
+  on the right side of the legend box):** the previous `LEGEND_COL_W=560` was a deliberately
+  generous fixed guess (~14px/character), sized once against the single longest label known
+  at the time — safe against clipping, but far more generous than most labels actually need,
+  which is exactly why the box looked loose/unbalanced once shorter labels landed in the
+  right column. Replaced with `measureLegendColumnWidths()`, which uses the real browser
+  canvas context's `ctx.measureText()` (available at actual runtime even though this
+  sandbox's Node environment lacks a headless canvas to test it directly) to size each
+  column independently to its own actual widest label — matching how a CSS grid with `auto`
+  columns already behaves on-screen. `legendBoxSize()` is now the single shared source for
+  both width and height across `drawExportLegend()` and `drawExportLegendBottomCentered()`,
+  so the two can't drift apart the way the old fixed constants already had (twice this
+  session). Sanity-checked the layout algorithm with a mocked measureText (~10.5px/char):
+  produced independently-sized columns (472 / 535 in the mock) and a narrower total box
+  (1027 vs. the old fixed 1140) — real browser metrics will differ slightly, but the
+  algorithm self-corrects to whatever they actually are rather than needing another manual
+  re-guess.
 
 ### Refactored
 

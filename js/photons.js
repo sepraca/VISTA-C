@@ -5,7 +5,8 @@ import { state, world } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { StatsPanel } from './statsPanel.js';
-import { Status } from './constants.js';
+import { SimStats } from './simstats.js';
+import { Status, EntryMode, DomainBoundary } from './constants.js';
 
 // Stored-endpoint buffer cap = the "Endpoint caps shown" slider maximum. Storage
 // is bounded by THIS (not the live display cap), so dragging the slider down and
@@ -91,7 +92,7 @@ export const Photons = {
     },
 
     addStaticPath: function(result) {
-      const color = UI.getOutcomeColor(result.status);
+      const color = UI.getOutcomeColor(result.status, result.bypass);
       const mat = Photons._pathMaterial(color);
       for (const seg of Photons.splitPathSegments(result.path)) {
         const pts = seg.map(Coords.simToWorldPoint);
@@ -406,21 +407,101 @@ export const Photons = {
         // marker is the same color/radius as SURFACE_ABSORBED since it's the
         // same physical event, just reached via this A_s=0 shortcut instead
         // of surfaceInteraction()). Distinct point from the green base-
-        // crossing marker, not a duplicate of it.
-        color = 0x7c2d12;
+        // crossing marker, not a duplicate of it. Color matches
+        // SURFACE_ABSORBED's endpoint color below -- 0x8a6f53, unified
+        // (2026-07) across path line, endpoint dot, and surface-absorbed
+        // footprint (was 0x7c2d12, reported as reading red rather than
+        // brown; an intermediate fix used 0xc8a27a for just the dot/footprint
+        // while leaving the path line at 0x7c2d12, but the user then asked
+        // for full consistency across all three -- see ui.js's
+        // getOutcomeColor and scene.js's surfAbs heatmap for the other two).
+        color = 0x8a6f53;
         radius = 0.18;
       } else if (result.status === Status.SIDE_ESCAPE) {
-        color = 0xf97316;
+        // bypass (2026-07): a surface-reflected photon that ascends without
+        // ever touching a cloud face again is NOT a side-wall event -- see
+        // UI.getOutcomeColor's doc comment for the full reasoning (physics.js
+        // already tags this via result.bypass; simstats.js already keeps it
+        // in a separate bucket/path-length pool; only the rendering layer
+        // was conflating the two). Distinct color so it reads as the
+        // different physical event it is, rather than a nonsensical "side
+        // escape" floating far from any cloud wall (user report, 2026-07).
+        color = result.bypass ? 0xf9a8d4 : 0xf97316;
         radius = 0.14;
       } else if (result.status === Status.SURFACE_ABSORBED) {
-        color = 0x7c2d12;
+        // 0x8a6f53 (2026-07): unified brown -- see the TRANSMITTED branch
+        // above for the full history (was 0x7c2d12, then an intermediate
+        // 0xc8a27a for just this dot, now matched everywhere per user
+        // request: path line, endpoint dot, and surface-absorbed footprint
+        // all render the same brown).
+        color = 0x8a6f53;
         radius = 0.18;
       } else {
         color = 0x111827;
         radius = 0.20;
       }
 
-      const p = Coords.simToWorldPoint({x: result.xExit, y: result.yExit, tau: result.tauExit});
+      // Wrap x for surface-landing statuses under Uniform domain + periodic
+      // boundary (2026-07 rendering fix): TRANSMITTED (the A_s=0 fast path
+      // above) and SURFACE_ABSORBED are the two "photon reaches the true
+      // surface" outcomes, so they're the ones subject to the same
+      // canonical-tile wrap already applied to the surface heatmap's cell
+      // binning (SimStats._addSurfaceFootprint) -- a no-op everywhere else
+      // (SimStats.wrapPeriodicX returns x unchanged outside Uniform domain +
+      // periodic). Without this, the heatmap's own cells wrapped correctly
+      // but the raw per-photon marker did not, leaving dots stranded past
+      // the leeward edge even after the grid fix (user report, 2026-07).
+      // Periodic SIDE_ESCAPE marker repositioning (2026-07): under Uniform
+      // domain + periodic boundary, a genuine SIDE_ESCAPE can only become
+      // terminal by clearing tau=0 (cloud-top height) after
+      // wrapAndFindBoxEntry exhausts every neighboring-tile re-entry
+      // attempt (physics.js) -- there is no "escape sideways to nowhere"
+      // under periodic, since the domain tiles infinitely. So
+      // result.xExit/yExit/tauExit for this status is that wrapped tau=0
+      // miss position, not a location on any cloud's own side wall --
+      // rendered as-is, it reads as a top-face escape rather than a side
+      // escape (user report, 2026-07).
+      //
+      // First attempt used result.path's last vertex for this. That broke
+      // for the vast majority of photons in a normal run: runControl.js
+      // only passes storePath=true for the first ~maxPaths (default 250)
+      // photons (a deliberate performance cap -- see Photons.addPhotonToScene
+      // callers); every photon beyond that runs with storePath=false, so
+      // `path` never accumulates past its single initial (launch-point)
+      // element. The fallback silently used that launch point instead of a
+      // wall crossing -- visually indistinguishable in kind from the
+      // original bug (still a scattered field at ~cloud-top height across
+      // the wide Uniform-domain launch span), just reflecting a different
+      // (launch-position) distribution, which is why the first attempt
+      // looked like the artifact had merely moved sides (user report,
+      // 2026-07).
+      //
+      // Fix: physics.js now tracks `lastWallCrossing` directly -- a single
+      // {x,y,tau} object overwritten (not appended) at every cloud-side-wall
+      // crossing, populated unconditionally regardless of storePath (O(1)
+      // per photon, no RNG draws, not consumed by any SimStats accumulation
+      // -- see physics.js's simulatePhoton for the full justification).
+      // Null when a periodic SIDE_ESCAPE genuinely never touched a cloud
+      // wall at all (e.g. a surface-reflection-driven escape, A_s>0, whose
+      // photon was launched directly into the clear region and never neared
+      // the cloud) -- correctly falls back to the wrapped tau=0 point in
+      // that case, since "cleared the top without ever touching a cloud" is
+      // an honest description of that event.
+      //
+      // Excludes bypass (2026-07, same fix as the color branch above): a
+      // photon can touch a cloud wall earlier in its trajectory (setting
+      // lastWallCrossing), then later reach the surface, reflect, and escape
+      // as a bypass event from a completely different, unrelated location.
+      // Repositioning a bypass marker to that stale wall-crossing point would
+      // misrepresent where it actually happened -- bypass events always use
+      // their own true (if occasionally very large) xExit/yExit/tauExit.
+      const isPeriodicUD = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getDomainBoundary() === DomainBoundary.PERIODIC;
+      const useWallCrossing = result.status === Status.SIDE_ESCAPE && !result.bypass && isPeriodicUD && result.lastWallCrossing;
+      const exitPoint = useWallCrossing ? result.lastWallCrossing : {x: result.xExit, y: result.yExit, tau: result.tauExit};
+
+      const isSurfaceLanding = result.status === Status.TRANSMITTED || result.status === Status.SURFACE_ABSORBED;
+      const xExit = isSurfaceLanding ? SimStats.wrapPeriodicX(exitPoint.x) : exitPoint.x;
+      const p = Coords.simToWorldPoint({x: xExit, y: exitPoint.y, tau: exitPoint.tau});
       state.endpointData.push({x: p.x, y: p.y, z: p.z, color, radius});
     },
 

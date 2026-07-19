@@ -298,18 +298,37 @@ export const UI = {
     getShowSurfaceHeatmap: function() { return document.getElementById("showSurfaceHeatmap")?.checked ?? true; },
 
     // --- Outcome color map ---
-    // Maps a photon exit status string to a Three.js hex color.
-    getOutcomeColor: function(status) {
+    // Maps a photon exit status (+ optional bypass flag) to a Three.js hex color.
+    // bypass (2026-07): SIDE_ESCAPE covers two physically distinct events that
+    // physics.js already tags separately (see simstats.js's bypassPaths vs.
+    // sideEscapeUpPaths, and the R/T/A/S bucketing that treats them
+    // differently) -- a genuine cloud-side-wall crossing (bypass falsy,
+    // bounded to the cloud's own wall) vs. a surface-reflected photon that
+    // ascends without ever touching a cloud face again (bypass true; since
+    // the Lambertian surface is infinite and the reflection angle can be
+    // arbitrarily close to grazing, this can land almost anywhere -- x
+    // ranges into the tens of thousands were measured directly, not a bug).
+    // The two were rendered identically (same orange, same "side boundary
+    // escape" legend entry), which reads as nonsensical once As>0 makes the
+    // bypass population visible: dots scattered across a huge area at a
+    // fixed height, nowhere near any cloud side (user report, 2026-07).
+    getOutcomeColor: function(status, bypass) {
       if (status === Status.REFLECTED)       return 0x60a5fa;
       if (status === Status.TRANSMITTED)     return 0x86efac;
-      if (status === Status.SIDE_ESCAPE)     return 0xf97316;
+      if (status === Status.SIDE_ESCAPE)     return bypass ? 0xf9a8d4 : 0xf97316;
       // Surface-absorbed paths (Aₛ>0 terminal event at the Lambertian
       // surface) previously fell through to the same gray as cloud-absorbed
       // ("absorbed") -- indistinguishable in the 3D path view. Match the dark
       // brown already used for these events' markers (Scene.
       // addSurfaceInteractionMarkers()'s non-reflected sphere color; R8,
       // CODE-REVIEW). Cloud-absorbed ("absorbed") intentionally stays gray.
-      if (status === Status.SURFACE_ABSORBED) return 0x7c2d12;
+      // 0x8a6f53 (2026-07): unified brown across path line, endpoint dot, and
+      // surface-absorbed footprint (was 0x7c2d12, which the user reported
+      // reading as red rather than brown; user then asked for the path line
+      // to match the endpoint dot too, rather than leaving the two as
+      // different shades -- see photons.js's addEndpoint and scene.js's
+      // surfAbs heatmap color for the other two places this had to change).
+      if (status === Status.SURFACE_ABSORBED) return 0x8a6f53;
       return 0x94a3b8;
     }
   };
