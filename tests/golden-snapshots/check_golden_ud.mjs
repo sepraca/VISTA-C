@@ -6,6 +6,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { compareGolden } from "./compare_golden.mjs";
 
 // fileURLToPath (NOT URL.pathname) so paths containing spaces or other
 // URL-encoded characters resolve correctly — .pathname leaves them
@@ -30,16 +31,16 @@ for (const r of fresh.results) {
   delete r.rawStats.wrapCapped;
 }
 
-const a = JSON.stringify(fresh), b = JSON.stringify(golden);
-if (a === b) {
-  console.log(`PASS — exact match, ${golden.results.length} rows (uniform_domain golden).`);
+// Tolerant comparison (2026-07-19, see compare_golden.mjs): counts exact,
+// totalPath/meanPath to 1e-9 relative -- cross-Node/V8 last-ulp Math
+// differences can wobble the run-total path sum at machine epsilon in the
+// longest-trajectory rows while every count stays bit-identical.
+const { pass, diffs } = compareGolden(fresh, golden);
+if (pass) {
+  console.log(`PASS — match (counts exact; float accumulators ≤1e-9 rel), ${golden.results.length} rows (uniform_domain golden).`);
 } else {
-  console.log("FAIL — differences found. Row scan:");
-  for (let i = 0; i < Math.max(fresh.results.length, golden.results.length); i++) {
-    if (JSON.stringify(fresh.results[i]) !== JSON.stringify(golden.results[i])) {
-      const r = golden.results[i] ?? fresh.results[i];
-      console.log(`  row ${i}: M=${r.M} th0=${r.theta0_deg} As=${r.As} ${r.obsGeom}`);
-    }
-  }
+  console.log(`FAIL — ${diffs.length} differences:`);
+  for (const d of diffs.slice(0, 40)) console.log("  " + d);
+  if (diffs.length > 40) console.log(`  ... and ${diffs.length - 40} more`);
   process.exitCode = 1;
 }

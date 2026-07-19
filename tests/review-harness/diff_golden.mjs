@@ -2,6 +2,7 @@
 // v6.0-Phase-2 additive raw-stat fields (all zero for legacy modes except
 // bypassViaCloud == surfaceBypassUp) plus generation timestamps/appVersion.
 import { readFileSync } from "node:fs";
+import { compareGolden } from "../golden-snapshots/compare_golden.mjs";
 
 const NEW_FIELDS = ["bypassClearDirect", "bypassViaCloud", "transmittedClearDirect",
                     "surfaceReflectedClearDirect", "absorbedCloudIncident", "absorbedClearRecycled",
@@ -42,12 +43,13 @@ function normalize(obj) {
 
 const a = normalize(JSON.parse(readFileSync(process.argv[2], "utf8")));
 const b = normalize(JSON.parse(readFileSync(process.argv[3], "utf8")));
-const sa = JSON.stringify(a), sb = JSON.stringify(b);
-if (sa === sb) { console.log("EXACT MATCH (after stripping additive fields):", a.results.length, "rows"); }
+// Tolerant comparison (2026-07-19, see compare_golden.mjs): counts exact,
+// totalPath/meanPath to 1e-9 relative -- same cross-Node/V8 last-ulp policy
+// as check_golden_ud/check_golden_periodic.
+const { pass, diffs } = compareGolden(a, b);
+if (pass) { console.log("MATCH (counts exact; float accumulators ≤1e-9 rel; additive fields stripped):", a.results.length, "rows"); }
 else {
-  console.log("DIFFER. Row-by-row scan:");
-  for (let i = 0; i < Math.max(a.results.length, b.results.length); i++) {
-    const ra = JSON.stringify(a.results[i]), rb = JSON.stringify(b.results[i]);
-    if (ra !== rb) { console.log("row", i, a.results[i]?.illum, a.results[i]?.theta0_deg, a.results[i]?.As, a.results[i]?.obsGeom); }
-  }
+  console.log(`DIFFER — ${diffs.length} differences:`);
+  for (const d of diffs.slice(0, 40)) console.log("  " + d);
+  if (diffs.length > 40) console.log(`  ... and ${diffs.length - 40} more`);
 }

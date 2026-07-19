@@ -87,7 +87,21 @@ export const Physics = {
     // (p.tau > tauCloud, dir.z < 0): the entry face is the cloud base or a
     // side wall, never the top. Returns the entry point {x, y, tau} clamped
     // onto the box, or null if the ray misses the box.
-    rayBoxEntry(p, dir, halfW, halfD, tauCloud) {
+    //
+    // minT (2026-07-19, review N1 -- additive, default preserves every
+    // pre-existing call site): the minimum accepted tEnter. The historical
+    // 1e-12 floor exists so a photon sitting ON a box face moving OUTWARD
+    // can never re-detect the box it just exited. But under periodic
+    // boundary at M = 1 the tile edge COINCIDES with the cloud wall, so a
+    // wrapped point lands exactly on the opposite wall moving INWARD --
+    // a genuine entry with tEnter = 0 exactly, which the 1e-12 floor
+    // rejected. That silently turned the box interior into clear air for
+    // every side-wall exit at M = 1 (verified: 10.3% terminal side escapes
+    // in a configuration where zero are geometrically possible, R_domain
+    // 0.028 BELOW the finite-extent proxy it should exceed, mean
+    // scatterings 20.0 -> 15.7). wrapAndFindBoxEntry passes minT = -1e-9 on
+    // post-wrap iterations only -- where "just exited" can no longer apply.
+    rayBoxEntry(p, dir, halfW, halfD, tauCloud, minT = 1e-12) {
       let tEnter = -Infinity, tExit = Infinity;
       const axes = [
         [p.x,   dir.x, -halfW, halfW],
@@ -106,7 +120,7 @@ export const Physics = {
           if (tEnter > tExit) return null;
         }
       }
-      if (!(tEnter > 1e-12) || !isFinite(tEnter)) return null;
+      if (!(tEnter > minT) || !isFinite(tEnter)) return null;
       // tEnter is additive (CODE-REVIEW P3): existing callers destructure only
       // .x/.y/.tau and are unaffected; Phase 3's wrap loop needs it to tell
       // whether this hit occurs before or after the current tile boundary.
@@ -186,7 +200,17 @@ export const Physics = {
 
         const tMax = Math.min(tTau, tX, tY);
 
-        const hit = Physics.rayBoxEntry(p, dir, halfW, halfD, tauCloud);
+        // minT relaxed to -1e-9 on post-wrap iterations ONLY (review N1): a
+        // wrapped point moving inward is a genuine entry even at tEnter = 0
+        // exactly -- which is precisely what happens at M = 1, where the tile
+        // edge coincides with the cloud wall, so every wrap lands ON the
+        // opposite wall. The first iteration keeps the default 1e-12 floor:
+        // there the photon may genuinely have just exited the home box at
+        // p0, and must not re-detect it. For M > 1 wrapped points sit
+        // (M-1)*halfW from the wall (tEnter strictly positive), so this
+        // change is bit-identical there -- gated by the periodic-golden
+        // M=2/4 row diff at the fix's landing.
+        const hit = Physics.rayBoxEntry(p, dir, halfW, halfD, tauCloud, wrapped ? -1e-9 : 1e-12);
         if (hit && hit.tEnter <= tMax + 1e-9) {
           return { hit: { x: hit.x, y: hit.y, tau: hit.tau }, wrapped };
         }

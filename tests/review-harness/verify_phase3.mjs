@@ -129,4 +129,45 @@ console.log("\n=== Gate 6: below M_min(th0), periodic launchedCloudWall > open (
   console.log(`  (sanity: launchedCloudTop periodic=${p.s.launchedCloudTop} open=${o.s.launchedCloudTop}, launchedClear periodic=${p.s.launchedClear} open=${o.s.launchedClear})`);
 }
 
+// --- Gates 8-9 (2026-07-19, review N1): the M = 1 periodic plane-parallel
+// anchor. M = 1 periodic tiles the cloud flush against itself -- TRUE
+// plane-parallel radiative transfer, the single cleanest validation limit
+// the periodic feature has. Before the N1 fix (rayBoxEntry minT: a wrapped
+// point landing exactly ON the cloud wall at M = 1 was rejected as an entry,
+// letting photons tunnel through the box interior as clear air), this
+// configuration produced 10.3% terminal side escapes (geometrically
+// impossible) and R_domain 0.028 BELOW the finite-extent proxy it must
+// exceed. Post-fix calibration (2026-07-19, seed 42, N=300k, th0=0, As=0):
+// M=1 periodic R_domain = 0.4231 vs open-top W=2000 proxy 0.4232.
+console.log("\n=== Gate 8: M=1 periodic -- terminal side escapes impossible (N1) ===");
+{
+  const N4 = 300000;
+  const ppParams = { tauCloud: 10, slabW: 40, slabD: 40, g: 0.85, omega0: 1.0,
+                     betaExt: 10.0, surfaceDistanceKm: 0.5, entryMode: "uniform_domain",
+                     theta0: 0, surfaceAlbedo: 0, domainFactor: 1, domainBoundary: "periodic" };
+  const pp = runFull(N4, ppParams);
+  check(pp.s.side === 0, `M=1 periodic: stats.side=${pp.s.side} (must be exactly 0 -- every side exit wraps onto the flush neighbor image)`);
+  check(pp.s.wrapCapped === 0, `M=1 periodic: wrapCapped=${pp.s.wrapCapped}`);
+
+  console.log("\n=== Gate 9: M=1 periodic === plane-parallel limit (N1) ===");
+  // Proxy for W -> infinity: open "top" at W=2000 (residual side leakage
+  // ~0.7% at these params biases its R_domain LOW by <~0.005). MC sigma_R at
+  // N=300k is ~0.0009 per run. Tolerance 0.01 comfortably covers both while
+  // remaining ~30x tighter than the pre-fix error (0.031 vs W=2000).
+  const pw = runFull(N4, { ...ppParams, entryMode: "top", slabW: 2000, slabD: 2000 });
+  const Rpp = pp.Rd / pp.launched, Rw = pw.Rd / pw.launched;
+  check(Math.abs(Rpp - Rw) < 0.01,
+        `R_domain: M=1 periodic=${Rpp.toFixed(4)}  open-top W=2000=${Rw.toFixed(4)}  |diff|=${Math.abs(Rpp - Rw).toFixed(4)} (< 0.01)`);
+  // Directional check against the FINITE proxy: periodic recovers the side
+  // leakage that W=500 still loses, so it must sit strictly above.
+  const p500 = runFull(N4, { ...ppParams, entryMode: "top", slabW: 500, slabD: 500 });
+  const R500 = p500.Rd / p500.launched;
+  check(Rpp > R500, `R_domain: M=1 periodic=${Rpp.toFixed(4)} > open-top W=500=${R500.toFixed(4)} (recovers finite-extent leakage)`);
+  // (A DISORT plane-parallel anchor would be even stronger -- the tabulated
+  // cases in tests/DISORT comparisons/ are at different th0/As combinations,
+  // so this suite keeps the self-contained MC-vs-MC limit instead; see the
+  // 2026-07-19 review notes.)
+}
+
 console.log(allPass ? "\nALL PHASE-3 GATES PASS" : "\nSOME PHASE-3 GATES FAILED");
+process.exitCode = allPass ? 0 : 1;

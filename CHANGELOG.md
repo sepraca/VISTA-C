@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (2026-07-19 review session — periodic-boundary plane-parallel limit)
+
+- **Cloud-box tunneling at M = 1 periodic (physics bug, high severity).** At M = 1 the
+  domain tile edge coincides with the cloud wall, so every periodic wrap landed a photon
+  exactly ON the opposite wall — where `rayBoxEntry`'s `tEnter > 1e-12` guard (which
+  correctly prevents a photon from re-detecting the box it just exited) rejected the
+  genuine re-entry. The wrap loop then treated the cloud interior as clear air:
+  side-wall exits tunneled unextinguished through the box. Verified pre-fix (Θ₀=0,
+  Aₛ=0, τ=10, N=300k): 10.3% terminal side escapes in a configuration where zero are
+  geometrically possible; R_domain 0.392 sitting *below* the finite W=500 proxy (0.419)
+  when the plane-parallel limit requires it above; mean scatterings 20.0 → 15.7.
+  **Fix**: additive `minT` parameter on `rayBoxEntry` (default 1e-12 preserves every
+  existing call site), relaxed to −1e-9 by the wrap loop on post-wrap iterations only —
+  a wrapped point moving inward is a genuine entry even at tEnter = 0. Post-fix:
+  terminal side escapes **exactly 0**; R_domain = 0.4231 vs 0.4232 for an open-top
+  W=2000 plane-parallel proxy (agreement to 1×10⁻⁴); mean scatterings restored.
+  M = 1 periodic — true plane-parallel RT, the cleanest validation limit the periodic
+  feature has — now anchors two new permanent gates (verify_phase3 Gates 8–9:
+  `side === 0` exact, and R_domain within 0.01 of the W=2000 proxy plus strictly above
+  the W=500 one). `golden_periodic_v6.0-phase3.json` regenerated: all 12 M=1 rows
+  corrected (e.g. side 51,019 → 0; R 0.3911 → 0.4236), all 24 M=2/4 rows verified
+  **bit-identical** pre/post (wrapped points there sit (M−1)·W/2 from the wall, so the
+  relaxed floor never engages); legacy/UD/open-boundary goldens all exact (default
+  `minT` untouched on every non-wrap path).
+- **Golden checkers made Node/V8-version-robust** (found during the fix's cross-machine
+  verification): the four longest-trajectory periodic rows (Θ₀=60°, Aₛ=1, M=1/4 —
+  ~10⁹⁺ transcendental calls each) sample last-ulp `Math.*` differences between Node
+  versions, wobbling `totalPath`/`meanPath` at ~2×10⁻¹⁶ relative while **every count in
+  every row stays bit-identical** (trajectories identical; only the real-valued path sum
+  differs at machine epsilon). New shared `tests/golden-snapshots/compare_golden.mjs`:
+  counts and all other fields compared exactly, `totalPath`/`meanPath` to 1e-9 relative
+  — one committed snapshot now verifies on every platform/Node version, and any genuine
+  physics change still fails the exact tier. Wired into `check_golden_ud`,
+  `check_golden_periodic`, and `diff_golden`; new `diff_golden_rows.mjs` field-level
+  diff tool (prints magnitudes, not just row indices) added to `tests/review-harness/`.
+
 ## [v6.0.4] — 2026-07-18
 
 ### Fixed (UI/rendering tweaks)

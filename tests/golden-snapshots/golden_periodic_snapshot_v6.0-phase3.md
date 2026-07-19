@@ -1,6 +1,6 @@
 # Golden snapshot — Uniform domain illumination, PERIODIC boundary (v6.0.0-dev, post-Phase-3)
 
-Generated: 2026-07-14T17:10:27.299Z | seed 42 | N=500,000 photons/run | 18 runs (M in {1,2,4} x Th0 in {0,60} deg x As in {0,0.5,1}) x 2 observation geometries = 36 rows.
+Generated: 2026-07-19T17:16:39.843Z (tables regenerated post-N1 fix, 2026-07-19) | seed 42 | N=500,000 photons/run | 18 runs (M in {1,2,4} x Th0 in {0,60} deg x As in {0,0.5,1}) x 2 observation geometries = 36 rows.
 
 Companion to golden_ud_v6.0-phase2.json (same matrix, open boundary). Regenerate with gen_golden_periodic.mjs and diff -- every raw count must match exactly (deterministic RNG, seed 42). Cross-checks at generation time (all 36 rows, tests/review-harness or check_golden_periodic.mjs): all component-sum identities exact; R_domain+T_domain+A_cloud+terminated == launched exactly (terminated absorbs both the MAX_EVENTS and MAX_WRAPS safety caps -- see wrapCapped column); terminal sideEscapeDown === 0 in every row (the TODO's "must become identically 0, migrates into T" claim, gate-verified); S(all_faces) == surfaceBypassUp exactly in every row; wrapCapped negligible (< 0.1% of N) even in the worst case (tightest tiling, M=1).
 
@@ -10,12 +10,12 @@ Two implementation-history notes this snapshot's generation caught (see TODO "Ph
 
 | M | f_c | Th0 | As | R_domain | T_domain | A_cloud | closure* | R comps (top/side/clearDir/viaCloud) | T comps (base/side/clearDir) | wrapCapped |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 1.0000 | 0 | 0 | 0.391128 (195564) | 0.608864 (304432) | 0.000000 | 0.999992 | 144545/51019/0/0 | 206787/97645/0 | 4 |
-| 1 | 1.0000 | 0 | 0.5 | 0.604730 (302365) | 0.395258 (197629) | 0.000000 | 0.999988 | 200601/91038/0/10726 | 139836/57793/0 | 6 |
-| 1 | 1.0000 | 0 | 1 | 0.999988 (499994) | 0.000000 (0) | 0.000000 | 0.999988 | 304007/161760/0/34227 | 0/0/0 | 6 |
-| 1 | 1.0000 | 60 | 0 | 0.527366 (263683) | 0.472624 (236312) | 0.000000 | 0.999990 | 215710/47973/0/0 | 118853/117459/0 | 5 |
-| 1 | 1.0000 | 60 | 0.5 | 0.694616 (347308) | 0.305368 (152684) | 0.000000 | 0.999984 | 259270/77609/0/10429 | 87386/65298/0 | 8 |
-| 1 | 1.0000 | 60 | 1 | 0.999982 (499991) | 0.000000 (0) | 0.000000 | 0.999982 | 339058/131213/0/29720 | 0/0/0 | 9 |
+| 1 | 1.0000 | 0 | 0 | 0.423626 (211813) | 0.576374 (288187) | 0.000000 | 1.000000 | 211813/0/0/0 | 288187/0/0 | 0 |
+| 1 | 1.0000 | 0 | 0.5 | 0.607160 (303580) | 0.392840 (196420) | 0.000000 | 1.000000 | 298152/0/0/5428 | 196420/0/0 | 0 |
+| 1 | 1.0000 | 0 | 1 | 1.000000 (500000) | 0.000000 (0) | 0.000000 | 1.000000 | 479450/0/0/20550 | 0/0/0 | 0 |
+| 1 | 1.0000 | 60 | 0 | 0.605132 (302566) | 0.394868 (197434) | 0.000000 | 1.000000 | 302566/0/0/0 | 197434/0/0 | 0 |
+| 1 | 1.0000 | 60 | 0.5 | 0.731644 (365822) | 0.268356 (134178) | 0.000000 | 1.000000 | 362037/0/0/3785 | 134178/0/0 | 0 |
+| 1 | 1.0000 | 60 | 1 | 1.000000 (500000) | 0.000000 (0) | 0.000000 | 1.000000 | 485949/0/0/14051 | 0/0/0 | 0 |
 | 2 | 0.2500 | 0 | 0 | 0.097568 (48784) | 0.902432 (451216) | 0.000000 | 1.000000 | 37273/11511/0/0 | 53025/23108/375083 | 0 |
 | 2 | 0.2500 | 0 | 0.5 | 0.516598 (258299) | 0.483402 (241701) | 0.000000 | 1.000000 | 63807/26110/148113/20269 | 38439/15252/188010 | 0 |
 | 2 | 0.2500 | 0 | 1 | 1.000000 (500000) | 0.000000 (0) | 0.000000 | 1.000000 | 100089/46067/296483/57361 | 0/0/0 | 0 |
@@ -35,18 +35,18 @@ Two implementation-history notes this snapshot's generation caught (see TODO "Ph
 
 | M | Th0 | As | Obs geometry | R | T | A | S | closure |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 0 | 0 | top-base_faces | 0.289090 (144545) | 0.413574 (206787) | 0.000000 | 0.297328 (148664) | 1.000000 |
-| 1 | 0 | 0 | all_faces | 0.391128 (195564) | 0.608864 (304432) | 0.000000 | 0.000000 (0) | 1.000000 |
-| 1 | 0 | 0.5 | top-base_faces | 0.401202 (200601) | 0.279672 (139836) | 0.000000 | 0.319114 (159557) | 1.000000 |
-| 1 | 0 | 0.5 | all_faces | 0.583278 (291639) | 0.395258 (197629) | 0.000000 | 0.021452 (10726) | 1.000000 |
-| 1 | 0 | 1 | top-base_faces | 0.608014 (304007) | 0.000000 (0) | 0.000000 | 0.391974 (195987) | 1.000000 |
-| 1 | 0 | 1 | all_faces | 0.931534 (465767) | 0.000000 (0) | 0.000000 | 0.068454 (34227) | 1.000000 |
-| 1 | 60 | 0 | top-base_faces | 0.431420 (215710) | 0.237706 (118853) | 0.000000 | 0.330864 (165432) | 1.000000 |
-| 1 | 60 | 0 | all_faces | 0.527366 (263683) | 0.472624 (236312) | 0.000000 | 0.000000 (0) | 1.000000 |
-| 1 | 60 | 0.5 | top-base_faces | 0.518540 (259270) | 0.174772 (87386) | 0.000000 | 0.306672 (153336) | 1.000000 |
-| 1 | 60 | 0.5 | all_faces | 0.673758 (336879) | 0.305368 (152684) | 0.000000 | 0.020858 (10429) | 1.000000 |
-| 1 | 60 | 1 | top-base_faces | 0.678116 (339058) | 0.000000 (0) | 0.000000 | 0.321866 (160933) | 1.000000 |
-| 1 | 60 | 1 | all_faces | 0.940542 (470271) | 0.000000 (0) | 0.000000 | 0.059440 (29720) | 1.000000 |
+| 1 | 0 | 0 | top-base_faces | 0.423626 (211813) | 0.576374 (288187) | 0.000000 | 0.000000 (0) | 1.000000 |
+| 1 | 0 | 0 | all_faces | 0.423626 (211813) | 0.576374 (288187) | 0.000000 | 0.000000 (0) | 1.000000 |
+| 1 | 0 | 0.5 | top-base_faces | 0.596304 (298152) | 0.392840 (196420) | 0.000000 | 0.010856 (5428) | 1.000000 |
+| 1 | 0 | 0.5 | all_faces | 0.596304 (298152) | 0.392840 (196420) | 0.000000 | 0.010856 (5428) | 1.000000 |
+| 1 | 0 | 1 | top-base_faces | 0.958900 (479450) | 0.000000 (0) | 0.000000 | 0.041100 (20550) | 1.000000 |
+| 1 | 0 | 1 | all_faces | 0.958900 (479450) | 0.000000 (0) | 0.000000 | 0.041100 (20550) | 1.000000 |
+| 1 | 60 | 0 | top-base_faces | 0.605132 (302566) | 0.394868 (197434) | 0.000000 | 0.000000 (0) | 1.000000 |
+| 1 | 60 | 0 | all_faces | 0.605132 (302566) | 0.394868 (197434) | 0.000000 | 0.000000 (0) | 1.000000 |
+| 1 | 60 | 0.5 | top-base_faces | 0.724074 (362037) | 0.268356 (134178) | 0.000000 | 0.007570 (3785) | 1.000000 |
+| 1 | 60 | 0.5 | all_faces | 0.724074 (362037) | 0.268356 (134178) | 0.000000 | 0.007570 (3785) | 1.000000 |
+| 1 | 60 | 1 | top-base_faces | 0.971898 (485949) | 0.000000 (0) | 0.000000 | 0.028102 (14051) | 1.000000 |
+| 1 | 60 | 1 | all_faces | 0.971898 (485949) | 0.000000 (0) | 0.000000 | 0.028102 (14051) | 1.000000 |
 | 2 | 0 | 0 | top-base_faces | 0.074546 (37273) | 0.106050 (53025) | 0.000000 | 0.819404 (409702) | 1.000000 |
 | 2 | 0 | 0 | all_faces | 0.097568 (48784) | 0.902432 (451216) | 0.000000 | 0.000000 (0) | 1.000000 |
 | 2 | 0 | 0.5 | top-base_faces | 0.127614 (63807) | 0.076878 (38439) | 0.000000 | 0.795508 (397754) | 1.000000 |
@@ -71,3 +71,7 @@ Two implementation-history notes this snapshot's generation caught (see TODO "Ph
 | 4 | 60 | 0.5 | all_faces | 0.064546 (32273) | 0.487770 (243885) | 0.000000 | 0.447684 (223842) | 1.000000 |
 | 4 | 60 | 1 | top-base_faces | 0.063818 (31909) | 0.000000 (0) | 0.000000 | 0.936182 (468091) | 1.000000 |
 | 4 | 60 | 1 | all_faces | 0.093766 (46883) | 0.000000 (0) | 0.000000 | 0.906234 (453117) | 1.000000 |
+
+**Snapshot refresh (2026-07-19, review N1 fix):** the M=1 rows previously locked in a cloud-box tunneling bug (a wrapped point landing exactly ON the cloud wall at M=1 -- where the tile edge coincides with the wall -- was rejected by rayBoxEntry's tEnter>1e-12 guard, letting photons cross the box interior unextinguished). Fixed via an additive minT parameter (relaxed to -1e-9 on post-wrap iterations only). All 12 M=1 rows changed (e.g. th0=0/As=0/all_faces: terminal side escapes 51,019 -> 0 exactly; R 0.3911 -> 0.4236, now matching an open-top W=2000 plane-parallel proxy to 1e-4); all 24 M=2/4 rows verified bit-identical pre/post (wrapped points there sit (M-1)*halfW from the wall, so the relaxed floor never engages). M=1 periodic is now the permanent plane-parallel regression anchor via verify_phase3 Gates 8-9.
+
+**Bit-reproducibility caveat (2026-07-19):** the four longest-trajectory rows (Th0=60, As=1, M=1 and M=4 -- conservative cloud AND surface, so photons only terminate by escape; ~1e9+ transcendental calls per row) can sample last-ulp differences in V8 Math functions between Node versions (observed: Node 22 Linux vs Node 26 macOS). Verified impact: totalPath/meanPath wobble at ~2e-16 RELATIVE while every count in all 36 rows stays bit-identical -- the trajectories are identical; only the real-valued path SUM differs at machine epsilon. The check_golden_* harnesses therefore compare counts exactly and totalPath/meanPath to 1e-9 relative (see compare_golden.mjs), so one committed snapshot verifies on every platform/Node version. Any genuine physics change still fails the exact tier (counts move).
