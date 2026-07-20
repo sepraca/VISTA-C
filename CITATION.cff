@@ -15,8 +15,8 @@ authors:
     orcid: "https://orcid.org/0000-0003-3964-3567"
     # affiliation: "Your institution"                    # optional
     # email: "you@example.com"                           # optional (will be public)
-version: 5.4.0
-date-released: 2026-06-29
+version: 6.0.5
+date-released: 2026-07-19
 license: MIT
 url: "https://sepraca.github.io/VISTA-C/"
 repository-code: "https://github.com/sepraca/VISTA-C"
