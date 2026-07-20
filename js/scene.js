@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { state, world } from './state.js';
 import { UI } from './ui.js';
 import { Coords } from './coords.js';
-import { SimStats } from './simstats.js';
+import { SimStats, SURFACE_EVENT_CAP } from './simstats.js';
 import { BottomPanel } from './bottomPanel.js';
 import { EntryMode, DomainBoundary } from './constants.js';
 
@@ -64,25 +64,12 @@ export const Scene = {
       world.domainW = M * L;
       world.domainD = M * L;
 
-      // Leeward (+x) ground-footprint overshoot, Uniform domain + OPEN
-      // boundary only (2026-07 rendering fix, physics.js untouched by
-      // request -- see SimStats.surfaceFootMarginX() for the full
-      // derivation). The sunward-illumination fix widens the LAUNCH
-      // window's sunward edge so the GROUND gets full coverage there, but
-      // every photon then drifts by this exact same margin
-      // ((tau_cloud + beta_ext*d_sfc)*tan(theta0)) before reaching the true
-      // surface -- so the true ground footprint is
-      // [-domainHalfW, +domainHalfW + margin], flush on the sunward side,
-      // overshooting on the leeward side by margin. The rendered surface
-      // plane (buildCloudBox below) widens by this amount and shifts right
-      // by margin/2 to match; the heatmap grid does the same via
-      // SimStats._surfFootMarginX. Zero for periodic (its own, smaller
-      // residual overshoot -- from the un-wrapped sub-cloud clear-air gap
-      // only -- is handled by wrapping the landing coordinate into the tile
-      // instead, see SimStats._addSurfaceFootprint) and for legacy modes
-      // (no domain concept to overshoot).
-      const isOpenUD = isUniformDomain && UI.getDomainBoundary() === DomainBoundary.OPEN;
-      world.domainMarginX = isOpenUD ? UI.getSunwardMargin() : 0;
+      // N2 ground-domain design (2026-07-19): the accounting/rendered domain
+      // is exactly this symmetric M·W x M·D cell centered on the cloud, for
+      // BOTH boundary modes. Under open boundary the launch window is the
+      // domain's upwind-shifted preimage (physics.js sampleEntryPoint), so
+      // unscattered direct landings fall inside the domain by construction —
+      // the former asymmetric leeward extension (world.domainMarginX) is gone.
     },
 
     // Reset state.camera to the default view position.
@@ -161,14 +148,8 @@ export const Scene = {
       // over. For legacy modes domainW/domainD === slabW/slabD, so this is
       // pixel-identical to the pre-existing fixed-extent rendering.
       //
-      // world.domainMarginX (2026-07 rendering fix, open boundary only) widens
-      // this plane on the leeward (+x) side to match the true, asymmetric
-      // ground footprint -- see Scene.updateWorld's domainMarginX comment.
-      // The plane geometry is built symmetric about its own origin, so the
-      // mesh is shifted +domainMarginX/2 to keep the sunward (-x) edge fixed
-      // at -domainW/2 while the leeward edge extends to +domainW/2 + margin.
       const surfaceAlbedo = UI.getSurfaceAlbedo();
-      const domainPlaneGeom = new THREE.PlaneGeometry(world.domainW + world.domainMarginX, world.domainD);
+      const domainPlaneGeom = new THREE.PlaneGeometry(world.domainW, world.domainD);
       const surfaceMat = new THREE.MeshBasicMaterial({
         color: surfaceAlbedo > 0 ? 0xa855f7 : 0x1f2937,
         transparent: true,
@@ -178,7 +159,6 @@ export const Scene = {
       });
       const surfacePlane = new THREE.Mesh(domainPlaneGeom, surfaceMat);
       surfacePlane.position.z = Coords.tauToZ(Coords.getSurfaceTau());
-      surfacePlane.position.x = world.domainMarginX / 2;
       state.cloudGroup.add(surfacePlane);
 
       const surfaceEdges = new THREE.EdgesGeometry(domainPlaneGeom);
@@ -189,7 +169,6 @@ export const Scene = {
       });
       const surfaceEdge = new THREE.LineSegments(surfaceEdges, surfaceEdgeMat);
       surfaceEdge.position.z = Coords.tauToZ(Coords.getSurfaceTau()) + 0.005;
-      surfaceEdge.position.x = world.domainMarginX / 2;
       state.cloudGroup.add(surfaceEdge);
 
       // When the surface domain is wider than the cloud (M>1), also outline the
@@ -393,23 +372,15 @@ export const Scene = {
       // overlap the base-crossing footprint in mid-gap — acceptable since
       // both are translucent. Light brown, geometry-independent.
       if (UI.getShowSurfaceHeatmap()) {
-        // extentW widened by SimStats._surfFootMarginX (open boundary only,
-        // 2026-07 rendering fix) to match the true, leeward-overshooting
-        // ground footprint; offsetX shifts the grid to keep its sunward edge
-        // fixed while the leeward edge extends -- same offset formula as the
-        // surface-plane mesh in Scene.buildCloudBox (see SimStats.surfaceFootMarginX()
-        // for the full derivation). Zero margin (periodic/legacy) reduces
-        // exactly to the pre-existing symmetric behavior.
         Scene.addFootprintHeatmap(
           'surfAbs',
           SimStats.footSurfAbs,
           Coords.tauToZ(Coords.getSurfaceTau()) + 0.02,
           0x8a6f53,
           true,
-          world.slabW * SimStats._surfFootFactor + SimStats._surfFootMarginX,
+          world.slabW * SimStats._surfFootFactor,
           world.slabD * SimStats._surfFootFactor,
-          2.8,
-          SimStats._surfFootMarginX / 2
+          2.8
         );
       } else {
         // Surface heatmap toggled off/not applicable this rebuild -- hide
@@ -424,10 +395,14 @@ export const Scene = {
     // Dispose the persistent footprint-heatmap meshes (heatmapMeshGroup) and
     // forget their identities. Called only on a genuine scene reset --
     // NOT on every Scene.rebuildHistograms() call, which is the whole point
-    // (see state.js heatmapMeshGroup comment).
+    // (see state.js heatmapMeshGroup comment). The surface-marker mesh
+    // (review P1) shares this group and lifecycle, so it is disposed by the
+    // same clearGroup call -- just null its handle so the next
+    // addSurfaceInteractionMarkers() lazily recreates it.
     clearHeatmapMeshes: function() {
       Scene.clearGroup(state.heatmapMeshGroup);
       state.heatmapMeshes = {};
+      state.surfaceMarkerMesh = null;
     },
 
     // Hide a persistent heatmap mesh without disposing/forgetting it -- used
@@ -477,33 +452,81 @@ export const Scene = {
       return mesh;
     },
 
-    // Add sphere markers at the surface plane for reflected/absorbed events.
+    // Lazily create the ONE persistent InstancedMesh for the surface-
+    // interaction event markers (2026-07-19, review P1). Design deliberately
+    // mirrors Photons._ensureEndpointMesh -- every hard-won decision there
+    // applies verbatim here (see its long doc comment for the full history):
+    //   * fixed capacity (SURFACE_EVENT_CAP), allocated once, identity never
+    //     changes between syncs -- recreating a mesh per refresh gives it a
+    //     fresh three.js object id, which flips the ambiguous transparent-
+    //     object sort tie-break against other scene geometry (the 2026-07
+    //     dense/sparse flashing bug, diagnosed twice already);
+    //   * frustumCulled = false, and NO computeBoundingSphere() calls on the
+    //     sync path (recomputing the centroid per sync was the *other* cause
+    //     of that same flashing symptom);
+    //   * depthWrite = false so overlapping translucent instances blend
+    //     instead of depth-fighting in draw-index order;
+    //   * renderOrder = 1: the markers tier of the explicit 3-tier scheme
+    //     (ground/heatmaps 0, markers 1, cloud volume 2).
+    // Material note: the old per-event meshes used MeshStandardMaterial with
+    // emissiveIntensity 1.1 -- i.e. overwhelmingly self-lit. InstancedMesh
+    // per-instance color can't drive `emissive`, so this uses unlit
+    // MeshBasicMaterial (same choice as the endpoint mesh) at the same 0.75
+    // opacity: visually near-identical precisely because the old look was
+    // emissive-dominated, with the small residual lighting/roughness
+    // modulation dropped.
+    _ensureSurfaceMarkerMesh: function() {
+      if (state.surfaceMarkerMesh) return state.surfaceMarkerMesh;
+      const geom = new THREE.SphereGeometry(1, 10, 10);   // radius via per-instance scale
+      const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.75, depthWrite: false });
+      const mesh = new THREE.InstancedMesh(geom, mat, SURFACE_EVENT_CAP);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 1;
+      state.surfaceMarkerMesh = mesh;
+      state.heatmapMeshGroup.add(mesh);
+      return mesh;
+    },
+
+    // Sync sphere markers at the surface plane for reflected/absorbed events.
+    // One persistent InstancedMesh, per-instance color + scale (review P1) --
+    // formerly up to SURFACE_EVENT_CAP individual Mesh+SphereGeometry+
+    // MeshStandardMaterial triples rebuilt into histogramGroup on every heavy
+    // refresh and disposed on the next (~120k transient objects over a
+    // 1M-photon Aₛ>0 run, plus 1,200 persistent draw calls whenever shown).
     addSurfaceInteractionMarkers: function() {
-      if (!SimStats.surfaceInteractionEvents || SimStats.surfaceInteractionEvents.length === 0) return;
-
-      const cap = Math.min(1200, SimStats.surfaceInteractionEvents.length);
-      const start = Math.max(0, SimStats.surfaceInteractionEvents.length - cap);
-
-      for (let i = start; i < SimStats.surfaceInteractionEvents.length; i++) {
-        const ev = SimStats.surfaceInteractionEvents[i];
-        const color = ev.type === "surface_reflected" ? 0xa855f7 : 0x7c2d12;
-        const radius = ev.type === "surface_reflected" ? 0.13 : 0.16;
-
-        const geom = new THREE.SphereGeometry(radius, 10, 10);
-        const mat = new THREE.MeshStandardMaterial({
-          color,
-          emissive: color,
-          emissiveIntensity: 1.1,
-          transparent: true,
-          opacity: 0.75,
-          roughness: 0.4
-        });
-
-        const s = new THREE.Mesh(geom, mat);
-        s.position.copy(Coords.simToWorldPoint({x: ev.x, y: ev.y, tau: ev.tau}));
-        s.position.z -= 0.18;
-        state.histogramGroup.add(s);
+      const events = SimStats.surfaceInteractionEvents;
+      const nEvents = events ? events.length : 0;
+      if (nEvents === 0) {
+        // Keep the mesh (stable identity) but draw nothing this sync.
+        if (state.surfaceMarkerMesh) {
+          state.surfaceMarkerMesh.count = 0;
+          state.surfaceMarkerMesh.instanceMatrix.needsUpdate = true;
+        }
+        return;
       }
+
+      const cap = Math.min(SURFACE_EVENT_CAP, nEvents);
+      const start = nEvents - cap;
+      const mesh = Scene._ensureSurfaceMarkerMesh();
+      const m4 = new THREE.Matrix4();
+      const col = new THREE.Color();
+
+      for (let i = 0; i < cap; i++) {
+        const ev = events[start + i];
+        const isRefl = ev.type === "surface_reflected";
+        const radius = isRefl ? 0.13 : 0.16;
+        const p = Coords.simToWorldPoint({x: ev.x, y: ev.y, tau: ev.tau});
+        m4.makeScale(radius, radius, radius).setPosition(p.x, p.y, p.z - 0.18);
+        mesh.setMatrixAt(i, m4);
+        col.setHex(isRefl ? 0xa855f7 : 0x7c2d12);
+        mesh.setColorAt(i, col);
+      }
+
+      mesh.count = cap;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      // No computeBoundingSphere() -- see _ensureSurfaceMarkerMesh's comment.
     },
 
     // Shared material for every footprint heatmap. InstancedMesh draws all cells of
@@ -554,14 +577,11 @@ export const Scene = {
     // (see _heatmapMeshFor for why that mesh is now persistent/reused).
     // `key` identifies which of the three heatmaps this is ('refl' | 'trans'
     // | 'surfAbs') so its persistent mesh can be looked up across calls.
-    // `offsetX` (2026-07 rendering fix, default 0): shifts the whole grid in
-    // world-space x without changing cell count/size -- used only by the
-    // 'surfAbs' heatmap under Uniform domain + open boundary, where extentW
-    // is asymmetrically widened on the leeward side (see
-    // SimStats.surfaceFootMarginX()) and the grid must shift by the same
-    // offsetX = margin/2 as the surface-plane mesh (Scene.buildCloudBox) so
-    // the two stay visually aligned.
-    addFootprintHeatmap: function(key, foot, zPlane, color, isTop, extentW, extentD, maxHeight, offsetX = 0) {
+    // All three heatmap grids are symmetric about x=0/y=0 (the former offsetX
+    // parameter, which shifted the 'surfAbs' grid under the pre-N2 asymmetric
+    // leeward extension, was removed 2026-07-19 with the ground-domain
+    // redesign -- no caller ever passed a nonzero value after it).
+    addFootprintHeatmap: function(key, foot, zPlane, color, isTop, extentW, extentD, maxHeight) {
       if (!foot || !foot.counts) return;
       const nBins = foot.nBins;
       const counts = foot.counts;
@@ -611,7 +631,7 @@ export const Scene = {
 
             const frac = c / maxCount;
             const h = 0.045 + reliefHeight * frac;
-            const x = offsetX - halfW + cellW * (ix + 0.5);
+            const x = -halfW + cellW * (ix + 0.5);
             const y = -halfD + cellD * (iy + 0.5);
             const z = isTop ? zPlane + h / 2 : zPlane - h / 2;
 
@@ -647,20 +667,13 @@ export const Scene = {
       // object paint-order tie-break against other scene geometry.
 
       // Outline frame so the heatmap domain boundary is visually clear.
-      // offsetX (2026-07 rendering fix) must match the same shift applied to
-      // the per-cell x position above -- this frame is a SEPARATE geometry
-      // from the ground-plane edge in Scene.buildCloudBox, and was missed in
-      // the original offsetX pass, leaving it drawn at the old symmetric
-      // bounds while the cells themselves were correctly widened/shifted
-      // (user report: the tan/gold 'surfAbs' frame visually "detached" from
-      // the actual cell coverage on both edges).
       const zFrame = isTop ? zPlane + 0.01 : zPlane - 0.01;
       const framePts = [
-        new THREE.Vector3(offsetX - halfW, -halfD, zFrame),
-        new THREE.Vector3(offsetX + halfW, -halfD, zFrame),
-        new THREE.Vector3(offsetX + halfW,  halfD, zFrame),
-        new THREE.Vector3(offsetX - halfW,  halfD, zFrame),
-        new THREE.Vector3(offsetX - halfW, -halfD, zFrame)
+        new THREE.Vector3(-halfW, -halfD, zFrame),
+        new THREE.Vector3( halfW, -halfD, zFrame),
+        new THREE.Vector3( halfW,  halfD, zFrame),
+        new THREE.Vector3(-halfW,  halfD, zFrame),
+        new THREE.Vector3(-halfW, -halfD, zFrame)
       ];
       const frame = Scene.makeLine(framePts, color, 0.95);
       state.histogramGroup.add(frame);

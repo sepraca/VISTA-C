@@ -98,6 +98,13 @@ class MCExport:
         return self.inputs.get("domain_boundary")
 
     @property
+    def launch_window_shift(self) -> float | None:
+        # Schema >= 1.4 (N2 ground-domain redesign): upwind shift s of the TOA
+        # launch window relative to the cloud-centered M*W accounting domain
+        # (open-boundary uniform-domain runs only; None otherwise).
+        return self.inputs.get("launch_window_shift")
+
+    @property
     def cloud_fraction(self) -> float | None:
         return self.outputs.get("cloud_fraction")
 
@@ -381,6 +388,8 @@ def print_summary(exp: MCExport) -> None:
         print(f"  domain factor M    : {exp.domain_factor:.4g}"
               + (f"  (cloud fraction f_c = {fc:.4g})" if fc is not None else ""))
         print(f"  domain boundary    : {exp.domain_boundary}")
+        if exp.launch_window_shift is not None:   # schema >= 1.4, open boundary
+            print(f"  launch window shift: {exp.launch_window_shift:.4g} τ-units upwind (N2 ground-domain design)")
     print(f"  RNG seed           : {inp['rng_seed']}")
     print("-" * 64)
     print(f"ENERGY BUDGET (per launched photon; observation geometry: {exp.outputs.get('observation_geometry', 'n/a')})")

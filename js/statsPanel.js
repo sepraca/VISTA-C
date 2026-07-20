@@ -179,10 +179,26 @@ ${IND}cloud-incident: ${(ac.cloudIncident/launched).toFixed(3)} (${ac.cloudIncid
 ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearRecycled})`;
     },
 
-    // Recompute and render the left-panel stats text and bottom panel.
+    // Recompute and render the left-panel stats text AND redraw the bottom
+    // panel (via the wired callback). Use this for chunk/finish/reset/
+    // geometry-toggle refreshes -- anywhere the plotted bins may have changed.
     updateDisplay() {
       _drawPanelCallback();
+      StatsPanel.updateStatsText();
+    },
 
+    // Text-only refresh (2026-07-19, review P3): rebuilds the two stats-panel
+    // innerHTML blocks WITHOUT redrawing the bottom panel. The animation loop
+    // (Photons.addAnimatedPath) calls a display update once per path vertex
+    // at ~55 fps purely to advance the "Active photon: #N, step i/j" line --
+    // routing that through full updateDisplay() recomputed the 19×72 BDF grid
+    // (or re-rendered the μ/path canvases) plus the polar canvas repaint on
+    // every animation frame. The panel redraw still happens at every chunk
+    // boundary, animation finish (the caller's post-await updateDisplay), and
+    // on every explicit refresh -- nothing the plots display can change
+    // MID-photon, since the photon was already recorded before its animation
+    // began.
+    updateStatsText() {
       const s = SimStats.stats;
       const launched = Math.max(s.launched, 1);
 

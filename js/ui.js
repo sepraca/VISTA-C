@@ -95,43 +95,46 @@ export const UI = {
     // cleanup had silently removed the only way to see this in the plots).
     getShowEntireDomainPlots: function() { return document.getElementById("showEntireDomainPlots")?.checked ?? false; },
 
-    // Minimum domain factor that avoids under-sampling direct sunward-wall
-    // illumination AND keeps ground illumination uniform over the M-domain
-    // regardless of tauCloud (2026-07 fix, see TODO "Sunward illumination
-    // asymmetry / TOA-altitude coupling"). The domain must extend at least
-    // (tau_cloud + beta_ext*d_sfc)*tan(theta0) beyond the cloud edge on the
-    // upwind side -- the FULL ballistic throw a photon experiences between
-    // cloud-top (tau=0, the launch reference) and the true surface, not just
-    // the tau_cloud portion. Derived from
-    // M*halfW >= halfW + (tauCloud + betaExt*d_sfc)*tan(theta0)
-    //   => M >= 1 + 2*(tauCloud + betaExt*d_sfc)/slabW * tan(theta0).
-    // Previously this omitted the beta_ext*d_sfc term entirely, which
-    // silently under-flagged cases where the surface gap contributed a
-    // non-trivial share of the total throw (e.g. tauCloud=10, theta0=60,
-    // default d_sfc=0.5km/betaExt=10 gave a true margin of 2.6km against a
-    // 2km buffer at M=2, but the old formula's M_min=1.87 never fired).
-    // See TODO, "The core knob: domain factor" for the full derivation and
-    // worked examples. RunControl.getSimParams()-equivalent margin is also
-    // used directly by Physics.sampleEntryPoint's sunward shift -- keep the
-    // two formulas' margin term in sync if either changes.
-    //
-    // The raw margin term is factored out into getSunwardMargin() (2026-07)
-    // so the surface-heatmap/ground-plane rendering fix can share the exact
-    // same value (a third consumer, alongside this function and
-    // Physics.sampleEntryPoint) instead of risking a fourth hand-copied
-    // formula drifting out of sync.
+    // Minimum domain factor under the N2 ground-domain design (2026-07-19).
+    // With the launch window a pure upwind SHIFT of the domain by
+    // s = getSunwardMargin() (see Physics.sampleEntryPoint), the ONE
+    // inequality M >= 1 + 2*s/W (i.e. M*W/2 >= W/2 + s) simultaneously
+    // guarantees:
+    //   (i)  full direct illumination of the cloud's TOP face -- the shifted
+    //        window's leeward edge M*W/2 - s must still reach the cloud's
+    //        leeward top edge at +W/2;
+    //   (ii) the sunward-wall reservoir strip (width tau_cloud*tan(theta0))
+    //        sits inside the window -- automatic, since s exceeds that width
+    //        for any M >= 1;
+    //   (iii) the cloud's complete ground shadow (leeward edge at W/2 + s)
+    //        fits inside the M*W/2 domain half-width.
+    // The formula is numerically identical to the pre-N2 one; only its
+    // rationale changed (it used to size an asymmetric window EXTENSION,
+    // which broke f_c = 1/M^2 -- see the N2 review entry).
+    // The s term includes the beta_ext*d_sfc sub-cloud leg, not just the
+    // tau_cloud portion (2026-07 fix; the old tau-only formula under-flagged
+    // e.g. tauCloud=10, theta0=60, default d_sfc/betaExt: true throw 2.6km
+    // vs 2km buffer at M=2, M_min=1.87 never fired).
+    // Shared margin term lives in getSunwardMargin() -- also consumed by
+    // Physics.sampleEntryPoint; keep them in sync.
     getMinDomainFactor: function() {
       const slabW = UI.getHorizontalExtent();
-      return 1 + 2 * UI.getSunwardMargin() / slabW;
+      // Rounded UP to 2 decimals (user feedback, 2026-07-19): the auto-clamp
+      // writes this value back into the M input, and the raw expression
+      // carries full float precision (e.g. 2.299038105676658). Ceiling — not
+      // rounding — preserves the M >= M_min guarantee (a rounded-down 2.29
+      // would sit just below the true minimum), and makes the displayed M,
+      // the run's effective M, and f_c = 1/M² all consistent at 2 decimals.
+      return Math.ceil((1 + 2 * UI.getSunwardMargin() / slabW) * 100) / 100;
     },
 
     // The full ballistic sunward throw a photon experiences between cloud-top
     // (tau=0, the launch reference) and the true surface: (tau_cloud +
-    // beta_ext*d_sfc)*tan(theta0). Meaningful only under Uniform domain +
-    // open boundary (see getMinDomainFactor above and Physics.sampleEntryPoint's
-    // sunward shift, which this exact term feeds); callers outside that
-    // context should treat it as not applicable rather than calling this
-    // unconditionally.
+    // beta_ext*d_sfc)*tan(theta0). Under the N2 design this is the launch
+    // window's upwind shift. Meaningful only under Uniform domain + open
+    // boundary (see getMinDomainFactor above and Physics.sampleEntryPoint);
+    // callers outside that context should treat it as not applicable rather
+    // than calling this unconditionally.
     getSunwardMargin: function() {
       const tauCloud = UI.getTauCloud();
       const theta0   = UI.getTheta0Rad();
@@ -161,14 +164,40 @@ export const UI = {
     updateDomainMarginWarning: function() {
       const box = document.getElementById("domainMarginWarning");
       if (!box) return;
-      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN || UI.getDomainBoundary() === DomainBoundary.PERIODIC) {
+      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN) {
         box.style.display = "none";
         return;
       }
+      // Periodic: no M_min restriction applies (wraparound supplies the
+      // leeward-top illumination from the neighbor tile image at any M >= 1;
+      // M = 1 is the plane-parallel limit). Show a muted, TRANSIENT
+      // informational note in the same box -- and only when the typed M is
+      // below the OPEN-boundary M_min, i.e. exactly when a user might wonder
+      // why no warning fired -- so the deliberate open-vs-periodic asymmetry
+      // is self-documenting without being chatty (user feedback, 2026-07-19,
+      // two iterations: always-on note judged too noisy).
+      if (UI.getDomainBoundary() === DomainBoundary.PERIODIC) {
+        clearTimeout(UI._periodicNoteTimer);
+        if (UI.getDomainFactor() < UI.getMinDomainFactor() - 1e-9) {
+          box.textContent = "Periodic boundary: any M ≥ 1 is valid — no M_min restriction (wraparound supplies sunward illumination). M = 1 is the plane-parallel limit.";
+          box.classList.add("info");
+          box.style.display = "block";
+          UI._periodicNoteTimer = setTimeout(() => {
+            // Hide only if the box still shows this info note -- another
+            // update may have switched it to the open-boundary warning.
+            if (box.classList.contains("info")) box.style.display = "none";
+          }, 6000);
+        } else {
+          box.style.display = "none";
+        }
+        return;
+      }
+      clearTimeout(UI._periodicNoteTimer);
+      box.classList.remove("info");
       const mMin = UI.getMinDomainFactor();
       const m    = UI.getDomainFactor();
       if (m < mMin - 1e-9) {
-        box.textContent = `M = ${m.toFixed(2)} is below M ≈ ${mMin.toFixed(2)}, the minimum needed at this Θ₀/τ_cloud/W to keep sunward-side surface illumination uniform (open boundary). M will be raised to ${mMin.toFixed(2)} automatically when you run.`;
+        box.textContent = `M = ${m.toFixed(2)} is below M ≈ ${mMin.toFixed(2)}, the minimum at this Θ₀/τ_cloud/W for the upwind-shifted launch window to fully light the cloud top and contain its ground shadow (open boundary). M will be raised to ${mMin.toFixed(2)} automatically when you run.`;
         box.style.display = "block";
       } else {
         box.style.display = "none";
@@ -197,7 +226,7 @@ export const UI = {
       if (m < mMin - 1e-9) {
         const el = document.getElementById("domainFactor");
         if (el) el.value = mMin;
-        showLimitWarning(`Domain factor M raised from ${m.toFixed(2)} to ${mMin.toFixed(2)} -- the minimum needed at this Θ₀/τ_cloud/W to keep sunward-side illumination uniform (open boundary).`);
+        showLimitWarning(`Domain factor M raised from ${m.toFixed(2)} to ${mMin.toFixed(2)} -- the minimum at this Θ₀/τ_cloud/W for the upwind-shifted launch window to fully light the cloud top and contain its ground shadow (open boundary).`);
         UI.updateDomainMarginWarning();
         return mMin;
       }

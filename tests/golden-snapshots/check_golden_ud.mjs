@@ -20,15 +20,18 @@ for (const o of [fresh, golden]) { delete o.generated; delete o.appVersion; }
 
 // Phase 3 additive wrap-cap diagnostic (physics.js/simstats.js): always 0
 // here, since this suite never sets domainBoundary="periodic" (isPeriodic is
-// false for every row). Strip before comparing, same pattern diff_golden.mjs
-// uses for the Phase-2/Phase-4 additive fields -- keeps the committed golden
-// JSON itself untouched (open-boundary behavior is bit-identical; only the
-// rawStats *shape* gained a field).
+// false for every row). Sanity-check it's 0 in fresh runs, then strip from
+// BOTH sides before comparing (the golden was regenerated 2026-07-19 with
+// the N2 shifted-window design and now carries the field as 0; stripping
+// both keeps this checker indifferent to whether a given snapshot vintage
+// has the field at all).
 for (const r of fresh.results) {
   if (r.rawStats.wrapCapped !== 0) {
     console.error(`NONZERO wrapCapped=${r.rawStats.wrapCapped} in M=${r.M} th0=${r.theta0_deg} As=${r.As} ${r.obsGeom}`);
   }
-  delete r.rawStats.wrapCapped;
+}
+for (const o of [fresh, golden]) {
+  for (const r of o.results) delete r.rawStats.wrapCapped;
 }
 
 // Tolerant comparison (2026-07-19, see compare_golden.mjs): counts exact,

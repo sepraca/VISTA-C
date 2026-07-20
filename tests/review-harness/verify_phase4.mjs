@@ -84,31 +84,18 @@ domValues.observationGeometry = "top-base_faces";
 }
 
 // ---- Gate 5: UD M=1 ≡ legacy top — identical N_top and identical BRF ----
-// 2026-07 correction: this equivalence only holds when theta0=0. It used to
-// also hold at theta0=60 (tested here originally) because the pre-fix
-// sampleEntryPoint's uniform_domain branch sampled x over exactly
-// [-halfW*M, +halfW*M] with no further adjustment -- at M=1 that window IS
-// the cloud's own top face, so every launch landed exactly on the box and
-// the clear/wall resolution branch in simulatePhoton was never reached,
-// reproducing legacy "top" bit-for-bit at ANY theta0. The sunward
-// ground-illumination-asymmetry fix (see TODO-direct-surface-illumination.md,
-// "Sunward ground-illumination asymmetry / TOA-altitude coupling", and
-// CHANGELOG [Unreleased]) extends that window's sunward bound by
-// (tauCloud + betaExt*surfaceDistanceKm)*tan(theta0), UNCONDITIONALLY,
-// regardless of M -- so at theta0=60, M=1 now launches ~40% of photons
-// outside the cloud's own footprint (verified directly), genuinely differing
-// from legacy "top". This is expected and correct post-fix: M=1 combined
-// with theta0>0 is exactly the "M below the corrected M_min" case the fix
-// targets (M_min(60deg) here is ~2.3, well above 1), which the UI's
-// getEffectiveDomainFactor() auto-clamp now raises before a real run ever
-// reaches physics.js -- this harness calls Physics.simulatePhoton directly,
-// bypassing that clamp, so it can (correctly) observe the raw physics
-// diverging here. Same category of correction as the earlier
-// "M=1 reproduces top+side" gate fix in TODO's "core knob" section -- an
-// invariant that was true only under an earlier, incomplete physics
-// understanding. Testing at theta0=0 instead: margin = 0 there
-// (tan(0)=0), so the window is unchanged from the pre-fix formula and the
-// equivalence still holds exactly, unaffected by the fix.
+// This equivalence only holds at theta0=0. Under the N2 ground-domain
+// design (2026-07-19; and equally under the pre-N2 extension it replaced),
+// the open-boundary launch window at theta0>0 is the M*W domain translated
+// upwind by s = (tauCloud + betaExt*surfaceDistanceKm)*tan(theta0) -- at
+// M=1 that shifted window no longer coincides with the cloud's top face, so
+// launches genuinely differ from legacy "top". That is the raw kernel
+// behavior at M below M_min = 1 + 2s/W (~2.3 at these params), which the
+// UI's getEffectiveDomainFactor() auto-clamp raises before any real run
+// reaches physics.js; this harness calls Physics.simulatePhoton directly,
+// bypassing the clamp, so it can (correctly) observe the divergence. At
+// theta0=0, s=0 (tan 0 = 0): the window is exactly the cloud top face and
+// the equivalence holds bit-for-bit -- tested there.
 run({ ...P0, theta0: 0, surfaceAlbedo: 0.5, entryMode: "top" }, 200000);
 const topBrf = gridVals(BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(),
                { nRef: SimStats.nTopIncident(), sidesIncluded: false }));

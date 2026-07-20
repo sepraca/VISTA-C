@@ -18,8 +18,10 @@ export const state = {
   histogramGroup:  null,
   // Persistent footprint-heatmap InstancedMeshes (reflected/transmitted/
   // surface-absorbed) live here, NOT inside histogramGroup -- histogramGroup
-  // is destroyed and rebuilt every Scene.rebuildHistograms() call (frame
-  // outlines, surface-interaction marker spheres), which is fine for those
+  // is destroyed and rebuilt every Scene.rebuildHistograms() call (now just
+  // the lightweight heatmap frame outlines; the surface-interaction marker
+  // spheres moved to a persistent InstancedMesh here too, 2026-07-19 review
+  // P1), which is fine for those
   // lightweight per-call objects, but was also destroying and recreating the
   // heatmap meshes themselves on that same cadence. Each recreation gives a
   // mesh a fresh, ever-increasing three.js object id, which flips the
@@ -32,6 +34,16 @@ export const state = {
   // endpoint-cap slider under periodic-boundary domains.
   heatmapMeshGroup: null,
   heatmapMeshes:    {},
+  // Surface-interaction event markers (purple reflected / brown absorbed
+  // spheres at the surface plane): one persistent InstancedMesh living in
+  // heatmapMeshGroup (2026-07-19, review P1) -- previously up to 1,200
+  // individual Mesh+SphereGeometry+MeshStandardMaterial triples rebuilt into
+  // histogramGroup on EVERY heavy refresh (~120k transient objects per
+  // 1M-photon Aₛ>0 run, plus 1,200 draw calls whenever shown). Same stable-
+  // identity/fixed-capacity design as endpointInstanced above, for the same
+  // transparent-sort reasons. Cleared (nulled) only on genuine scene reset
+  // via Scene.clearHeatmapMeshes().
+  surfaceMarkerMesh: null,
 
   // Endpoint markers: plain data records {x, y, z, color, radius} (oldest
   // first), rendered as a single InstancedMesh by Photons.syncEndpointMesh().
@@ -53,13 +65,10 @@ export const state = {
 
 // Cloud geometry and optical properties (mutated by Scene.updateWorld).
 // domainW/domainD: full illumination-domain extent (M·W x M·D under "Uniform
-// domain" illumination; equal to slabW/slabD for legacy modes). domainMarginX:
-// leeward (+x) ground-footprint overshoot beyond domainW under Uniform domain
-// + open boundary only (2026-07 rendering fix -- see Scene.updateWorld and
-// SimStats.surfaceFootMarginX()); zero otherwise. Declared here (not added
-// dynamically in updateWorld) for shape stability/discoverability.
+// domain" illumination; equal to slabW/slabD for legacy modes). The domain is
+// always centered on the cloud (N2 ground-domain design, 2026-07-19).
 export const world = { tauCloud: 10, slabW: 40, slabD: 40, slabH: 10, zScale: 1,
-                       domainW: 40, domainD: 40, domainMarginX: 0 };
+                       domainW: 40, domainD: 40 };
 
 // Maximum endpoint sphere markers shown in the 3D view.
 export const DEFAULT_ENDPOINT_MARKERS = 6000;

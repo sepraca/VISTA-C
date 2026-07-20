@@ -6,6 +6,110 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+*(nothing yet)*
+
+## [v6.0.5] — 2026-07-19
+
+Patch release assembled from the 2026-07-19 full code/physics review of the
+post-Phase-3/4 state (all items below accumulated under `[Unreleased]` during that
+review's fix sessions). Headline: the N2 **ground-domain redesign** (a physics/
+bookkeeping change for open-boundary Uniform-domain runs at Θ₀ > 0; export schema 1.4)
+and the N1 **plane-parallel-limit tunneling fix** (M = 1 periodic). Full golden-snapshot
+and gate-suite regression (legacy, UD open, UD periodic, Phase 3/4 gates — including
+new analytic launch-fraction gates) verified green after every item.
+
+### Changed (2026-07-19 review session, N2 — open-boundary launch window: shift, not extend)
+
+- **The Uniform-domain open-boundary launch window is now a pure upwind SHIFT of the
+  cloud-centered M·W×M·W accounting domain** by the full ballistic throw
+  s = (τ_cloud + β_ext·d_sfc)·tanΘ₀, replacing the previous sunward EXTENSION (which
+  widened the window to area (M·W+s)·M·W while every normalization still assumed
+  (M·W)²). Consequences of the old design: f_c = 1/M² overstated the cloud's true
+  window share by s/(M·W) (16.2% at defaults M=4, Θ₀=60°), biasing every f_c-scaled
+  quantity, and the ground footprint/heatmap/surface plane were asymmetric (cloud
+  shadow centered, cloud vertical projection off-center). Under the shift, window
+  area = domain area, so **f_c = 1/M² and the domain-mean normalizations are exact by
+  construction**, and every unscattered direct landing tiles the ground domain exactly.
+  The single condition M ≥ M_min = 1 + 2s/W (formula unchanged; UI auto-clamp retained)
+  now provably guarantees full cloud-top lighting, sunward-wall reservoir capture, and
+  complete shadow containment at once. Removed with the redesign: the leeward
+  grid-extension/offset machinery (`SimStats.surfaceFootMarginX`, `world.domainMarginX`,
+  heatmap `offsetX`) — the rendered domain, ground plane, and heatmaps are again
+  symmetric and centered on the cloud. Periodic boundary untouched (wraparound needs no
+  shift; goldens bit-identical). Θ₀ = 0 open-boundary results bit-identical (s = 0).
+  Export schema 1.3 → **1.4**: additive `inputs.launch_window_shift` (open UD only);
+  open-boundary Θ₀>0 uniform-domain results are not numerically comparable across this
+  change. UD golden regenerated (18 Θ₀=60 rows; 18 Θ₀=0 rows verified bit-identical);
+  `verify_phase3.mjs` Gate 6 reworked to closed-form launch-fraction checks
+  (P(top) = f_c, P(wall) = f_c·(τ/W)·tanΘ₀, window-preimage containment) — all green.
+  Follow-up (browser-verification feedback): `getMinDomainFactor()` now returns M_min
+  rounded UP to 2 decimals (ceiling preserves the M ≥ M_min guarantee), so the
+  auto-clamp writes a clean 2-decimal value into the M input and the displayed M,
+  effective M, and f_c agree exactly. Under periodic boundary the same inline box now
+  shows a muted, transient (6 s) informational note ("any M ≥ 1 valid — no M_min
+  restriction; M = 1 is the plane-parallel limit"), and only when the typed M is below
+  the open-boundary M_min — exactly when a user might wonder why no warning fired —
+  making the deliberate open-vs-periodic M_min asymmetry self-documenting without
+  being chatty.
+
+### Performance (2026-07-19 review session, P3)
+
+- **Animation stepping no longer redraws the bottom panel per path vertex.** The
+  animated-photon loop called `StatsPanel.updateDisplay()` on every animation frame
+  (~55 fps) purely to advance the "Active photon: step i/j" line — and `updateDisplay()`
+  unconditionally redraws the bottom panel (a 19×72 BDF-grid recompute + polar canvas
+  repaint, or the μ/path canvas re-render) on each call. New
+  `StatsPanel.updateStatsText()` rebuilds only the two stats-panel text blocks;
+  `updateDisplay()` is now panel-redraw + text (unchanged semantics for every other
+  caller). The animation loop's three in-flight call sites use the text-only variant;
+  the panel still refreshes at every chunk boundary, animation finish, and explicit
+  refresh — nothing the plots display can change mid-photon, since each photon is
+  recorded before its animation begins. Verified via DOM-stub test (text-only call
+  fires zero panel redraws; full call exactly one); gates green.
+
+### Fixed (2026-07-19 review session, N3 — periodic display wrap now covers y)
+
+- The periodic-boundary canonical-tile wrap for the surface-absorption heatmap binning
+  and the surface-landing endpoint markers applied to **x only** (justified by
+  "dir.y = 0 always" — true only for the unscattered direct beam). Scattered side exits
+  and Lambertian surface bounces carry dir.y ≠ 0, and their periodic landings stray in y
+  exactly as in x (measured: 1.7% of surface landings at M=2, Θ₀=60°, Aₛ=0.8, reaching
+  ~6 tiles out) — those were clamped to the heatmap's y-edge cells and drawn as stranded
+  markers. `wrapPeriodicX` → `wrapPeriodic` (one helper for both axes; the tile is
+  square), applied to y in `_addSurfaceFootprint` and `Photons.addEndpoint`. The physics
+  wrap (`wrapAndFindBoxEntry`) always handled y correctly — this is display/binning
+  only; no RNG, count, or golden impact (all verified green).
+
+### Performance (2026-07-19 review session, P1)
+
+- **Surface-interaction event markers converted to one persistent InstancedMesh** — the
+  last un-instanced marker system. `Scene.addSurfaceInteractionMarkers()` previously
+  built up to 1,200 individual Mesh+SphereGeometry+MeshStandardMaterial triples into
+  `histogramGroup` on EVERY heavy refresh and disposed them on the next (~120k transient
+  GPU-visible objects over a 1M-photon Aₛ>0 run, plus 1,200 persistent draw calls
+  whenever shown). Now a single fixed-capacity (SURFACE_EVENT_CAP, exported from
+  simstats.js) InstancedMesh with per-instance color (purple reflected / brown absorbed)
+  and per-instance scale for the two radii — one draw call, zero per-refresh allocation
+  churn. Follows every hard-won decision from the endpoint-mesh work verbatim: stable
+  identity across syncs, `frustumCulled=false` with no bounding-sphere recomputes,
+  `depthWrite=false`, explicit `renderOrder=1` (markers tier); lives in
+  `heatmapMeshGroup` and clears only on genuine scene reset. Material change:
+  MeshStandardMaterial(emissiveIntensity 1.1) → unlit MeshBasicMaterial at the same
+  0.75 opacity — visually near-identical since the old look was emissive-dominated.
+  Display-only; all gates + goldens verified green.
+
+### Performance (2026-07-19 review session, P2)
+
+- **Removed per-photon DOM reads from the endpoint hot path.** `Photons.addEndpoint()`
+  (once per photon in the instant-batch loop) read `UI.getPhotonEntryMode()` +
+  `UI.getDomainBoundary()` per photon — two `getElementById` calls + string compares,
+  ~2×10⁷ DOM hits in a 10⁷-photon run, the same per-photon DOM-read class the R4 hoist
+  removed from `runInstantBatch`. Now uses the per-run cached
+  `SimStats._surfFootPeriodicWrap` (identical uniform_domain-AND-periodic condition,
+  refreshed in `SimStats.reset()`; freshness guaranteed because both the illumination
+  and domain-boundary selectors reset the scene on change). Display-only — no RNG,
+  physics, or golden impact (all gates + goldens verified green).
+
 ### Fixed (2026-07-19 review session — periodic-boundary plane-parallel limit)
 
 - **Cloud-box tunneling at M = 1 periodic (physics bug, high severity).** At M = 1 the

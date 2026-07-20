@@ -4,7 +4,7 @@ import { state, UI_PANEL_WIDTH } from './state.js';
 import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
-import { EntryMode } from './constants.js';
+import { EntryMode, DomainBoundary } from './constants.js';
 import { BottomPanel } from './bottomPanel.js';
 
 // Legend box geometry (2026-07 relayout, driven by a user PPT mockup
@@ -777,7 +777,16 @@ export const Export = {
     // mu_histograms.reflected_counts_pixel. Purely additive; 1.0-1.2 readers
     // remain compatible (the historical N-normalized *_bdf grids are
     // unchanged -- they remain the correct domain-mean quantity).
-    SCHEMA_VERSION: "1.3",
+    // 1.4 (review N2, ground-domain redesign): added
+    // inputs.launch_window_shift (open-boundary "Uniform domain" runs only):
+    // the upwind translation s = (tau_cloud + beta_ext*d_sfc)*tan(theta0) of
+    // the TOA launch window relative to the cloud-centered M·W accounting
+    // domain. Window area now equals domain area, so f_c = 1/M² is exact
+    // (the pre-1.4 window was instead EXTENDED sunward by s, overstating the
+    // effective clear-air share). Purely additive; 1.0-1.3 readers remain
+    // compatible, but open-boundary uniform-domain results are NOT
+    // numerically comparable across the 1.3→1.4 boundary at Θ₀ > 0.
+    SCHEMA_VERSION: "1.4",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -813,6 +822,15 @@ export const Export = {
         inputs.domain_factor = UI.getDomainFactor();
         inputs.domain_boundary = UI.getDomainBoundary();   // "open" | "periodic" (Phase 3)
         inputs.units.domain_factor = "dimensionless (domain width = M × cloud width; cloud fraction f_c = 1/M²)";
+        // Schema 1.4 (review N2): open boundary only -- the upwind shift of
+        // the launch window relative to the cloud-centered domain. Periodic
+        // runs have no shift (wraparound makes one unnecessary), so the
+        // field is omitted there rather than exported as 0.
+        if (UI.getDomainBoundary() === DomainBoundary.OPEN) {
+          inputs.launch_window_shift = UI.getSunwardMargin();
+          inputs.units.launch_window_shift =
+            "optical-depth horizontal units (τ-units, same as horizontal_extent); s = (τ_cloud + β_ext·d_sfc)·tanΘ₀";
+        }
       }
 
       // --- Outputs (counts + normalized fluxes; mirrors the stats panel) ---

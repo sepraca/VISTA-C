@@ -6,7 +6,7 @@ import { UI } from './ui.js';
 import { Coords } from './coords.js';
 import { StatsPanel } from './statsPanel.js';
 import { SimStats } from './simstats.js';
-import { Status, EntryMode, DomainBoundary } from './constants.js';
+import { Status } from './constants.js';
 
 // Stored-endpoint buffer cap = the "Endpoint caps shown" slider maximum. Storage
 // is bounded by THIS (not the live display cap), so dragging the slider down and
@@ -447,7 +447,7 @@ export const Photons = {
       // surface" outcomes, so they're the ones subject to the same
       // canonical-tile wrap already applied to the surface heatmap's cell
       // binning (SimStats._addSurfaceFootprint) -- a no-op everywhere else
-      // (SimStats.wrapPeriodicX returns x unchanged outside Uniform domain +
+      // (SimStats.wrapPeriodic returns the coordinate unchanged outside Uniform domain +
       // periodic). Without this, the heatmap's own cells wrapped correctly
       // but the raw per-photon marker did not, leaving dots stranded past
       // the leeward edge even after the grid fix (user report, 2026-07).
@@ -495,13 +495,28 @@ export const Photons = {
       // Repositioning a bypass marker to that stale wall-crossing point would
       // misrepresent where it actually happened -- bypass events always use
       // their own true (if occasionally very large) xExit/yExit/tauExit.
-      const isPeriodicUD = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getDomainBoundary() === DomainBoundary.PERIODIC;
+      // Per-run cached flag, NOT live UI reads (2026-07-19 review P2):
+      // addEndpoint runs once per photon in the instant-batch hot loop, and
+      // the previous UI.getPhotonEntryMode()/getDomainBoundary() pair here
+      // cost two document.getElementById reads + string compares per photon
+      // (~2×10⁷ DOM hits in a 10⁷-photon run) -- exactly the per-photon
+      // DOM-read class the R4 hoist removed from runInstantBatch.
+      // SimStats._surfFootPeriodicWrap is the identical condition
+      // (uniform_domain && periodic), cached in SimStats.reset(); freshness
+      // is guaranteed because both the illumination and domain-boundary
+      // selectors call RunControl.resetScene() on change (see index.html),
+      // and wrapPeriodic below already relies on the same cache.
+      const isPeriodicUD = SimStats._surfFootPeriodicWrap;
       const useWallCrossing = result.status === Status.SIDE_ESCAPE && !result.bypass && isPeriodicUD && result.lastWallCrossing;
       const exitPoint = useWallCrossing ? result.lastWallCrossing : {x: result.xExit, y: result.yExit, tau: result.tauExit};
 
       const isSurfaceLanding = result.status === Status.TRANSMITTED || result.status === Status.SURFACE_ABSORBED;
-      const xExit = isSurfaceLanding ? SimStats.wrapPeriodicX(exitPoint.x) : exitPoint.x;
-      const p = Coords.simToWorldPoint({x: xExit, y: exitPoint.y, tau: exitPoint.tau});
+      // Both horizontal axes wrap (review N3; wrapPeriodic replaces the
+      // x-only wrapPeriodicX): Lambertian bounces / scattered side exits
+      // carry dir.y ≠ 0, so periodic landings stray in y too.
+      const xExit = isSurfaceLanding ? SimStats.wrapPeriodic(exitPoint.x) : exitPoint.x;
+      const yExit = isSurfaceLanding ? SimStats.wrapPeriodic(exitPoint.y) : exitPoint.y;
+      const p = Coords.simToWorldPoint({x: xExit, y: yExit, tau: exitPoint.tau});
       state.endpointData.push({x: p.x, y: p.y, z: p.z, color, radius});
     },
 
@@ -531,7 +546,14 @@ export const Photons = {
         state.activePhotonStep = 0;
         state.activePhotonTotalSteps = worldPts.length - 1;
         state.activePhotonStatus = result.status;
-        StatsPanel.updateDisplay();
+        // Text-only during animation (review P3): the full updateDisplay()
+        // redraws the bottom panel (BDF-grid recompute / canvas repaint) on
+        // every call, and this loop fires per path vertex at ~55 fps just to
+        // advance the "Active photon" step counter. The panel redraw happens
+        // at animation finish via the caller's post-await
+        // rebuildHistograms()/updateDisplay() -- nothing the plots show can
+        // change mid-photon (the photon was recorded before animating).
+        StatsPanel.updateStatsText();
 
         let activeTube = null;
         let photonHead = Photons.makePhotonHead(activeColor);
@@ -590,7 +612,7 @@ export const Photons = {
 
           Photons.addEndpoint(result);
           state.activePhotonStep = state.activePhotonTotalSteps;
-          StatsPanel.updateDisplay();
+          StatsPanel.updateStatsText();   // caller does the full refresh post-await (review P3)
           resolve();
         }
 
@@ -624,7 +646,7 @@ export const Photons = {
             replaceActiveTail(currentPts);
 
             state.activePhotonStep = i;
-            StatsPanel.updateDisplay();
+            StatsPanel.updateStatsText();   // per-vertex: text only (review P3)
 
             // Each stored path vertex after the first corresponds to a boundary point
             // or a scattering/absorption site. Flash interior interaction points.

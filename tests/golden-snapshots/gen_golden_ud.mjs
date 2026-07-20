@@ -16,9 +16,17 @@
 // Matrix: uniform_domain x M in {1,2,4} x theta0 in {0,60} deg x A_s in
 // {0, 0.5, 1.0} = 18 runs x 500,000 photons, seed 42; each run reported under
 // both remaining Observation geometries (36 rows) plus the geometry-independent
-// domain block. The M=1 rows must reproduce the legacy "top" runs bit-for-bit
-// (the Phase-1 gate, re-asserted here as a cross-check by the companion
-// check in tests/review-harness/).
+// domain block. The M=1 rows at theta0=0 must reproduce the legacy "top" runs
+// bit-for-bit (the Phase-1 gate, re-asserted as verify_phase4.mjs Gate 5).
+//
+// RAW-M KERNEL LOCK (deliberate, kept through the 2026-07-19 N2 redesign):
+// this generator passes M straight to Physics.simulatePhoton, bypassing the
+// app's UI.getEffectiveDomainFactor() auto-clamp. Rows with M < M_min(th0) =
+// 1 + 2s/W (at th0=60 here: M=1 and M=2, M_min = 2.299) therefore capture
+// clamp-bypassed physics -- the upwind-shifted launch window misses part of
+// the leeward cloud top, exactly the configuration the app prevents. That is
+// the point: the snapshot locks the KERNEL's raw behavior; app-level policy
+// is tested separately (ui.js clamp + verify_phase3 Gate 6).
 
 const domValues = { observationGeometry: "top-base_faces" };
 globalThis.document = {

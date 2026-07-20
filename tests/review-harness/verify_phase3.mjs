@@ -10,9 +10,12 @@
 //      or a neighbor image).
 //   4. wrapCapped === 0 at these (non-extreme) parameters.
 //   5. Periodic and open converge at large M.
-//   6. At M slightly below M_min(theta0), periodic shows MORE sunward-wall
-//      entries (launchedCloudWall) than open -- the third-wrap-site
-//      signature (CODE-REVIEW P2).
+//   6. Analytic launch accounting under the N2 shifted window (reworked
+//      2026-07-19): open and periodic both match launchedCloudWall/N =
+//      f_c*(tau/W)*tan(theta0); periodic matches launchedCloudTop/N = f_c at
+//      any M >= 1, open only at M >= M_min (below it the leeward top is
+//      partially unlit -- the auto-clamp's justification); every unscattered
+//      direct landing (entry x + shift) falls inside the M*W domain exactly.
 //   7. S(periodic) <= S(open) at matched settings (top-base_faces).
 //
 // Usage (from repo root): node tests/review-harness/verify_phase3.mjs
@@ -114,19 +117,69 @@ console.log("\n=== Gate 5: periodic/open convergence at large M (th0=60, As=0.5)
   console.log("  (expect |diff| shrinking toward 0 as M grows -- reservoir becomes a vanishing fraction of the domain either way)");
 }
 
-// --- Gate 6: below M_min, periodic shows more sunward-wall entries ---
-console.log("\n=== Gate 6: below M_min(th0), periodic launchedCloudWall > open (third wrap site) ===");
+// --- Gate 6 (reworked 2026-07-19, review N2): analytic launch accounting
+// under the SHIFTED open window. The pre-N2 version asserted "periodic
+// launchedCloudWall > open at M below M_min" -- true then only because the
+// extension design DILUTED the open window (area (M*W+s)*M*W > (M*W)^2).
+// Under the shift both windows have area (M*W)^2 and full reservoir
+// coverage at any M >= 1, so wall counts are equal in expectation and both
+// match the closed form:
+//   P(wall)  = f_c*(tau/W)*tan(th0)   (sunward strip tau*tan(th0) x W over (M*W)^2)
+//   P(top)   = f_c = 1/M^2            (cloud top W^2 over (M*W)^2)
+//   P(clear) = 1 - P(top) - P(wall)   (exact complement; identity gate in phase 4)
+// P(top) holds for open ONLY at M >= M_min = 1 + 2s/W (below it the shifted
+// window misses part of the leeward top -- exactly why the UI auto-clamps);
+// periodic supplies the missing part from the neighbor image at any M.
+console.log("\n=== Gate 6: analytic launch fractions under the shifted window (N2) ===");
 {
-  const th0 = 60, tauCloud = 10, slabW = 40;
-  const Mmin = 1 + 2 * (tauCloud / slabW) * Math.tan(th0 * Math.PI / 180);
-  const Mtest = Math.max(1.01, Mmin - 0.3);
-  console.log(`  M_min(60deg) = ${Mmin.toFixed(3)}, testing at M=${Mtest.toFixed(3)}`);
+  const th0 = Math.PI / 3, tauCloud = 10, slabW = 40;
+  const s = (tauCloud + FIXED.betaExt * FIXED.surfaceDistanceKm) * Math.tan(th0);
+  const Mmin = 1 + 2 * s / slabW;
   const N3 = 300000;
-  const p = runFull(N3, { ...FIXED, domainFactor: Mtest, domainBoundary: "periodic" });
-  const o = runFull(N3, { ...FIXED, domainFactor: Mtest, domainBoundary: "open" });
-  check(p.s.launchedCloudWall > o.s.launchedCloudWall,
-        `launchedCloudWall periodic=${p.s.launchedCloudWall}  open=${o.s.launchedCloudWall}`);
-  console.log(`  (sanity: launchedCloudTop periodic=${p.s.launchedCloudTop} open=${o.s.launchedCloudTop}, launchedClear periodic=${p.s.launchedClear} open=${o.s.launchedClear})`);
+  const sig = (p) => Math.sqrt(N3 * p * (1 - p));
+
+  // (a) M below M_min (clamp-bypassed kernel behavior).
+  const Mlow = Math.max(1.01, Mmin - 0.7);
+  const pWallLow = (1 / (Mlow * Mlow)) * (tauCloud / slabW) * Math.tan(th0);
+  const pTopLow = 1 / (Mlow * Mlow);
+  const pL = runFull(N3, { ...FIXED, domainFactor: Mlow, domainBoundary: "periodic" });
+  const oL = runFull(N3, { ...FIXED, domainFactor: Mlow, domainBoundary: "open" });
+  console.log(`  M_min = ${Mmin.toFixed(3)}, testing (a) at M=${Mlow.toFixed(3)}, (b) at M=4`);
+  check(Math.abs(pL.s.launchedCloudWall - N3 * pWallLow) < 4 * sig(pWallLow),
+        `(a) periodic wall=${pL.s.launchedCloudWall} ≈ analytic ${(N3 * pWallLow).toFixed(0)} (<4σ)`);
+  check(Math.abs(oL.s.launchedCloudWall - N3 * pWallLow) < 4 * sig(pWallLow),
+        `(a) open wall=${oL.s.launchedCloudWall} ≈ analytic ${(N3 * pWallLow).toFixed(0)} (<4σ)`);
+  check(Math.abs(pL.s.launchedCloudTop - N3 * pTopLow) < 4 * sig(pTopLow),
+        `(a) periodic top=${pL.s.launchedCloudTop} ≈ f_c·N=${(N3 * pTopLow).toFixed(0)} at M<M_min (<4σ, neighbor image supplies leeward top)`);
+  check(oL.s.launchedCloudTop < 0.9 * N3 * pTopLow,
+        `(a) open top=${oL.s.launchedCloudTop} < 0.9·f_c·N=${(0.9 * N3 * pTopLow).toFixed(0)} at M<M_min (leeward top unlit -- why the app clamps)`);
+
+  // (b) M = 4 >= M_min: open matches all analytic fractions.
+  const M4 = 4;
+  const pWall4 = (1 / (M4 * M4)) * (tauCloud / slabW) * Math.tan(th0);
+  const pTop4 = 1 / (M4 * M4);
+  const o4 = runFull(N3, { ...FIXED, domainFactor: M4, domainBoundary: "open" });
+  check(Math.abs(o4.s.launchedCloudTop - N3 * pTop4) < 4 * sig(pTop4),
+        `(b) open top=${o4.s.launchedCloudTop} ≈ f_c·N=${(N3 * pTop4).toFixed(0)} (<4σ)`);
+  check(Math.abs(o4.s.launchedCloudWall - N3 * pWall4) < 4 * sig(pWall4),
+        `(b) open wall=${o4.s.launchedCloudWall} ≈ analytic ${(N3 * pWall4).toFixed(0)} (<4σ)`);
+  check(o4.s.launchedCloudTop + o4.s.launchedCloudWall + o4.s.launchedClear === o4.launched,
+        `(b) top+wall+clear === launched`);
+
+  // (c) Window preimage: entry x + shift lands inside the M*W domain exactly
+  // (unscattered direct landings tile the ground cell -- f_c exact by
+  // construction). Direct sampleEntryPoint check, no transport needed.
+  RNG.reset(SEED);
+  const prm = { ...FIXED, domainFactor: M4, domainBoundary: "open" };
+  let inDomain = true;
+  const halfDom = M4 * slabW / 2;
+  for (let i = 0; i < 200000; i++) {
+    const e = Physics.sampleEntryPoint(prm);
+    const xLand = e.x + s;
+    if (xLand < -halfDom - 1e-9 || xLand > halfDom + 1e-9 ||
+        e.y < -halfDom - 1e-9 || e.y > halfDom + 1e-9) { inDomain = false; break; }
+  }
+  check(inDomain, `(c) 200k entry points: x+s and y all inside ±M·W/2 (shifted window is the domain's exact preimage)`);
 }
 
 // --- Gates 8-9 (2026-07-19, review N1): the M = 1 periodic plane-parallel

@@ -319,46 +319,48 @@ export const Physics = {
         // depth above the cloud in this model). Whether this point lands on
         // the cloud or in the clear region is resolved in simulatePhoton.
         //
-        // Sunward sampling-window shift (2026-07 fix, open boundary only --
-        // see TODO "Sunward illumination asymmetry / TOA-altitude coupling").
-        // A photon that never touches the cloud still falls the FULL
-        // (tauCloud + betaExt*surfaceDistanceKm) optical depth from cloud-top
-        // (tau=0, the fixed launch reference) to the true surface, drifting
-        // sunwardMargin = that depth * tan(theta0) downwind before it lands.
-        // Because world.slabH = tauCloud (rendering convention: cloud-top
-        // altitude scales with the cloud's own optical thickness), a thicker
-        // cloud silently increases this throw for EVERY launched photon, even
-        // ones that never come near the cloud -- without compensation, the
-        // fixed M*halfW domain loses sunward ground coverage as tauCloud
-        // grows (verified quantitatively: COT=10, theta0=60, M=2 gives a
-        // true margin of 2.6km against only a 2km buffer at default
-        // beta_ext/d_sfc). The fix extends (does not shift) the sunward (-x)
-        // sampling bound by this margin, leaving the leeward (+x) bound at
-        // its usual M*halfW: extending both bounds equally (a pure shift)
-        // would instead retreat the leeward bound INTO the cloud's own
-        // footprint for large-margin cases, silently dropping sample coverage
-        // of the cloud's own leeward-top face. UI.getEffectiveDomainFactor()
-        // auto-clamps M so this window is always wide enough that no such
-        // trade-off is needed. y is unaffected -- dir.y = 0, no lateral throw
-        // in y for this model's slant geometry.
+        // GROUND-DOMAIN DESIGN (2026-07-19, review N2 resolution -- replaces
+        // the earlier sunward window EXTENSION with a pure SHIFT).
+        // The accounting domain -- what f_c = 1/M^2 refers to, what R_domain
+        // normalizes over, what the heatmap shows -- is defined on the
+        // GROUND: the M*W x M*D cell centered on the cloud (matching the
+        // periodic tile's semantics, so open and periodic share one domain
+        // definition). The TOA launch window is that ground cell's exact
+        // PREIMAGE under the slant beam: translated upwind by the full
+        // ballistic throw s = (tauCloud + betaExt*d_sfc)*tan(theta0), the
+        // drop from the tau=0 launch plane to the true surface. Window area
+        // == domain area == (M*W)^2, every launch maps 1:1 to a domain
+        // ground point, so f_c = 1/M^2 and the N-normalization of the
+        // domain-mean quantities are EXACT by construction (the old
+        // extension design widened the window instead, breaking f_c by
+        // s/(M*W) -- 16% at defaults with M=4, th0=60).
         //
-        // Periodic boundary gets NO shift (margin = 0): under wraparound,
-        // Physics.wrapAndFindBoxEntry already retests every tile the
-        // descending ray's horizontal throw crosses during its passage
-        // through the cloud's own tau range, so the tauCloud-dependent part
-        // of the throw is absorbed exactly, symmetrically, regardless of
-        // size (a constant shift of a uniform distribution, wrapped modulo
-        // the domain width, is itself exactly uniform -- there is no edge to
-        // lose coverage against). Shifting the launch window here would just
-        // relabel which tile a photon starts in, with no effect on the
-        // wrapped result, so it is skipped to keep periodic's RNG stream
-        // and golden snapshots unchanged.
+        // The single condition M >= M_min = 1 + 2*s/W (UI.getMinDomainFactor,
+        // auto-clamped at run time by UI.getEffectiveDomainFactor) then
+        // guarantees THREE things at once, all from the same inequality:
+        //   (i)  the shifted window still covers the cloud's full TOP face
+        //        (leeward top edge W/2 <= M*W/2 - s);
+        //   (ii) the sunward-wall reservoir strip is inside the window
+        //        (automatic: s >= tauCloud*tan(theta0) for any M >= 1);
+        //   (iii) the cloud's complete ground shadow fits inside the domain
+        //        (shadow leeward edge W/2 + s <= M*W/2).
+        // Callers bypassing the UI clamp (Node harnesses) at M < M_min get a
+        // partially-unlit leeward cloud top -- deliberate: the kernel stays
+        // pure; the clamp is app policy.
+        //
+        // Periodic boundary gets NO shift: wrapping a uniformly-sampled tile
+        // by a constant is still uniform (no edge to lose coverage against),
+        // and wrapAndFindBoxEntry supplies wall/top illumination from
+        // neighbor tiles exactly. Shifting would only relabel start tiles
+        // while perturbing the RNG-to-outcome mapping and every periodic
+        // golden -- skipped, keeping periodic bit-identical.
+        // y is unshifted in both cases: dir.y = 0 for the direct beam.
         const isPeriodic = domainBoundary === DomainBoundary.PERIODIC;
-        const sunwardMargin = isPeriodic ? 0
+        const shift = isPeriodic ? 0
           : (tauCloud + betaExt * surfaceDistanceKm) * Math.tan(theta0);
         const xHalfSpan = halfW * M;
-        const xMin = -xHalfSpan - sunwardMargin;
-        const xMax = xHalfSpan;
+        const xMin = -xHalfSpan - shift;
+        const xMax = xHalfSpan - shift;
         return { x: xMin + RNG.rand() * (xMax - xMin), y: (RNG.rand() - 0.5) * slabD * M, tau: 0 };
       }
 

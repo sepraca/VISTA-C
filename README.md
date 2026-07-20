@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.0.4** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.0.5** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -91,32 +91,34 @@ where W is the horizontal extent. At Θ₀ = 0 this reduces exactly to the top-o
   cloud plus bright clear sky. Cloud fraction **f_c = 1/M²** is reported alongside M — note
   M is a **1D** (linear) scaling and f_c is **2D** (areal): M = 2 means f_c = 0.25, not
   "half the cloud fraction." A selectable **Domain boundary** control (**open/isolated**
-  or **periodic**, tiled cloud field) governs what lies beyond the launch margin — see
+  or **periodic**, tiled cloud field) governs what lies beyond the domain — see
   next.
 
-  **What "uniform" means here, precisely** *(2026-07 fix — see
-  [CHANGELOG](CHANGELOG.md))*: the surface should receive illumination that is exactly
-  uniform over the full M·W × M·W domain, absent the cloud — the cloud shadows what it
-  physically shadows (and nothing more), regardless of the cloud's own optical thickness
-  τ_cloud. Because launch happens at a fixed reference (cloud-top, τ=0) and the ground
-  sits `τ_cloud + β_ext·d_sfc` optical depths below it, a clear-sky photon's ballistic
-  sideways drift before reaching the ground grows with τ_cloud — so a naively symmetric
-  M·W launch window silently loses sunward-side ground coverage as the cloud gets
-  optically thicker, independent of M (an under-open-boundary-only bug, since periodic
-  tiling absorbs this drift exactly via wraparound and needs no correction). The fix
-  widens the launch window's sunward edge only (never the leeward edge, which stays at
-  the cloud's own footprint boundary) by exactly this drift, so ground illumination is
-  uniform over the full domain for any τ_cloud/Θ₀/M combination, open boundary included.
-  Practically: **open-boundary uniform_domain runs now auto-raise M** to the minimum that
-  keeps this true for the current Θ₀/τ_cloud/β_ext/d_sfc/W combination
-  (M_min = 1 + 2·(τ_cloud + β_ext·d_sfc)/W · tanΘ₀ — corrected to include the
-  previously-missing surface-gap term), with a note shown when this happens; the live
-  `#domainMarginWarning` banner remains as an informational preview of what will change
-  before you run.
+  **The domain and the launch window, precisely** *(v6.0.5 ground-domain redesign — see
+  [CHANGELOG](CHANGELOG.md))*: the accounting domain — what f_c = 1/M² refers to, what
+  R_domain/T_domain normalize over, and what the ground plane and heatmaps display — is
+  the M·W × M·W **ground cell centered on the cloud** (identical semantics for both
+  boundary modes). Because launch happens at a fixed reference (cloud-top, τ=0) and the
+  ground sits `τ_cloud + β_ext·d_sfc` optical depths below it, a clear-sky photon drifts
+  sideways by s = (τ_cloud + β_ext·d_sfc)·tanΘ₀ before landing. Under the **open**
+  boundary the TOA launch window is therefore the domain's exact *preimage* under the
+  slant beam: the same M·W × M·W square **translated upwind by s** (a pure shift, not a
+  widening). Window area = domain area, so every launch maps 1:1 to a domain ground
+  point, **f_c = 1/M² is exact by construction**, and the cloud shadows exactly what it
+  physically shadows regardless of τ_cloud. The single condition **M ≥ M_min =
+  1 + 2·s/W** then guarantees at once that the shifted window still fully lights the
+  cloud's top face, that the sunward-wall reservoir strip is captured, and that the
+  cloud's complete ground shadow fits inside the domain. Practically:
+  **open-boundary uniform_domain runs auto-raise M to M_min** (rounded up to 2
+  decimals) with a note when this happens; the live `#domainMarginWarning` banner
+  previews it before you run. The **periodic** boundary needs no shift and no M_min —
+  wraparound supplies sunward illumination from the neighboring tile image at any
+  M ≥ 1 (M = 1 is the plane-parallel limit), and a transient note in the same banner
+  says so when you type an M below the open-boundary minimum.
 
 #### Domain boundary: open/isolated vs. periodic (v6.0.2)
 
-The **open/isolated** boundary treats the far clear sky beyond the launch margin as
+The **open/isolated** boundary treats the far clear sky beyond the launch window as
 unilluminated by the cloud field — a single finite cloud sitting alone in an otherwise
 empty domain. The **periodic** boundary instead tiles the M·W × M·W domain infinitely in
 both horizontal directions — an infinite *regular field* of identical clouds at cloud
@@ -325,7 +327,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
 | Photon illumination | Cloud-top entry: Centered (point source), Uniform cloud top, Uniform cloud top + sunward side, Uniform domain (v6.0.2, see above) | Centered |
-| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination. Open boundary: auto-raised at run time to the minimum needed for uniform sunward ground illumination at the current Θ₀/τ_cloud/β_ext/d_sfc/W (2026-07 fix, see above and [CHANGELOG](CHANGELOG.md)) | 4 |
+| Domain factor M | Domain width = M × cloud width; shown only for Uniform domain illumination. Open boundary: auto-raised at run time to M_min = 1 + 2·(τ_cloud + β_ext·d_sfc)·tanΘ₀/W, the minimum for the upwind-shifted launch window to fully light the cloud top and contain its ground shadow (v6.0.5 ground-domain redesign, see above and [CHANGELOG](CHANGELOG.md)); periodic boundary: any M ≥ 1 valid | 4 |
 | Domain boundary | Open/isolated or periodic (tiled cloud field); shown only for Uniform domain illumination (v6.0.2, see above) | Open (isolated cloud) |
 | Observation geometry | How exits are aggregated into R/T/S: top/base faces (a), or top/base/side faces / cloud element (b) | Cloud top/base faces only |
 | Reflected observation pixel fraction (f_pix) | Centered observation pixel width = f_pix × cloud width; at f_pix < 1 the **Reflected** μ/BRF panels restrict to top-face exits inside the pixel (transmitted panels unaffected; disabled for Centered illumination; a sparse-statistics warning appears below ~2 counts/bin). **Deferred application**: the pixel is fixed per run, so editing the input never clears a finished run — the new value is marked *pending* in the stats panel and takes effect at the next Launch Ensemble/Reset; panels and exports always describe the value the run was accumulated with. The pixel **view** renders only under Obs geometry "cloud top/base faces only" — a planar pixel is well-posed on the flat top face only; under "top/base/side faces" the standard side-inclusive view shows instead, and toggling the dropdown swaps between the two without a re-run (the pixel accumulators fill regardless) | 1.00 (whole face) |
@@ -511,26 +513,26 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.0.4** (2026-07-18, patch release — UI/rendering fixes and
-labeling consistency only, no new capabilities, no physics/statistics changes). Headline
-items: a periodic-boundary SIDE_ESCAPE marker placement fix (endpoint markers now land on
-the true cloud-side-wall crossing rather than at cloud-top height), a visual/legend
-distinction between genuine cloud-side escapes and surface-reflection-driven "bypass"
-escapes, a full legend reorganization into Intermediate/Terminal event sections with a
-wider, shorter layout (on-screen and in exported PNGs), and a data-driven replacement for
-the export-button/legend collision breakpoint (previously a hand-picked viewport width,
-now a real `getBoundingClientRect()` check). See CHANGELOG.md's `[v6.0.4]` section and
-the [v6.0.4 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.4) for
-the full history. **v6.0.3**
-(2026-07-14) fixed a sunward ground-illumination asymmetry under Uniform domain
-illumination (open boundary) at large cloud optical thickness and solar zenith angle — see
-CHANGELOG.md's `[v6.0.3]` section and
-the [v6.0.3 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.3).
-**v6.0.2** (also 2026-07-14) added
-Uniform domain illumination (direct clear-sky surface illumination, selectable
-open/isolated or periodic domain boundary), the general-purpose R/T/A component breakdown,
-and rigorous BRF/BTF normalization (Phase 4) — see CHANGELOG.md's `[v6.0.2]` section.
-v6.0.4 is the version currently on `main` and in the hosted demo.
+Latest tagged release: **v6.0.5** (2026-07-19). Headline items, from a full code/physics
+review of the post-Phase-3/4 state: the **ground-domain redesign** of open-boundary
+Uniform-domain illumination (the launch window is now a pure upwind *shift* of the
+cloud-centered M·W domain rather than a sunward *extension*, making f_c = 1/M² and the
+domain-mean normalizations exact by construction and re-centering the rendered
+domain/heatmaps on the cloud; export schema 1.4; open-boundary Θ₀>0 uniform-domain
+results are not numerically comparable to earlier versions); a **plane-parallel-limit
+physics fix** (at M = 1 periodic, wrapped photons landing exactly on the cloud wall
+tunneled through the box as clear air — M = 1 periodic now matches the wide-cloud
+plane-parallel proxy to ~10⁻⁴ in R and is locked by new gates); analytic
+launch-fraction gates; Node-version-robust golden checkers; and a set of rendering/
+performance items (instanced surface-interaction markers, per-photon DOM reads and
+per-vertex panel redraws removed from hot paths, periodic display wrap extended to y).
+See CHANGELOG.md's `[v6.0.5]` section and the
+[v6.0.5 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.5).
+Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fixes;
+**v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
+v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
+open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
+v6.0.5 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -542,7 +544,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -553,4 +555,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.4). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.5). GitHub. https://github.com/sepraca/VISTA-C

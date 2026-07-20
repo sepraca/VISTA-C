@@ -52,7 +52,10 @@ function bdfBinIndex(dx, dy, dz) {
 
 // Cap on stored surface-interaction events (3D markers show at most the
 // most recent 1200; storing more is wasted memory at large photon counts).
-const SURFACE_EVENT_CAP = 1200;
+// Exported (2026-07-19, review P1) so scene.js's persistent instanced
+// surface-marker mesh can size its fixed capacity from the same constant
+// instead of hardcoding a second copy of 1200.
+export const SURFACE_EVENT_CAP = 1200;
 const SURFACE_FOOT_EXTENT = 2;      // default/legacy surface-absorption grid extent (× cloud extent)
 // CODE-REVIEW P6: under Uniform domain illumination the direct clear-sky beam
 // can land anywhere across the full M-times-wider domain, so a fixed 2× grid
@@ -195,10 +198,12 @@ export const SimStats = {
     // per run in reset() -- see surfaceFootFactor() and SURF_FACTOR_CAP above.
     // Never read live in _addSurfaceFootprint (that's the per-photon hot path).
     _surfFootFactor: SURFACE_FOOT_EXTENT,
-    // Leeward (+x) grid-extension and periodic-wrap flag (2026-07 rendering
-    // fix), both cached at reset() -- see surfaceFootMarginX() below. Never
-    // read live (UI.*) in _addSurfaceFootprint; that's the per-photon hot path.
-    _surfFootMarginX: 0,
+    // Periodic-wrap flag, cached at reset() -- never read live (UI.*) in
+    // _addSurfaceFootprint; that's the per-photon hot path. (The former
+    // _surfFootMarginX leeward grid-extension was removed 2026-07-19 with the
+    // N2 ground-domain redesign: the launch window is now a pure upwind
+    // SHIFT, so the ground footprint is exactly the symmetric M·W domain --
+    // no leeward spill exists to widen for.)
     _surfFootPeriodicWrap: false,
     // TRUE simulated tile half-width for periodic wrapping (world.slabW/2 ×
     // effective M), cached at reset() -- deliberately independent of
@@ -206,7 +211,7 @@ export const SimStats = {
     // [SURFACE_FOOT_EXTENT, SURF_FACTOR_CAP] and so can differ from the true
     // M outside that range). The physical wraparound period is what it is
     // regardless of how wide the grid chooses to render itself. See
-    // wrapPeriodicX() below.
+    // wrapPeriodic() below.
     _periodicWrapHalfW: 0,
     // Footprint count grids at the current "Footprint grid" resolution.
     footRefl:  {nBins: 0, counts: null},
@@ -260,32 +265,6 @@ export const SimStats = {
       return Math.min(SURF_FACTOR_CAP, Math.max(SURFACE_FOOT_EXTENT, UI.getEffectiveDomainFactor()));
     },
 
-    // Leeward (+x) grid-extension, Uniform domain + OPEN boundary only
-    // (2026-07 rendering fix; physics.js untouched by explicit user request --
-    // this only widens where the heatmap BINS/renders an already-computed
-    // landing position, it never alters a trajectory or consumes an RNG draw).
-    // The sunward-illumination fix (physics.js sampleEntryPoint) extends the
-    // LAUNCH window's sunward edge by exactly (tau_cloud + beta_ext*d_sfc)*
-    // tan(theta0) so the GROUND gets full coverage on that edge; every photon
-    // then drifts by this same margin before reaching the true surface, so a
-    // photon launched at the nominal leeward launch edge (+domainHalfW) lands
-    // at +domainHalfW + margin on the real ground. The grid (and the rendered
-    // surface plane, see scene.js updateWorld/buildCloudBox) were still sized
-    // symmetrically at +-domainHalfW, so this widens the leeward edge only to
-    // match, using the exact same UI.getSunwardMargin() term
-    // getMinDomainFactor() and Physics.sampleEntryPoint already share.
-    //
-    // Periodic gets 0 here -- see _surfFootPeriodicWrap below instead: its own
-    // (smaller) leeward overshoot comes only from the un-wrapped sub-cloud
-    // clear-air gap in physics.js's shared surfaceInteraction() closure, and
-    // by periodicity a landing past +domainHalfW is exactly equivalent to the
-    // same point translated back one domain-width -- wrapping the coordinate
-    // for display is correct, not widening the grid.
-    surfaceFootMarginX() {
-      if (UI.getPhotonEntryMode() !== EntryMode.UNIFORM_DOMAIN || UI.getDomainBoundary() !== DomainBoundary.OPEN) return 0;
-      return UI.getSunwardMargin ? UI.getSunwardMargin() : 0;
-    },
-
     // (Re)create footprint grids at the current UI resolution. Called on
     // reset and on display rebuilds — NOT per photon (avoids DOM reads in
     // the hot loop). A resolution change clears accumulated footprints.
@@ -325,42 +304,53 @@ export const SimStats = {
     // Uniform domain -- clear-direct landings past the cap) clamp to the
     // nearest edge cell, preserving direction rather than being dropped.
     //
-    // 2026-07 rendering fix (display/binning only -- physics.js untouched):
-    //   Open boundary, Uniform domain: the grid's x-extent is widened on the
-    //     leeward (+x) side by _surfFootMarginX, matching the true asymmetric
-    //     ground footprint (flush on the sunward edge, overshooting on the
-    //     leeward edge by the same margin the sunward-illumination fix added
-    //     to the launch window -- see surfaceFootMarginX() above). No
-    //     coordinate transform needed: x bins directly into the wider grid.
-    //   Periodic boundary, Uniform domain: _surfFootMarginX is 0 (no widening
-    //     -- the true footprint is exactly the domain tile by construction),
-    //     but the raw landing x can still fall outside +-halfW because the
-    //     sub-cloud clear-air gap isn't itself wrapped by physics.js's
-    //     wraparound (that only covers the cloud-image tau range). Wrapping x
+    // Boundary handling (display/binning only -- physics.js untouched):
+    //   Open boundary, Uniform domain: the grid is the symmetric M·W x M·D
+    //     domain centered on the cloud. Under the N2 ground-domain design
+    //     (2026-07-19) the launch window is the domain's upwind-shifted
+    //     preimage, so unscattered direct landings fall inside the domain by
+    //     construction -- no leeward widening needed (the former
+    //     _surfFootMarginX extension was removed with that redesign).
+    //   Periodic boundary, Uniform domain: the raw landing x can fall
+    //     outside +-halfW because the sub-cloud clear-air gap isn't itself
+    //     wrapped by physics.js's wraparound (that only covers the
+    //     cloud-image tau range). Wrapping x
     //     modulo the tile width here folds it back to its canonical-tile
     //     equivalent for display -- correct by periodicity, and does not
     //     touch physics.js, RNG, or any R/T/A/S count.
-    //   Everything else (legacy modes, y in every case -- dir.y=0 always, no
-    //     lateral throw): unchanged, reduces exactly to the pre-existing
-    //     symmetric behavior (_surfFootMarginX=0, _surfFootPeriodicWrap=false).
+    //   Everything else (legacy modes): unchanged, reduces exactly to the
+    //     pre-existing symmetric behavior (_surfFootPeriodicWrap=false).
     _addSurfaceFootprint(x, y) {
       const f = SimStats.footSurfAbs;
       if (!f.counts) return;
       const n = f.nBins;
       const halfW = world.slabW * SimStats._surfFootFactor / 2;
       const halfD = world.slabD * SimStats._surfFootFactor / 2;
-      const extW = 2 * halfW + SimStats._surfFootMarginX;
+      const extW = 2 * halfW;
       const extD = 2 * halfD;
-      const xw = SimStats.wrapPeriodicX(x);
+      // Both horizontal axes wrap under periodic boundary (review N3) -- the
+      // tile is square, so one helper serves x and y alike.
+      const xw = SimStats.wrapPeriodic(x);
+      const yw = SimStats.wrapPeriodic(y);
       let ix = Math.floor(((xw + halfW) / extW) * n);
-      let iy = Math.floor(((y + halfD) / extD) * n);
+      let iy = Math.floor(((yw + halfD) / extD) * n);
       ix = Math.max(0, Math.min(n - 1, ix));
       iy = Math.max(0, Math.min(n - 1, iy));
       f.counts[ix * n + iy]++;
     },
 
-    // Wrap x into its canonical-tile equivalent under Uniform domain +
-    // periodic boundary (2026-07 rendering fix); identity (no-op) otherwise.
+    // Wrap a HORIZONTAL coordinate (x or y -- the tile is square, W = D, so
+    // one period serves both axes) into its canonical-tile equivalent under
+    // Uniform domain + periodic boundary; identity (no-op) otherwise.
+    // Renamed from wrapPeriodicX (2026-07-19, review N3): the original was
+    // applied to x only, justified by "dir.y = 0 always" -- true ONLY for the
+    // unscattered direct beam. Scattered side exits and Lambertian surface
+    // bounces have dir.y ≠ 0, and under periodic boundary their landings fall
+    // outside ±tile/2 in y just as in x (measured: 1.7% of surface landings
+    // at M=2, Θ₀=60°, Aₛ=0.8, reaching |y| ≈ 6 tiles out) -- those were
+    // clamped to the heatmap's y-edge cells and drawn as stranded markers.
+    // The physics wrap (wrapAndFindBoxEntry) always handled y; this is
+    // display/binning only.
     // Uses the TRUE simulated tile half-width (_periodicWrapHalfW, cached at
     // reset() from world.slabW/2 × the EFFECTIVE domain factor) -- kept
     // deliberately separate from _surfFootFactor (the heatmap's own display
@@ -373,11 +363,11 @@ export const SimStats = {
     // were wrapped (2026-07) but the raw per-photon marker was not, leaving
     // the dots still stranded past the leeward edge even after the grid fix
     // (user report, 2026-07).
-    wrapPeriodicX(x) {
-      if (!SimStats._surfFootPeriodicWrap) return x;
-      const halfW = SimStats._periodicWrapHalfW;
-      const period = 2 * halfW;
-      return ((x + halfW) % period + period) % period - halfW;
+    wrapPeriodic(v) {
+      if (!SimStats._surfFootPeriodicWrap) return v;
+      const half = SimStats._periodicWrapHalfW;
+      const period = 2 * half;
+      return ((v + half) % period + period) % period - half;
     },
 
     // Reset all counters and accumulators to their initial empty state.
@@ -415,10 +405,8 @@ export const SimStats = {
       // Cache the surface-absorption grid extent factor for the run (CODE-REVIEW
       // P6) — read once here, not per-photon; see surfaceFootFactor() above.
       SimStats._surfFootFactor = SimStats.surfaceFootFactor();
-      // Cache the leeward grid-extension and periodic-wrap flag for the run
-      // (2026-07 rendering fix) — read once here, not per-photon; see
-      // surfaceFootMarginX() above.
-      SimStats._surfFootMarginX = SimStats.surfaceFootMarginX();
+      // Cache the periodic-wrap flag for the run — read once here, not
+      // per-photon.
       SimStats._surfFootPeriodicWrap =
         UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getDomainBoundary() === DomainBoundary.PERIODIC;
       SimStats._periodicWrapHalfW = SimStats._surfFootPeriodicWrap
