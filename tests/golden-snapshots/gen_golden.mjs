@@ -75,6 +75,20 @@ for (const mode of ILLUM_MODES) {
         const Rfrac = Rcount / launched, Tfrac = Tcount / launched, Sfrac = Scount / launched;
         const Tterm = s.terminated / launched;
         const closure = Rfrac + Tfrac + Acloud + Sfrac + Tterm;
+        // Path-length histogram (review B, 2026-07-21): 24 integer bin counts
+        // per view + bin_max, computed WHILE this observation geometry is set
+        // (the segment accessors are geometry-aware). Integer-exact and
+        // cross-platform stable, so they lock the streaming-histogram binning
+        // path — the class of bug the P5 fine-bin-boundary error was, which
+        // passed every prior gate because no golden contained a histogram.
+        // Per-view means are deliberately NOT stored: they are the ~1e-14
+        // multi-segment sums (see P5 notes), and meanPath already covers means.
+        const _nm = SimStats.pathAxisMax();
+        const pathHist = {
+          bin_max: _nm,
+          reflected_counts: SimStats.pathHistogramCounts(SimStats.reflectedPathSegments(), _nm),
+          net_transmitted_counts: SimStats.pathHistogramCounts(SimStats.transmittedPathSegments(), _nm)
+        };
         results.push({
           illum: mode, theta0_deg: th0, As, obsGeom: key, obsGeomLabel: label,
           seed: SEED, N: N_PHOTONS,
@@ -82,7 +96,7 @@ for (const mode of ILLUM_MODES) {
           Rcount, Rfrac, Tcount, Tfrac, Acloud_count: s.absorbed, Acloud,
           Scount, Sfrac, Tterm_count: s.terminated, Tterm, closure,
           EdownSfc, EupSfc, netSfcAbs, netSfcAbsCount,
-          meanScat, meanPath
+          meanScat, meanPath, pathHist
         });
       }
     }

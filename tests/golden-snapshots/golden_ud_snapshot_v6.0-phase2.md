@@ -2,6 +2,14 @@
 
 Generated: 2026-07-19T23:20:06.416Z | seed 42 | N=500,000 photons/run | 18 runs (M in {1,2,4} x Th0 in {0,60} deg x As in {0,0.5,1}) x 2 observation geometries = 36 rows.
 
+> **Path-histogram fields added (review B, 2026-07-21).** Each row now also carries a
+> `pathHist` object — `bin_max` plus the 24 integer bin counts for the reflected and
+> net-transmitted views, computed under that row's observation geometry. Purely additive:
+> every pre-existing field verified byte-identical before replacement (36/36 rows). This
+> locks the streaming path-length binning, which had no golden coverage — the P5
+> fine-bin-boundary bug passed every prior suite. The budget tables below are unchanged
+> (derived from the unchanged budget fields), so they were not regenerated.
+
 Companion to golden_v5.4.0.json (legacy modes). Regenerate/verify with one command: node tests/golden-snapshots/check_golden_ud.mjs (counts exact; totalPath/meanPath to 1e-9 relative for cross-Node last-ulp wobble). NOTE: this generator passes the RAW M to the kernel (no UI auto-clamp) -- it is a kernel lock, so rows at M < M_min(Th0=60) = 2.299 (i.e. M=1 and M=2 at Th0=60) deliberately capture clamp-bypassed physics with a partially unlit leeward cloud top; the app itself raises M to M_min before running.
 
 ## Domain-wide budget (geometry-independent)

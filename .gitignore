@@ -24,3 +24,8 @@ CODE-REVIEW-*.md
 # Release-notes drafts -- scratch templates for pasting into GitHub Releases,
 # not tracked project docs
 RELEASE_NOTES*.md
+
+# MODIS phase functions in netCDF4 (source data; converted browser assets, when
+# they exist, will live elsewhere and be tracked separately)
+MODIS_Phase Functions_netCDF4/
+

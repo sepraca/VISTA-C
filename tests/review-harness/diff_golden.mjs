@@ -52,4 +52,7 @@ else {
   console.log(`DIFFER — ${diffs.length} differences:`);
   for (const d of diffs.slice(0, 40)) console.log("  " + d);
   if (diffs.length > 40) console.log(`  ... and ${diffs.length - 40} more`);
+  // A mismatch must fail the process, not just print (2026-07-21): without
+  // this, tests/run_all.mjs (and any CI) would read a DIFFER as success.
+  process.exitCode = 1;
 }

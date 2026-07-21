@@ -2,6 +2,13 @@
 
 Generated: 2026-07-07T14:44:33.922Z (raw physics unchanged since; combiner rows regenerated 2026-07-14, R6 refactor)
 
+> **Path-histogram fields added (review B, 2026-07-21).** Each row now also carries a
+> `pathHist` object (`bin_max` + 24 integer bin counts, reflected and net-transmitted,
+> under that row's observation geometry), locking the streaming path-length binning that
+> had no golden coverage (the P5 fine-bin-boundary bug passed every prior suite; verified
+> here that reintroducing it makes this golden DIFFER on `pathHist` bins 14/15). Purely
+> additive: all pre-existing v5.4.0 fields verified byte-identical (36/36 rows).
+
 > **Provenance note (review D1, verified 2026-07-19).** The committed
 > `golden_v5.4.0.json` was regenerated at the R6 commit — 54 rows became 36 when the
 > "scene" observation-geometry option was removed — and it also carries the six

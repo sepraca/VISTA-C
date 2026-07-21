@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-*(nothing yet)*
+### Tests (2026-07-21 — pre-v6.1 refactoring pass, items A3 + B)
+
+- **One-command test runner** (`tests/run_all.mjs`): runs the whole battery (phase 3/4
+  gates, P4/P5 gates, the three golden checks) as child processes, judged by exit code,
+  with one PASS/FAIL line and wall time per suite and a nonzero exit on any failure.
+  Optional name-filter args (`node tests/run_all.mjs p4 p5`) run a subset for the inner
+  loop. Replaces the seven-plus hand-pasted commands, where a skipped suite was a live
+  risk. Also gave `diff_golden.mjs` a nonzero exit code on DIFFER — it previously only
+  printed, so an automated runner would have read a mismatch as success.
+- **Path-length histograms added to all three golden snapshots** (legacy, uniform-domain,
+  periodic): each row now carries a `pathHist` object (`bin_max` + 24 integer bin counts
+  for the reflected and net-transmitted views, under that row's observation geometry).
+  This closes a real coverage gap — the streaming path-length binning had no golden, and
+  the P5 fine-bin-boundary bug passed all prior suites. Verified by reintroducing that
+  bug: the golden now DIFFERs on `pathHist` bins 14/15. Purely additive — every
+  pre-existing field byte-identical across all 36 rows in each file (D1 discipline).
+
+### Fixed (2026-07-21)
+
+- `.gitignore` pattern for the in-repo MODIS phase-function source folder had a typo
+  (`netCDDF4` vs the actual `netCDF4`), so the ~0.8 MB of `.nc` files were not being
+  ignored. Corrected.
 
 ## [v6.0.7] — 2026-07-20
 

@@ -2,6 +2,12 @@
 
 Generated: 2026-07-19T17:16:39.843Z (tables regenerated post-N1 fix, 2026-07-19) | seed 42 | N=500,000 photons/run | 18 runs (M in {1,2,4} x Th0 in {0,60} deg x As in {0,0.5,1}) x 2 observation geometries = 36 rows.
 
+> **Path-histogram fields added (review B, 2026-07-21).** Each row now also carries a
+> `pathHist` object (`bin_max` + 24 integer bin counts, reflected and net-transmitted,
+> under that row's observation geometry), locking the streaming path-length binning.
+> Purely additive: all pre-existing fields verified byte-identical (36/36 rows); budget
+> tables below unchanged, not regenerated.
+
 Companion to golden_ud_v6.0-phase2.json (same matrix, open boundary). Regenerate with gen_golden_periodic.mjs and diff -- every raw count must match exactly (deterministic RNG, seed 42). Cross-checks at generation time (all 36 rows, tests/review-harness or check_golden_periodic.mjs): all component-sum identities exact; R_domain+T_domain+A_cloud+terminated == launched exactly (terminated absorbs both the MAX_EVENTS and MAX_WRAPS safety caps -- see wrapCapped column); terminal sideEscapeDown === 0 in every row (the TODO's "must become identically 0, migrates into T" claim, gate-verified); S(all_faces) == surfaceBypassUp exactly in every row; wrapCapped negligible (< 0.1% of N) even in the worst case (tightest tiling, M=1).
 
 Two implementation-history notes this snapshot's generation caught (see TODO "Phase 3" and CHANGELOG for detail): (1) the direct upward-side-escape wrap site initially only handled dir.z < 0 -- the dir.z > 0 (downward) / Aₛ = 0 case needed the identical adjacency test, since it's a purely geometric question independent of surface albedo; (2) that same downward-miss case must proceed to the surface UNCONDITIONALLY on Aₛ (not just when Aₛ > 0), matching how the uniform_domain clear-miss launch branch already treats Aₛ = 0 -- otherwise terminal sideEscapeDown never actually reached zero at Aₛ = 0. Both are fixed in the current code; this snapshot reflects the corrected behavior.

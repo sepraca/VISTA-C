@@ -112,6 +112,15 @@ for (const M of M_VALUES) {
         const Acloud = s.absorbed / launched;
         const Rfrac = Rcount / launched, Tfrac = Tcount / launched, Sfrac = Scount / launched;
         const Tterm = s.terminated / launched;
+        // Path-length histogram (review B, 2026-07-21) — see gen_golden.mjs for
+        // the rationale; UD exercises the clear-direct zero-path spike, the
+        // edge case most likely to hide a binning bug.
+        const _nm = SimStats.pathAxisMax();
+        const pathHist = {
+          bin_max: _nm,
+          reflected_counts: SimStats.pathHistogramCounts(SimStats.reflectedPathSegments(), _nm),
+          net_transmitted_counts: SimStats.pathHistogramCounts(SimStats.transmittedPathSegments(), _nm)
+        };
         results.push({
           illum: "uniform_domain", M, theta0_deg: th0, As, obsGeom: key, obsGeomLabel: label,
           seed: SEED, N: N_PHOTONS,
@@ -122,7 +131,7 @@ for (const M of M_VALUES) {
           EdownSfc, EupSfc, netSfcAbs: EdownSfc - EupSfc,
           netSfcAbsCount: s.transmitted - s.surfaceReflected,
           meanScat: s.totalScatterings / launched, meanPath: s.totalPath / launched,
-          domain
+          domain, pathHist
         });
       }
     }
