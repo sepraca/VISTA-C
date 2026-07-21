@@ -6,6 +6,49 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+*(nothing yet)*
+
+## [v6.0.7] — 2026-07-20
+
+Performance and hygiene release, completing the 2026-07-19 review's remaining items
+(P4 follow-ups, P5, P6, N4, D1). No physics or statistics changes: every count, mean,
+axis max, and exported histogram bin is bit-identical to v6.0.6, verified by the full
+golden and gate battery after each item. Headline: the per-photon path-length arrays
+(200+ MB at 20M photons) are replaced by fixed 4.2 MB streaming histograms with
+bit-identical output, and short runs regained their progressive on-screen build-up.
+
+### Performance (2026-07-20 session, P6 — allocation micro-items)
+
+- **`rayBoxEntry` no longer allocates per call.** It built a 3×4 nested array and
+  destructured it in a `for…of` — four allocations plus an iterator on every call, and
+  the periodic wrap loop calls it repeatedly per photon. Unrolled per axis with
+  identical arithmetic in identical order: **periodic throughput +7%** (0.975 → 1.047M
+  photons/s at M=2; 0.372 → 0.396M at M=1), open boundary unchanged (~1%, noise), all
+  goldens bit-identical.
+- **The visualization path array is only allocated when it will be used.** Every
+  `path.push` was already gated on `storePath`, but the array and its seed vertex were
+  built for every photon regardless — two allocations per photon of pure GC pressure in
+  a 10⁷-photon batch, where paths are never drawn.
+- Deliberately **not** done, with rationale recorded: making the three heatmap frame
+  outlines persistent. The review note also cited a per-refresh text sprite, but that
+  sprite is built in `buildCloudBox` (once per scene build), not per refresh; the frames
+  are three small line objects per rebuild at ~5 rebuilds/s. The gain is unmeasurable and
+  the persistent-object pattern is precisely the class that produced the earlier
+  paint-order/flicker bugs.
+
+### Documentation (2026-07-20, N4 + D1)
+
+- **N4**: recorded, at the periodic bypass exit site, that two exit-reporting conventions
+  coexist on purpose — periodic reports the wrapped τ=0 clearance point, open-boundary
+  bypass reports τ=τ_cloud — with what consumes each (μ/BDF are direction-based;
+  side-escape markers are repositioned via `lastWallCrossing`), so neither gets "fixed"
+  to match the other by mistake.
+- **D1**: recorded `golden_v5.4.0.json`'s provenance in its snapshot `.md` — regenerated
+  at the R6 commit (54 → 36 rows) and field-verified bit-identical across all 1,404
+  shared v5.4.0-era fields, with only additive fields differing. A naive whole-file diff
+  shows ~216 apparent mismatches that are all additive-field artifacts; use
+  `diff_golden.mjs`, which strips them.
+
 ### Performance (2026-07-20 session, P5 — streaming path-length histograms)
 
 - **The per-photon path-length arrays are gone**, replaced by fixed-size streaming
@@ -24,8 +67,16 @@ All notable changes to this project are documented here. The format is based on
   sum and count; and the fine bin width is chosen as 10/(24·M) so that every possible
   display-bin edge — the axis max is always a multiple of 10, over 24 bins — is an exact
   multiple of it, making re-aggregation a pure regrouping with no boundary reassignment.
-  Exported `bin_max`, all reported means, and every one of the 24 exported bin counts are
-  unchanged, so the export schema stays at 1.4 and existing files remain comparable.
+  The mapping uses integer division: doing it in floating point misplaced a whole fine
+  bin at boundaries where the product rounds down (~644 photons at `bin_max = 50` in a
+  2M run — found by regenerating a committed export and diffing it, and now covered by a
+  gate that sweeps every axis value from 10 to 2000 rather than only the few a sample run
+  happens to produce). Exported `bin_max` and all 24 bin counts are unchanged, so the
+  export schema stays at 1.4 and existing files remain directly comparable. One
+  exception: **multi-segment `*_mean` values differ in the last digit or two** (~1e-14
+  relative) because the pre-P5 code kept one running total across all segments while
+  streaming sums each population separately and adds the totals — same terms, same order,
+  different association. Irrelevant against MC error of ~1e-3, but stated for provenance.
 - The fine grid **self-scales with optical thickness**: it starts at ~6,800 optical
   depths and, on meeting a longer path, halves its resolution in place to double the
   range (to ~54,600 at the limit). This is exactness-preserving, because the nesting

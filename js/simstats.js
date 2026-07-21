@@ -924,13 +924,32 @@ export const SimStats = {
         // have coarsened its own grid (see growPathHist); the nesting -- and
         // so the exactness -- holds at every resolution.
         const w = h.width;
+        // INTEGER mapping, not floating point (bug found 2026-07-20 by
+        // regenerating a committed export and diffing). The nesting guarantees
+        // displayW is a whole number `perDisplay` of fine bins, so the display
+        // index is the integer division i / perDisplay. Computing it as
+        // floor((i*w)/displayW) instead put a whole fine bin of photons one
+        // display bin too low at boundaries where the product rounds down:
+        // at bin_max = 50, fine bin 600 lies exactly on the 14|15 edge, but
+        // 600*0.0520833... evaluates to 31.249999999999996, which divides to
+        // 14.999999999999998 and floors to 14 (~644 photons misplaced in a 2M
+        // run). Integer division has no such failure mode.
+        const perDisplayF = displayW / w;
+        const perDisplay = Math.round(perDisplayF);
+        const nests = perDisplay >= 1 && Math.abs(perDisplayF - perDisplay) < 1e-9;
         // Fine bins at or above this index are >= niceMax and belong in the
         // overflow (final) display bin, matching the pre-P5 clipping.
-        const cut = Math.min(PATH_FINE_BINS, Math.ceil(niceMax / w));
+        const cut = nests ? Math.min(PATH_FINE_BINS, perDisplay * nBins)
+                          : Math.min(PATH_FINE_BINS, Math.ceil(niceMax / w));
         const top = Math.min(h.hi, PATH_FINE_BINS - 1);
         for (let i = 0; i < cut && i <= top; i++) {
           const k = c[i];
-          if (k !== 0) counts[Math.floor((i * w) / displayW)] += k;
+          if (k === 0) continue;
+          // Non-nesting fallback (no caller does this today -- it would take a
+          // non-multiple-of-10 axis or an nBins other than 24): assign by the
+          // fine bin's lower edge, accurate to one fine bin.
+          counts[nests ? Math.floor(i / perDisplay)
+                       : Math.min(nBins - 1, Math.floor((i * w) / displayW))] += k;
         }
         let tail = h.over;
         for (let i = cut; i <= top; i++) tail += c[i];

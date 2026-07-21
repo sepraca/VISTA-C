@@ -1,6 +1,20 @@
 # VISTA-C v5.4.0 Golden Snapshot — Legacy Illumination x Observation Geometry
 
 Generated: 2026-07-07T14:44:33.922Z (raw physics unchanged since; combiner rows regenerated 2026-07-14, R6 refactor)
+
+> **Provenance note (review D1, verified 2026-07-19).** The committed
+> `golden_v5.4.0.json` was regenerated at the R6 commit — 54 rows became 36 when the
+> "scene" observation-geometry option was removed — and it also carries the six
+> Phase-2 additive raw-stat fields (plus the Phase-3/4 ones added later). It was
+> field-diffed against the pre-R6 original (`git show eb58c49~1:…`): **all 1,404 shared
+> v5.4.0-era fields across the 36 surviving rows are bit-identical**, and the only
+> differences are the additive fields themselves. The anchor is therefore intact; the
+> file name means "v5.4.0 *physics*, v6-era field set, 36 rows." This is recorded
+> because a naive whole-file diff shows ~216 apparent "mismatches" that are all
+> additive-field artifacts (`None` vs `0` in fields the old file never had) — enough to
+> look alarming to anyone re-checking provenance later. Use
+> `tests/review-harness/diff_golden.mjs`, which strips those fields, rather than a
+> plain diff.
 App version: 5.4.0
 RNG seed: 42 (Mulberry32, fixed)
 Photons per run: 500,000

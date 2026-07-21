@@ -121,6 +121,28 @@ for (const c of CASES) {
   check(nOk, "per-population counts (n) match the array lengths exactly");
   check(meanOk, "per-population means bit-identical to the array means");
 
+  // MULTI-SEGMENT means are NOT bit-identical, by construction, and that is
+  // worth pinning rather than glossing: the pre-P5 code accumulated one
+  // running total across all segments in sequence, while streaming sums each
+  // population separately and adds the totals. Same terms, same order,
+  // different association -- so floating-point rounding differs in the last
+  // digit or two (measured ~1e-14 relative, e.g. 15.459869928343418 vs
+  // ...885 in a 2M-photon export). Physically irrelevant (MC error is ~1e-3
+  // relative), but exported *_mean values from before and after P5 can differ
+  // in their final digits; bin counts and bin_max do not.
+  {
+    let worstRel = 0;
+    for (const combo of [["reflectedPathLengths", "sideEscapeUpPaths"],
+                         ["netTransmittedPathLengths", "sideTransmittedPathLengthsCloudOnly", "sideEscapeDownPaths"],
+                         ["reflectedPathLengths", "sideEscapeUpPaths", "bypassPaths"]]) {
+      const ref = refSegMean(combo.map(nm => shadow[nm]));
+      const str = SimStats.segMean(combo.map(nm => SimStats[nm]));
+      if (ref !== 0) worstRel = Math.max(worstRel, Math.abs(ref - str) / Math.abs(ref));
+    }
+    check(worstRel < 1e-12,
+          `multi-segment means agree to ${worstRel.toExponential(1)} relative (summation-association change, not bit-identical — see comment)`);
+  }
+
   // Axis max: the value that drives bin_max in every export and figure.
   const refl3  = [shadow.reflectedPathLengths, shadow.sideEscapeUpPaths, shadow.bypassPathsCloudOnly];
   const trans3 = [shadow.netTransmittedPathLengths, shadow.sideTransmittedPathLengthsCloudOnly, shadow.sideEscapeDownPaths];
@@ -178,6 +200,48 @@ console.log("\n=== Fixed-size storage (the point of P5) ===");
   check(h.counts.length === (1 << 17) && totalMB < 6,
         `8 populations × ${h.counts.length} fine bins = ${totalMB.toFixed(1)} MB, independent of N ` +
         `(pre-P5: ~1.27 arrays entries/photon ⇒ ~200 MB of doubles at 20M photons)`);
+}
+
+// ---- Axis sweep: every bin_max the app can produce ------------------------
+// The gates above only exercise whatever bin_max the sample runs happen to
+// produce (40, 680, 780). That is how a real bug slipped through: the
+// re-aggregation mapped fine bins to display bins in floating point, which
+// misplaced a whole fine bin at boundaries where the product rounds down --
+// invisible at bin_max = 40 (where the arithmetic happens to be exact) but
+// wrong at bin_max = 50, where 600*0.0520833... = 31.249999999999996 floors
+// into bin 14 instead of 15 (~644 photons in a 2M run). Found only by
+// regenerating a committed export and diffing it. This sweep walks EVERY
+// bin_max pathAxisMax can return over a wide range, so no such value can hide.
+console.log("\n=== Axis sweep: bin_max = 10 … 2000 (every multiple of 10) ===");
+{
+  // One population, filled once with a broad spread of paths, then re-binned
+  // at every axis value against the reference formula.
+  RNG.reset(SEED);
+  SimStats.reset();
+  const p = { tauCloud: 20, slabW: 200, slabD: 200, g: 0.85, omega0: 1.0, betaExt: 10.0,
+              surfaceDistanceKm: 0.5, entryMode: "top", theta0: 0, surfaceAlbedo: 1.0 };
+  const raw = [];
+  for (let i = 0; i < 120000; i++) {
+    const r = Physics.simulatePhoton(p, false);
+    SimStats.record(r);
+    for (const t of r.cloudBaseTransmissions) SimStats.registerCloudBaseTransmission(t);
+    for (const e of r.surfaceEvents)          SimStats.registerSurfaceEvent(e);
+    for (const d of r.surfaceReflectionDirs)  SimStats.registerSurfaceReflection(d);
+    if (r.status === "reflected") raw.push(r.totalPath ?? 0);
+  }
+  const h = SimStats.reflectedPathLengths;
+  let bad = [], checked = 0;
+  for (let niceMax = 10; niceMax <= 2000; niceMax += 10) {
+    const ref = refPathHistogramCounts([raw], niceMax);
+    const got = SimStats.pathHistogramCounts([h], niceMax);
+    checked++;
+    for (let i = 0; i < ref.length; i++) {
+      if (ref[i] !== got[i]) { bad.push(`bin_max=${niceMax} bin ${i}: ${got[i]} vs ${ref[i]}`); break; }
+    }
+  }
+  for (const b of bad.slice(0, 6)) console.log("    " + b);
+  check(bad.length === 0,
+        `all ${checked} axis values give bit-identical 24-bin histograms (${raw.length} reflected paths, n=${h.n})`);
 }
 
 // ---- No stale `.length` on a path population -----------------------------

@@ -103,22 +103,47 @@ export const Physics = {
     // post-wrap iterations only -- where "just exited" can no longer apply.
     rayBoxEntry(p, dir, halfW, halfD, tauCloud, minT = 1e-12) {
       let tEnter = -Infinity, tExit = Infinity;
-      const axes = [
-        [p.x,   dir.x, -halfW, halfW],
-        [p.y,   dir.y, -halfD, halfD],
-        [p.tau, dir.z, 0,      tauCloud]
-      ];
-      for (const [o, d, lo, hi] of axes) {
-        if (Math.abs(d) < 1e-15) {
-          if (o < lo || o > hi) return null;
-        } else {
-          let t0 = (lo - o) / d;
-          let t1 = (hi - o) / d;
-          if (t0 > t1) { const tmp = t0; t0 = t1; t1 = tmp; }
-          if (t0 > tEnter) tEnter = t0;
-          if (t1 < tExit)  tExit  = t1;
-          if (tEnter > tExit) return null;
-        }
+      // Unrolled per axis (review P6, 2026-07-20). This used to build a
+      // 3-element array of 4-element arrays and destructure it in a for-of --
+      // four allocations plus an iterator on EVERY call, and the periodic wrap
+      // loop calls this repeatedly per photon. The arithmetic below is
+      // identical, in the same order (x, y, tau), so results are bit-identical;
+      // only the garbage is gone.
+      //
+      // slabT: the running slab intersection [tEnter, tExit], narrowed one axis
+      // at a time. A near-zero direction component means the ray is parallel to
+      // that pair of faces: it can only hit the box if it already lies between
+      // them, hence the containment test instead of a division.
+      let t0, t1;
+      if (Math.abs(dir.x) < 1e-15) {
+        if (p.x < -halfW || p.x > halfW) return null;
+      } else {
+        t0 = (-halfW - p.x) / dir.x;
+        t1 = ( halfW - p.x) / dir.x;
+        if (t0 > t1) { const tmp = t0; t0 = t1; t1 = tmp; }
+        if (t0 > tEnter) tEnter = t0;
+        if (t1 < tExit)  tExit  = t1;
+        if (tEnter > tExit) return null;
+      }
+      if (Math.abs(dir.y) < 1e-15) {
+        if (p.y < -halfD || p.y > halfD) return null;
+      } else {
+        t0 = (-halfD - p.y) / dir.y;
+        t1 = ( halfD - p.y) / dir.y;
+        if (t0 > t1) { const tmp = t0; t0 = t1; t1 = tmp; }
+        if (t0 > tEnter) tEnter = t0;
+        if (t1 < tExit)  tExit  = t1;
+        if (tEnter > tExit) return null;
+      }
+      if (Math.abs(dir.z) < 1e-15) {
+        if (p.tau < 0 || p.tau > tauCloud) return null;
+      } else {
+        t0 = (0        - p.tau) / dir.z;
+        t1 = (tauCloud - p.tau) / dir.z;
+        if (t0 > t1) { const tmp = t0; t0 = t1; t1 = tmp; }
+        if (t0 > tEnter) tEnter = t0;
+        if (t1 < tExit)  tExit  = t1;
+        if (tEnter > tExit) return null;
       }
       if (!(tEnter > minT) || !isFinite(tEnter)) return null;
       // tEnter is additive (CODE-REVIEW P3): existing callers destructure only
@@ -411,7 +436,14 @@ export const Physics = {
         z: Math.cos(theta0)
       };
 
-      let path = [{x, y, tau}];
+      // Only materialize the visualization path when it will actually be used
+      // (review P6, 2026-07-20): every `path.push` below is already guarded by
+      // `storePath`, so at storePath=false this array and its seed vertex were
+      // allocated once per photon and then never touched -- 2 allocations x
+      // 10^7 photons of pure GC pressure in a large batch. An empty array is
+      // still returned in that case so `result.path` keeps its type (consumers
+      // check `.length > 1`).
+      let path = storePath ? [{x, y, tau}] : [];
       let totalPath = 0;
       let scatterings = 0;
       let surfaceBounceCount = 0;
@@ -521,6 +553,19 @@ export const Physics = {
             // Genuinely clears tau=0 (cloud-top height) without clipping any
             // neighboring cloud image -- escapes to space for good (see
             // wrapAndFindBoxEntry doc comment: periodicity is horizontal only).
+            //
+            // TWO EXIT-REPORTING CONVENTIONS COEXIST HERE, DELIBERATELY
+            // (review N4). This periodic branch reports the exit at the
+            // wrapped tau = 0 clearance point (top of the domain), while the
+            // open-boundary bypass a few lines below reports at
+            // tau = tauCloud (cloud-base altitude, the historical
+            // convention). Both are self-consistent for what consumes them:
+            // mu/BDF binning is direction-based and so is unaffected by
+            // either choice; side-escape MARKERS are repositioned onto the
+            // true wall crossing via lastWallCrossing; bypass markers draw at
+            // the miss point. Do NOT "fix" one to match the other without
+            // checking the marker placement and any snapshot that embeds
+            // xExit/yExit -- they differ on purpose, not by oversight.
             const missPos = wrapResult.miss;
             if (storePath && path.length < MAX_PATH_POINTS) path.push({x: missPos.x, y: missPos.y, tau: missPos.tau, wrapBreak: wrapResult.wrapped});
             return {result: {status: Status.SIDE_ESCAPE, bypass: true, xExit: missPos.x, yExit: missPos.y, tauExit: missPos.tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace, lastWallCrossing}};
