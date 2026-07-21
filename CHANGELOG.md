@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Performance (2026-07-20 session, P5 — streaming path-length histograms)
+
+- **The per-photon path-length arrays are gone**, replaced by fixed-size streaming
+  accumulators. Eight populations (reflected, net-transmitted, side-escape up/down,
+  bypass, and the cloud-only twins) each retained every photon's raw optical path —
+  measured at 1.27 entries per photon, so ~25M values (200+ MB of doubles before JS
+  array overhead) at 20M photons — because the panel's x-axis adapts to the run and the
+  binning therefore could not be fixed in advance. Each population is now a fine-grained
+  fixed histogram plus a running sum and count: **4.2 MB total, independent of photon
+  count** (measured heap growth over a 3M-photon run fell from ~84 MB to 0.6 MB; ~4 MB
+  extrapolated to 20M, versus ~560 MB before). Display refreshes no longer re-walk the
+  history: `pathHistogramCounts` went from **17.6 ms to 0.02 ms** per call at 3M photons,
+  and is now O(occupied bins) rather than O(N), so it no longer grows with run length.
+- **Bit-identical output, not an approximation.** Two properties make the streaming form
+  lossless: the adaptive axis depends only on means, which stream exactly from a running
+  sum and count; and the fine bin width is chosen as 10/(24·M) so that every possible
+  display-bin edge — the axis max is always a multiple of 10, over 24 bins — is an exact
+  multiple of it, making re-aggregation a pure regrouping with no boundary reassignment.
+  Exported `bin_max`, all reported means, and every one of the 24 exported bin counts are
+  unchanged, so the export schema stays at 1.4 and existing files remain comparable.
+- The fine grid **self-scales with optical thickness**: it starts at ~6,800 optical
+  depths and, on meeting a longer path, halves its resolution in place to double the
+  range (to ~54,600 at the limit). This is exactness-preserving, because the nesting
+  property needs only that the fine width be 10/(24·m) for integer m, and halving maps
+  m → m/2 (8 → 4 → 2 → 1). Measured scaling is linear in τ (axis ≈ 12.5·τ worst case), so
+  the final range corresponds to τ ≈ 4,000 — far beyond the τ ≤ 100 input clamp. Paths
+  beyond the range fold into the final display bin, exactly as the pre-P5 code clipped
+  them.
+- **Fixed: path-panel titles read "N=NaN"** (user report). Two count call sites in
+  `bottomPanel.js` still used `.length` on what are now accumulator objects; `undefined`
+  propagates silently through `+`, so the titles rendered NaN while every plotted number
+  stayed correct. A static-scan gate now fails the suite if any module reads `.length`
+  on a path population.
+- New `tests/review-harness/verify_p5.mjs` proves it against a reference implementation
+  of the pre-P5 formulas run on the same photons: per-population counts and means, the
+  axis max, and all 6 segment views × 24 bins match exactly (worst per-bin difference 0)
+  across three regimes — mixed populations, the Uniform-domain zero-path clear-direct
+  spike, and τ=100/W=500/Aₛ=1 where individual paths (up to ~10⁴) overflow the fine grid.
+  Full golden and Phase 3/4/P4 battery re-verified green.
+
 ### Added (2026-07-20, test aid — run timer)
 
 - **Run-time readout in the stats panel**: wall-clock elapsed for the current/last

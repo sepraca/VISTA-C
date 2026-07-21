@@ -345,10 +345,17 @@ export const BottomPanel = {
       // bars. bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly hold the
       // touchedCloud=true (genuine) subset; the length difference from the raw
       // arrays is exactly the clear-direct count (see TODO "3.B" verification).
-      const reflZeroCount  = showEntireDomainPath ? (SimStats.bypassPaths.length - SimStats.bypassPathsCloudOnly.length) : 0;
-      const transZeroCount = showEntireDomainPath ? (SimStats.sideTransmittedPathLengths.length - SimStats.sideTransmittedPathLengthsCloudOnly.length) : 0;
-      const reflTotalCount  = reflSegs.reduce((n, arr) => n + arr.length, 0);
-      const transTotalCount = transSegs.reduce((n, arr) => n + arr.length, 0);
+      // `.n` (was `.length`): these are streaming accumulators since review P5;
+      // `n` counts every recorded path, zeros included, exactly as the array
+      // length did -- so this difference is still the clear-direct count.
+      const reflZeroCount  = showEntireDomainPath ? (SimStats.bypassPaths.n - SimStats.bypassPathsCloudOnly.n) : 0;
+      const transZeroCount = showEntireDomainPath ? (SimStats.sideTransmittedPathLengths.n - SimStats.sideTransmittedPathLengthsCloudOnly.n) : 0;
+      // `.n` (was `.length`): streaming accumulators since review P5. Missing
+      // this call site made both panel titles read "N=NaN" (user report,
+      // 2026-07-20) -- undefined propagates silently through +, so it is worth
+      // grepping for `.length` on any SimStats path population before shipping.
+      const reflTotalCount  = reflSegs.reduce((n, h) => n + h.n, 0);
+      const transTotalCount = transSegs.reduce((n, h) => n + h.n, 0);
 
       // The x-axis scale comes from SimStats.pathAxisMax() -- the GENUINE
       // (touchedCloud=true) population, shared with the JSON export (review

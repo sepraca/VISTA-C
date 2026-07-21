@@ -1100,7 +1100,10 @@ export const Export = {
       // Path arrays as observation-geometry segments (iterated, not concatenated).
       const reflSegs  = SimStats.reflectedPathSegments();
       const netSegs   = SimStats.transmittedPathSegments();
-      const segLen  = segs => { let n=0; for (const a of segs) n+=a.length; return n; };
+      // `.n` (was `.length`): path populations are streaming accumulators since
+      // review P5 -- n counts every recorded path, zeros included, identical to
+      // the old array length.
+      const segLen  = segs => { let n=0; for (const a of segs) n+=a.n; return n; };
       const meanR = SimStats.segMean(reflSegs), meanT = SimStats.segMean(netSegs);
       const niceMax = SimStats.pathAxisMax();
       const PATH_BINS = 24;

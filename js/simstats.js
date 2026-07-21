@@ -65,6 +65,93 @@ const SURFACE_FOOT_EXTENT = 2;      // default/legacy surface-absorption grid ex
 // an extreme M doesn't blow up the grid's memory/per-rebuild iteration cost.
 const SURF_FACTOR_CAP = 10;
 
+// ---- Streaming path-length histograms (review P5, 2026-07-20) -------------
+// The display bins path lengths into PATH_DISPLAY_BINS equal bins over
+// [0, niceMax], where niceMax = pathAxisMax() is ALWAYS a positive multiple of
+// 10 (see that function: Math.ceil(x/10)*10, floored at 10). A display bin is
+// therefore always exactly (10*k)/24 wide for integer k >= 1.
+//
+// Choosing the fine bin width as 10/(24*M) for integer M makes every display
+// bin an exact whole number (k*M) of fine bins, so re-aggregation is a pure
+// regrouping: for any v, floor(floor(v/w) / (k*M)) === floor(v / (niceMax/24)),
+// i.e. each photon lands in exactly the display bin it would have landed in
+// under the pre-P5 direct binning. That is what keeps exported histograms
+// bit-identical rather than merely close, and it is the reason the width is
+// this odd-looking fraction instead of a round 0.05.
+//
+// M = 8 gives w ≈ 0.0521 and, with 2^17 bins, a range of ~6827 optical depths
+// -- far above any axis this model produces (worst case measured across the
+// parameter space: niceMax = 780 at τ=100, W=500, Aₛ=1). Individual photons
+// CAN exceed the range (max seen: ~10500); those land in `over`, which
+// re-aggregation folds into the final display bin -- exactly where the
+// pre-P5 code put them too, since the last bin is the overflow bin and any
+// such photon is far beyond niceMax. Cost: 2^17 * 4 B = 0.5 MB per
+// population, 4.2 MB for all eight, independent of photon count.
+const PATH_DISPLAY_BINS = 24;
+const PATH_FINE_M = 8;
+const PATH_FINE_WIDTH = 10 / (PATH_DISPLAY_BINS * PATH_FINE_M);
+const PATH_FINE_BINS = 1 << 17;
+
+// One streaming path-length population. `sum`/`n` cover EVERY recorded value
+// (including exact zeros) so means match the pre-P5 array means exactly;
+// `zeros` is tracked separately because the histogram deliberately excludes
+// exact-zero paths (the clear-sky-direct spike -- see pathHistogramCounts).
+// `hi` is the highest fine bin ever touched, so re-aggregation can stop there
+// instead of scanning all 131072 bins every refresh.
+function makePathHist() {
+  return { counts: new Int32Array(PATH_FINE_BINS), width: PATH_FINE_WIDTH, m: PATH_FINE_M,
+           sum: 0, n: 0, zeros: 0, over: 0, hi: -1 };
+}
+
+// Halve the resolution / double the range in place, by summing adjacent bin
+// pairs. Called only when a path exceeds the current range (see addPath).
+//
+// This is EXACTNESS-PRESERVING, which is why growth is safe rather than a
+// compromise: the nesting property needs only that the fine width divide
+// every display-bin width, i.e. width = 10/(24*m) for some integer m -- and
+// halving the resolution maps m -> m/2, which is still an integer for
+// m = 8, 4, 2. So the histogram stays bit-identical to direct binning at
+// every resolution; coarsening costs nothing but (unused) sub-bin detail.
+// At m = 1 the range is ~54,600 optical depths (a mean path ~21,800, i.e.
+// τ of order 4,000 by the measured ~12.5τ axis scaling -- far beyond the
+// UI's τ ≤ 100 clamp and beyond any physically meaningful cloud), so growth
+// stops there and anything larger counts as overflow into the final display
+// bin, exactly as the pre-P5 code clipped it.
+function growPathHist(h) {
+  const c = h.counts;
+  const half = PATH_FINE_BINS >> 1;
+  for (let i = 0; i < half; i++) c[i] = c[2 * i] + c[2 * i + 1];
+  c.fill(0, half);
+  h.m >>= 1;
+  h.width = 10 / (PATH_DISPLAY_BINS * h.m);
+  if (h.hi >= 0) h.hi >>= 1;
+}
+
+// Record one path length. This is per-photon hot-path code: one divide, one
+// floor, one array increment -- and, unlike the array push it replaces, no
+// allocation and no GC pressure.
+function addPath(h, vRaw) {
+  const v = vRaw ?? 0;
+  h.sum += v;
+  h.n++;
+  if (v === 0) { h.zeros++; return; }
+  let i = Math.floor(v / h.width);
+  // Out of range: coarsen (at most 3 times over a run, then never again) so
+  // the grid follows the cloud's optical thickness instead of assuming it.
+  while (i >= PATH_FINE_BINS && h.m > 1) {
+    growPathHist(h);
+    i = Math.floor(v / h.width);
+  }
+  // Negation-safe and NaN-safe: anything not inside the grid counts as
+  // overflow rather than corrupting bin 0 or throwing.
+  if (i >= 0 && i < PATH_FINE_BINS) {
+    h.counts[i]++;
+    if (i > h.hi) h.hi = i;
+  } else {
+    h.over++;
+  }
+}
+
 export const SimStats = {
 
     // Photon outcome counters
@@ -218,30 +305,48 @@ export const SimStats = {
     footTrans: {nBins: 0, counts: null},
     footSurfAbs: {nBins: 0, counts: null},
 
-    // Per-photon arrays retained only where the display needs raw values
-    // (path-length axis range adapts to the run); these store plain numbers
-    // (compact in JS engines), not objects.
-    reflectedPathLengths: [],
+    // ---- Path-length populations (review P5, 2026-07-20) -----------------
+    // These were per-photon arrays of raw values, kept because the panel's
+    // x-axis adapts to the run and so the binning could not be fixed in
+    // advance. That cost O(N) memory (measured: 1.27 entries/photon => ~25M
+    // doubles, 200+ MB before JS array overhead, at 20M photons) and made
+    // every display refresh re-walk the whole history.
+    //
+    // Each is now a STREAMING accumulator (see makePathHist) holding a fixed
+    // fine-grained histogram plus running sum/count -- ~0.5 MB each, 4.2 MB
+    // total, independent of N. Two properties make this lossless rather than
+    // approximate:
+    //   * The adaptive axis (pathAxisMax) depends only on MEANS, and a mean
+    //     streams exactly from a running sum and count. bin_max is therefore
+    //     bit-identical to the pre-P5 value, as are all reported means.
+    //   * PATH_FINE_WIDTH is chosen so that every possible display-bin edge
+    //     is an exact multiple of it (see the constant's comment), so
+    //     re-aggregating fine bins into the 24 display bins is a pure
+    //     regrouping -- no boundary reassignment, no drift. Exported
+    //     histogram counts stay bit-identical too.
+    // `.length` is replaced by `.n` on these objects; see the call sites in
+    // bottomPanel.js (zero-spike counts) and exportUtils.js (segLen).
+    reflectedPathLengths: null,
     // Optical paths of photons that delivered energy to the surface:
     // terminal "transmitted" (A_s = 0) or "surface_absorbed" (A_s > 0).
     // Count identically equals the net-transmittance count
     // (transmitted - surfaceReflected), photon for photon.
-    netTransmittedPathLengths: [],          // base-derived (geometry "a") surface-deposited paths
-    sideTransmittedPathLengths: [],         // side-derived surface-deposited paths, RAW (mixes genuine cloud-side arrivals with clear-direct's trivial zero-path arrivals -- see TODO "3.B")
+    netTransmittedPathLengths: null,        // base-derived (geometry "a") surface-deposited paths
+    sideTransmittedPathLengths: null,       // side-derived surface-deposited paths, RAW (mixes genuine cloud-side arrivals with clear-direct's trivial zero-path arrivals -- see TODO "3.B")
     // Decontaminated (touchedCloud=true only) subset of sideTransmittedPathLengths,
     // used by the default (non-domain-wide) Transmitted path view so a clear-direct
     // photon's exact-zero path (no optical depth in the clear-air gap) doesn't
     // crash the reported mean. For legacy illumination modes (touchedCloud always
     // true) this is bit-identical to sideTransmittedPathLengths.
-    sideTransmittedPathLengthsCloudOnly: [],
-    sideEscapeUpPaths: [],                  // GENUINE upward side-wall escapes (join R under all_faces / R_domain)
-    sideEscapeDownPaths: [],                // terminal downward side escapes (join T under all_faces / T_domain)
-    bypassPaths: [],                        // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
+    sideTransmittedPathLengthsCloudOnly: null,
+    sideEscapeUpPaths: null,                // GENUINE upward side-wall escapes (join R under all_faces / R_domain)
+    sideEscapeDownPaths: null,              // terminal downward side escapes (join T under all_faces / T_domain)
+    bypassPaths: null,                      // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
     // Decontaminated (touchedCloud=true only) subset of bypassPaths -- the
     // "clear-via-cloud" (d) component only, excluding clear-direct (c). Used to
     // scale the entire-domain Reflected path-length panel's axis without being
     // crushed by the (legitimate, but panel-breaking) clear-direct zero-spike.
-    bypassPathsCloudOnly: [],
+    bypassPathsCloudOnly: null,
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
     // Current surface-absorption grid extent factor (× cloud extent). Legacy/
@@ -417,10 +522,13 @@ export const SimStats = {
       SimStats.footSurfAbs = {nBins: 0, counts: null};
       SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
-      SimStats.reflectedPathLengths = [];  SimStats.netTransmittedPathLengths = [];
-      SimStats.sideTransmittedPathLengths = [];  SimStats.sideTransmittedPathLengthsCloudOnly = [];
-      SimStats.sideEscapeUpPaths = [];  SimStats.sideEscapeDownPaths = [];
-      SimStats.bypassPaths = [];  SimStats.bypassPathsCloudOnly = [];
+      // (P5) Fresh streaming accumulators rather than fresh arrays -- allocating
+      // new ones (vs zero-filling in place) keeps reset() O(1) in the previous
+      // run's photon count and lets the old buffers be collected together.
+      SimStats.reflectedPathLengths = makePathHist();  SimStats.netTransmittedPathLengths = makePathHist();
+      SimStats.sideTransmittedPathLengths = makePathHist();  SimStats.sideTransmittedPathLengthsCloudOnly = makePathHist();
+      SimStats.sideEscapeUpPaths = makePathHist();  SimStats.sideEscapeDownPaths = makePathHist();
+      SimStats.bypassPaths = makePathHist();  SimStats.bypassPathsCloudOnly = makePathHist();
     },
 
     // --- Observation geometry combiners ------------------------------------
@@ -766,9 +874,13 @@ export const SimStats = {
     // on-screen figure it documents.)
 
     // Mean over a list of per-photon path arrays (segments), no concat copy.
+    // (P5) Now O(#segments) instead of O(N): each population carries its own
+    // running sum and count. Includes exact-zero paths, exactly as the array
+    // version did -- the zero-spike belongs in the mean (it is a real physical
+    // population) even though it is excluded from the drawn bars.
     segMean(segs) {
       let sum = 0, n = 0;
-      for (const arr of segs) { for (const v of arr) sum += v; n += arr.length; }
+      for (const h of segs) { sum += h.sum; n += h.n; }
       return n ? sum / n : 0;
     },
 
@@ -795,12 +907,34 @@ export const SimStats = {
     // are strictly positive), reported as a separate text count by the panel
     // rather than drawn as a bar (TODO "3.B"). For every segment list in use
     // today except the *DomainWide() ones, zeros cannot occur at all.
-    pathHistogramCounts(segs, niceMax, nBins = 24) {
+    // (P5) Re-aggregates the streaming fine bins instead of walking per-photon
+    // arrays: O(populated fine bins) per call, independent of photon count.
+    // Bit-identical to the pre-P5 direct binning whenever the fine grid nests
+    // exactly in the display grid -- guaranteed for every niceMax this code
+    // produces (see PATH_FINE_WIDTH). If a caller ever passes an nBins that
+    // breaks the nesting, the fine bin is assigned by its lower edge, which
+    // degrades gracefully to ±1 fine bin (≈0.05 optical depth) instead of
+    // being wrong; PATH_DISPLAY_BINS is the only value used today.
+    pathHistogramCounts(segs, niceMax, nBins = PATH_DISPLAY_BINS) {
       const counts = new Array(nBins).fill(0);
-      for (const arr of segs) for (const vRaw of arr) {
-        if (vRaw === 0) continue;
-        const v = Math.max(0, vRaw || 0);
-        counts[Math.min(nBins - 1, Math.floor((v / niceMax) * nBins))] += 1;
+      const displayW = niceMax / nBins;
+      for (const h of segs) {
+        const c = h.counts;
+        // Per-population width: a population that met a very long path may
+        // have coarsened its own grid (see growPathHist); the nesting -- and
+        // so the exactness -- holds at every resolution.
+        const w = h.width;
+        // Fine bins at or above this index are >= niceMax and belong in the
+        // overflow (final) display bin, matching the pre-P5 clipping.
+        const cut = Math.min(PATH_FINE_BINS, Math.ceil(niceMax / w));
+        const top = Math.min(h.hi, PATH_FINE_BINS - 1);
+        for (let i = 0; i < cut && i <= top; i++) {
+          const k = c[i];
+          if (k !== 0) counts[Math.floor((i * w) / displayW)] += k;
+        }
+        let tail = h.over;
+        for (let i = cut; i <= top; i++) tail += c[i];
+        counts[nBins - 1] += tail;
       }
       return counts;
     },
@@ -891,13 +1025,13 @@ export const SimStats = {
           SimStats.muReflPixelBins[mi] += 1;
           SimStats.bdfReflPixelWeights[bi] += 1;
         }
-        SimStats.reflectedPathLengths.push(result.totalPath ?? 0);
+        addPath(SimStats.reflectedPathLengths, result.totalPath);
       } else if (result.status === Status.TRANSMITTED) {
         // Terminal at A_s = 0 only: a genuine cloud-base crossing (never
         // clear-direct -- at A_s = 0, surfaceInteraction always returns
         // "surface_absorbed" instead, since the albedo draw can never succeed).
         SimStats.stats.finalTransmitted++;
-        SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+        addPath(SimStats.netTransmittedPathLengths, result.totalPath);
         SimStats.muTransBaseBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
         SimStats.bdfTransBaseWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
         // Bug fix (user report, 2026-07): physics.js now computes the actual
@@ -923,13 +1057,13 @@ export const SimStats = {
             SimStats.stats.surfaceBypassUp++;
             SimStats.muBypassBins[ei] += 1;
             SimStats.bdfBypassWeights[eb] += 1;
-            SimStats.bypassPaths.push(result.totalPath ?? 0);
+            addPath(SimStats.bypassPaths, result.totalPath);
             // R's (c)/(d) split (see TODO "Component / outcome bookkeeping"):
             // touchedCloud=false => (c) clear-direct (never touched the cloud box
             // at all); touchedCloud=true => (d) today's clear-via-cloud meaning.
             if (result.touchedCloud) {
               SimStats.stats.bypassViaCloud++;
-              SimStats.bypassPathsCloudOnly.push(result.totalPath ?? 0);
+              addPath(SimStats.bypassPathsCloudOnly, result.totalPath);
             } else {
               SimStats.stats.bypassClearDirect++;
             }
@@ -937,13 +1071,13 @@ export const SimStats = {
             SimStats.stats.sideEscapeUp++;
             SimStats.muSideEscUpBins[ei] += 1;
             SimStats.bdfSideEscUpWeights[eb] += 1;
-            SimStats.sideEscapeUpPaths.push(result.totalPath ?? 0);
+            addPath(SimStats.sideEscapeUpPaths, result.totalPath);
           }
         } else {
           SimStats.stats.sideEscapeDown++;
           SimStats.muSideEscDownBins[ei] += 1;
           SimStats.bdfSideEscDownWeights[eb] += 1;
-          SimStats.sideEscapeDownPaths.push(result.totalPath ?? 0);
+          addPath(SimStats.sideEscapeDownPaths, result.totalPath);
         }
       } else if (result.status === Status.SURFACE_ABSORBED) {
         SimStats.stats.surfaceAbsorbed++;
@@ -968,16 +1102,16 @@ export const SimStats = {
         const ai = muBinIndex(Math.abs(result.dirZ ?? 0));
         const ab = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
         if (result.viaSide) {
-          SimStats.sideTransmittedPathLengths.push(result.totalPath ?? 0);
+          addPath(SimStats.sideTransmittedPathLengths, result.totalPath);
           SimStats.muTransSideBins[ai] += 1;
           SimStats.bdfTransSideWeights[ab] += 1;
           if (result.touchedCloud) {
-            SimStats.sideTransmittedPathLengthsCloudOnly.push(result.totalPath ?? 0);
+            addPath(SimStats.sideTransmittedPathLengthsCloudOnly, result.totalPath);
             SimStats.muTransSideCloudOnlyBins[ai] += 1;
             SimStats.bdfTransSideCloudOnlyWeights[ab] += 1;
           }
         } else {
-          SimStats.netTransmittedPathLengths.push(result.totalPath ?? 0);
+          addPath(SimStats.netTransmittedPathLengths, result.totalPath);
           SimStats.muTransBaseBins[ai] += 1;
           SimStats.bdfTransBaseWeights[ab] += 1;
         }
