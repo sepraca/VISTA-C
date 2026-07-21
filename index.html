@@ -248,6 +248,42 @@
      flex-direction:column stack, which trivially supports different item
      counts per column with no layout math. See exportUtils.js's
      LEGEND_LAYOUT for the PNG-export mirror of this same structure. */
+  /* Fast-mode label: same accent yellow as the Uniform-domain-only controls,
+     flagging it as a mode switch rather than an ordinary display toggle
+     (user feedback: it was easy to miss among the plain visualization rows). */
+  .fast-mode-label { color: #f7f44a; }
+
+  /* Fast-mode photon counter (review P4): the only live feedback during a
+     display-suppressed run. Centered in the 3-D viewport; pointer-events:none
+     so it never intercepts orbit/zoom drags on the canvas beneath it. */
+  #fastModeCounter {
+    position: absolute;
+    display: none;
+    z-index: 12;
+    left: calc(var(--ui-panel-w) + (100vw - var(--ui-panel-w)) / 2);
+    top: 42%;
+    transform: translate(-50%, -50%) scale(var(--ui-scale));
+    pointer-events: none;
+    text-align: center;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 14px;
+    padding: 16px 28px;
+    backdrop-filter: blur(6px);
+  }
+  #fastModeCounterValue {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #e2e8f0;
+    font-variant-numeric: tabular-nums;   /* digits don't jitter as they change */
+  }
+  #fastModeCounterSub {
+    margin-top: 5px;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
   #legend {
     position: absolute;
     right: 18px;
@@ -484,7 +520,7 @@
     <div class="group-head">Photon / Model</div>
 
     <label>Photons</label>
-    <input id="photonCount" type="number" value="10000" min="1" max="10000000" onblur="UI.getPhotonCount()">
+    <input id="photonCount" type="number" value="10000" min="1" max="100000000" onblur="UI.getPhotonCount()">
 
     <!-- τ/extent/M guards (2026-07-16): a genuine change must still reset (the
          scene geometry is baked into every trajectory), but focus-in/focus-out
@@ -590,6 +626,17 @@
 
     <div class="group-head">Visualization</div>
 
+    <!-- Fast mode (review P4, 2026-07-20): for large runs (~>1M photons),
+         suppress all live display during the statistical batch and show only
+         a coarse photon counter in the 3D view; one full refresh at the end.
+         Placed FIRST in this section (user feedback: it was missed entirely
+         when sitting mid-list) since it governs everything below it during a
+         run. No onchange handler by design -- the value is read once at the
+         START of each batch (RunControl.runInstantBatch), so toggling it never
+         disturbs a finished run's display or a run in flight. -->
+    <label for="fastMode" class="fast-mode-label" title="Suppress live 3D/stats/plot updates during large runs; show a photon counter instead and refresh once at the end">Fast mode (large runs)</label>
+    <input id="fastMode" type="checkbox" title="Suppress live 3D/stats/plot updates during large runs; show a photon counter instead and refresh once at the end">
+
     <label>Max paths drawn</label>
     <input id="maxPaths" type="number" value="250" min="0" max="1000" step="25" onblur="UI.getMaxPaths()">
 
@@ -639,6 +686,16 @@
   </div>
 
   <div id="statsMain"></div>
+</div>
+
+<!-- Fast-mode photon counter (review P4). Centered in the 3D viewport (offset
+     right by the control panel's width so it centers on the VIEW, not the
+     window), shown only while a fast-mode batch is running. Updated by two
+     text-node writes per slice from RunControl.updateFastCounter -- no layout
+     or canvas work, so it costs nothing against the run. -->
+<div id="fastModeCounter">
+  <div id="fastModeCounterValue">0.0M / 0.0M photons</div>
+  <div id="fastModeCounterSub">0% — display paused (fast mode)</div>
 </div>
 
 <div id="exportButtons">

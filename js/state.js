@@ -56,6 +56,10 @@ export const state = {
   isAnimating:           false,
   isPaused:              false,
   isStopped:             false,
+  // True only while a fast-mode batch is suppressing live display (review P4).
+  // Set/cleared by RunControl.showFastCounter/hideFastCounter, read by
+  // RunControl.animate to throttle the render loop -- see there for why.
+  fastRunActive:         false,
   stepRequested:         false,
   activePhotonID:        null,
   activePhotonStep:      0,

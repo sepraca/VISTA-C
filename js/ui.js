@@ -34,7 +34,18 @@ export const UI = {
     },
 
     // --- Physics / geometry inputs ---
-    getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 10000000, 10000, "Photons", true); },
+    // Cap raised 10M -> 100M (2026-07-20, review P4): fast mode + time-budgeted
+    // slices make 10^7-10^8 runs practical on wall time. Memory, not speed, is
+    // now the binding constraint at the top of this range -- SimStats' O(N)
+    // per-photon path-length arrays (review P5) are the growth term.
+    getPhotonCount:       function() { return UI._getClampedInput("photonCount", 1, 100000000, 10000, "Photons", true); },
+
+    // "Fast mode" checkbox (review P4): suppress all live display during an
+    // instant-batch run (counter only), one full refresh at the end. Read once
+    // per batch in RunControl.runInstantBatch -- never per photon, never per
+    // slice. Presentation-only: it changes no physics, consumes no RNG draw,
+    // and leaves every count bit-identical to the same run in normal mode.
+    getFastMode: function() { return document.getElementById("fastMode")?.checked ?? false; },
     getTauCloud:          function() { return UI._getClampedInput("tauCloud", 0.01, 100, 10, "Cloud optical thickness τ"); },
     getHorizontalExtent:  function() { return UI._getClampedInput("hExtent", 2, 500, 40, "Horizontal extent"); },
     getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },

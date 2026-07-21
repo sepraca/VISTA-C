@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.0.5** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.0.6** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -322,7 +322,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 
 | Parameter | Description | Default |
 |---|---|---|
-| Photons | Number of photons to simulate | 10000 |
+| Photons | Number of photons to simulate (max 10⁸; see **Fast mode** below for large runs) | 10000 |
 | Cloud optical thickness τ | Total cloud optical thickness (0.01-100) | 10 |
 | Horizontal extent | Slab width in optical path units (2-500) | 40 |
 | Incident zenith Θ₀ | Solar zenith angle (degrees) | 0 |
@@ -341,6 +341,7 @@ Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection i
 | Show surface heatmap | Show/hide the brown surface-absorption heatmap (Aₛ>0, or Uniform domain illumination even at Aₛ=0); off also removes its render cost | on |
 | Show R/T/A components | Expand R/T/A into their constituent populations (any illumination mode, see above) | off |
 | Max paths drawn | Maximum photon paths rendered in 3D view | 250 |
+| Fast mode (large runs) | Suppress live display during a run — no 3D histogram rebuilds, bottom-panel redraws, or stats updates — showing only a photon counter (0.1M resolution) in the 3D view, then refreshing everything once at the end. Physics and statistics are untouched: a fast-mode run is bit-identical to the same run with it off. Recommended above ~1M photons (v6.0.6) | off |
 
 **Other visualization buttons:** Endpoint caps shown, Fade older endpoints, Animate paths, Animation speed, Tail length, Scatter flashes, Launch One (single animated photon), Launch Ensemble, Pause/Resume, Step, Stop (v6.0.2 — hard-terminates the run; only Reset resumes), Reset, Reset View
 
@@ -513,7 +514,20 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.0.5** (2026-07-19). Headline items, from a full code/physics
+Latest tagged release: **v6.0.6** (2026-07-20, performance patch — no physics or
+statistics changes; every count is bit-identical to v6.0.5). The instant-batch run loop
+is now time-budgeted rather than fixed-chunk (browsers clamp nested zero-delay timers to
+~4 ms, so most of a large run's wall time was spent waiting on the scheduler rather than
+simulating), display refreshes use a split cadence (stats text every slice, heavy
+rebuilds wall-clock gated), the endpoint instanced-mesh sync moved off the per-slice
+path, and a new **Fast mode (large runs)** checkbox suppresses live display entirely in
+favor of a photon counter, refreshing once at the end. Measured on an M4 laptop
+(top_side, Aₛ=0.5, Θ₀=60°, τ=10, W=40): **5M photons 43 s → 9 s**; **20M photons ~3 min
+→ 28 s normal, 22 s fast (~8×)**. The photon-count cap is raised 10M → 100M. See
+CHANGELOG.md's `[v6.0.6]` section and the
+[v6.0.6 release notes](https://github.com/sepraca/VISTA-C/releases/tag/v6.0.6).
+
+**v6.0.5** (2026-07-19). Headline items, from a full code/physics
 review of the post-Phase-3/4 state: the **ground-domain redesign** of open-boundary
 Uniform-domain illumination (the launch window is now a pure upwind *shift* of the
 cloud-centered M·W domain rather than a sunward *extension*, making f_c = 1/M² and the
@@ -532,7 +546,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.0.5 is the version currently on `main` and in the hosted demo.
+v6.0.6 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -544,7 +558,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -555,4 +569,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.5). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.6). GitHub. https://github.com/sepraca/VISTA-C

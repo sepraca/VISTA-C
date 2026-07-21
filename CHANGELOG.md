@@ -8,6 +8,64 @@ All notable changes to this project are documented here. The format is based on
 
 *(nothing yet)*
 
+## [v6.0.6] — 2026-07-20
+
+Performance patch, resolving review item P4. No physics or statistics changes: slice
+sizing and display cadence consume no RNG draws, so every count is bit-identical to
+v6.0.5 (proven directly by the new `verify_p4.mjs` Gate 1, plus the full golden and
+Phase 3/4 battery). Measured on an M4 laptop (top_side, Aₛ=0.5, Θ₀=60°, τ=10, W=40):
+**5M photons 43 s → 9 s**; **20M photons ~3 min → 28.2 s normal, 21.8 s fast (~8×)**.
+
+### Performance (2026-07-20 session, P4 — time-budgeted run loop + fast mode)
+
+- **The instant-batch loop is now time-budgeted instead of chunk-counted.** It ran a
+  fixed 1000 photons per `setTimeout(0)` yield, but browsers clamp nested zero-delay
+  timers to ~4 ms while 1000 photons need only ~0.5–1.5 ms — so most of a large run's
+  wall time was spent waiting on the scheduler, not simulating (measured: a 5M-photon
+  run paid ~5,000 × 4 ms ≈ 20 s of dead time against an ~8 s compute floor). Slices are
+  now sized by wall clock (12 ms normal, 40 ms fast mode; checked every 256 photons so
+  the clock stays off the per-photon path), cutting yields by 1–2 orders of magnitude
+  and self-tuning across machines, illumination regimes (photons/s varies ~3×), and run
+  sizes. A `MAX_SLICE_PHOTONS = 200000` bound keeps a slice finite even under a
+  deliberately coarsened `performance.now()` (Firefox `resistFingerprinting` rounds it
+  to 100 ms), so Stop always stays responsive.
+- **Normal-mode display now uses a split cadence**: the stats text (the R/T/A/S counts
+  and fractions) refreshes every slice — ~80 Hz, two innerHTML writes, no re-binning —
+  while the heavy work (3D histogram rebuild + bottom-panel redraw) is wall-clock gated
+  at `REFRESH_HEAVY_MIN_MS = 200` rather than every 10th chunk. Those rebuilds re-bin
+  the full accumulated history, so a fixed chunk cadence made the live-run feel degrade
+  as a run got longer, while a single coarse gate made the progression too choppy to
+  watch; the split gives smoother number progression than the pre-P4 cadence while
+  keeping the expensive redraws bounded. (Made possible by the P3 text/panel split.)
+- **New "Fast mode (large runs)" checkbox**: suppresses all live display for the batch —
+  no histogram rebuilds, no bottom-panel redraws, no stats text — showing only a photon
+  counter (0.1M resolution) centered in the 3D view, with one full refresh at the end.
+  Photon-to-scene work still runs (cap-bounded and cheap), so the finished 3D view is
+  correct immediately with no second pass. Pause still works: it pays for one full
+  refresh on entry so a paused fast run can be inspected, and restores the counter on
+  resume. Read once per batch, like the physics parameters — toggling it mid-run never
+  switches modes underneath a run in flight.
+- **Endpoint instanced-mesh sync moved off the per-slice path** onto the same gate as
+  the heavy refreshes (the O(overshoot) buffer trim still runs every slice, bounding
+  memory). The sync rewrites up to `Endpoint caps shown` instance matrices + colors
+  (6000 default, 20000 max) and only matters when something is drawn — running it per
+  slice meant ~4.7M redundant matrix writes over a 20M fast-mode run, none of them ever
+  displayed. Markers now update ~5/s in normal mode (visually identical) and once at the
+  end in fast mode.
+- **Render loop throttled to ~20 fps during fast mode.** With display suppressed and the
+  endpoint sync deferred, the scene is static for the whole run, so full-rate repaints
+  were pure competition for the thread running the photon slices (~1500 wasted frames
+  over a 25 s run). `controls.update()` still runs every frame, so camera damping and
+  drag input are unaffected — only the repaint is decimated.
+- **Photon-count cap raised 10M → 100M.** Memory (the P5 O(N) path arrays), not wall
+  time, is now the binding constraint at the top of that range.
+- Presentation-only: slice sizing and display cadence consume no RNG draws and change
+  no counts. New `tests/review-harness/verify_p4.mjs` proves it directly — 200k photons
+  run as one loop vs. fixed 1000-photon chunks vs. wildly varied slices give
+  bit-identical values for all 26 accumulators — plus control-flow gates (exact photon
+  totals, termination, frozen-clock bound, Step semantics). Full golden + Phase 3/4
+  battery re-verified green.
+
 ## [v6.0.5] — 2026-07-19
 
 Patch release assembled from the 2026-07-19 full code/physics review of the
