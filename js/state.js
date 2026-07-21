@@ -60,6 +60,15 @@ export const state = {
   // Set/cleared by RunControl.showFastCounter/hideFastCounter, read by
   // RunControl.animate to throttle the render loop -- see there for why.
   fastRunActive:         false,
+
+  // TEST AID (2026-07-20, P4 performance work -- safe to delete wholesale
+  // along with its three call sites in runControl.js and the readout in
+  // statsPanel.js; grep "TEST AID"). Wall-clock timing of the last/current
+  // instant batch, so build-to-build comparisons don't depend on a stopwatch:
+  // browser run-to-run spread at 20M photons was measured at ~4 s (thermal
+  // drift on sustained runs), which is the same size as the effects being
+  // compared. pausedMs is excluded from the reported elapsed time.
+  runTiming: { startMs: 0, endMs: 0, pausedMs: 0, photons: 0, fastMode: false, running: false },
   stepRequested:         false,
   activePhotonID:        null,
   activePhotonStep:      0,

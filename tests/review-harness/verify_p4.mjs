@@ -103,7 +103,15 @@ console.log("\n=== Gate 2: slice control-flow arithmetic (mirror of runInstantBa
 
   // Mirror of the real loop with an injectable clock and no display work.
   // `costPerPhotonMs` drives the fake clock so budgets actually bite.
-  function simulateLoop({ n, sliceMs, costPerPhotonMs, pauseAt = null, stepsWhilePaused = 0 }) {
+  const TARGET_STEPS_NORMAL = 40;
+
+  function simulateLoop({ n, sliceMs, costPerPhotonMs, fastMode = false,
+                          pauseAt = null, stepsWhilePaused = 0 }) {
+    // Small-run floor: normal mode caps a slice at n/TARGET photons so short
+    // runs still yield (and repaint) ~TARGET times; fast mode does not.
+    const stepPhotons  = Math.max(1, Math.ceil(n / TARGET_STEPS_NORMAL));
+    const slicePhotons = fastMode ? MAX_SLICE_PHOTONS
+                                  : Math.min(MAX_SLICE_PHOTONS, stepPhotons);
     let remaining = n;
     let clock = 0;
     const now = () => clock;
@@ -130,9 +138,10 @@ console.log("\n=== Gate 2: slice control-flow arithmetic (mirror of runInstantBa
         ran += m; clock += m * costPerPhotonMs; steps++;
       } else {
         const sliceStart = now();
-        const sliceCap = Math.min(remaining, MAX_SLICE_PHOTONS);
+        const sliceCap = Math.min(remaining, slicePhotons);
+        const gran = Math.min(SLICE_CLOCK_GRANULARITY, sliceCap);
         while (m < sliceCap) {
-          const k = Math.min(SLICE_CLOCK_GRANULARITY, sliceCap - m);
+          const k = Math.min(gran, sliceCap - m);
           m += k; ran += k; clock += k * costPerPhotonMs;
           if (now() - sliceStart >= sliceMs) break;
         }
@@ -143,30 +152,63 @@ console.log("\n=== Gate 2: slice control-flow arithmetic (mirror of runInstantBa
     return { ran, slices, steps, runaway: false };
   }
 
-  // Exact totals across budgets, costs, and awkward n values.
+  // Exact totals across budgets, costs, and awkward n values, in both modes.
   let exact = true, noRunaway = true, sliceCountSane = true;
-  for (const n of [1, 255, 256, 257, 1000, 999_999, 5_000_000]) {
+  for (const n of [1, 39, 40, 41, 255, 256, 257, 1000, 999_999, 5_000_000]) {
     for (const [sliceMs, cost] of [[12, 0.0015], [40, 0.0015], [40, 0.02], [12, 0.5], [40, 0]]) {
-      const r = simulateLoop({ n, sliceMs, costPerPhotonMs: cost });
-      if (r.ran !== n) exact = false;
-      if (r.runaway) noRunaway = true, noRunaway = false;
-      // A slice must never be shorter than one granularity unit (unless the
-      // run itself is), i.e. slice count <= ceil(n / GRAN).
-      if (r.slices > Math.ceil(n / SLICE_CLOCK_GRANULARITY)) sliceCountSane = false;
+      for (const fastMode of [false, true]) {
+        const r = simulateLoop({ n, sliceMs, costPerPhotonMs: cost, fastMode });
+        if (r.ran !== n) exact = false;
+        if (r.runaway) noRunaway = false;
+        // Upper bound on slices: normal mode is floored at n/TARGET-photon
+        // slices, so it may yield more often than the clock alone would --
+        // but never more than TARGET times (+1 for the remainder slice).
+        const bound = fastMode ? Math.ceil(n / SLICE_CLOCK_GRANULARITY)
+                               : Math.max(TARGET_STEPS_NORMAL + 1, Math.ceil(n / SLICE_CLOCK_GRANULARITY));
+        if (r.slices > bound) sliceCountSane = false;
+      }
     }
   }
-  check(exact, "exactly n photons run for every (n, budget, per-photon cost) combination");
+  check(exact, "exactly n photons run for every (n, budget, cost, mode) combination");
   check(noRunaway, "loop always terminates (no runaway / zero-progress slice)");
-  check(sliceCountSane, "slice count never exceeds ceil(n / 256) — budget never yields a zero-work slice");
+  check(sliceCountSane, "slice count stays within its mode's bound (no zero-work slices)");
+
+  // SMALL-RUN VISIBILITY (2026-07-20 regression gate). The default 10k-photon
+  // run must still yield ~TARGET_STEPS_NORMAL times so the browser can paint
+  // the photon-by-photon build-up. Before the small-run floor this collapsed
+  // to 1-2 slices (~8000 photons fit in one 12 ms budget at ~0.7M photons/s),
+  // which the user saw as a single flash of the final state.
+  {
+    const cost = 1 / 700;   // ms per photon at the measured ~0.7M photons/s
+    const small = simulateLoop({ n: 10_000, sliceMs: 12, costPerPhotonMs: cost });
+    check(small.ran === 10_000 && small.slices >= TARGET_STEPS_NORMAL - 1,
+          `default 10k run yields ${small.slices} times (>= ~${TARGET_STEPS_NORMAL}) — progressive build-up preserved`);
+    const tiny = simulateLoop({ n: 200, sliceMs: 12, costPerPhotonMs: cost });
+    check(tiny.ran === 200 && tiny.slices >= 20,
+          `tiny 200-photon run still yields ${tiny.slices} times (never one instant flash)`);
+    // ...and the floor must NOT add yields to a large run: there the clock is
+    // far tighter than n/TARGET, so the time budget still governs.
+    const big = simulateLoop({ n: 20_000_000, sliceMs: 12, costPerPhotonMs: cost });
+    check(big.ran === 20_000_000 && big.slices > 1000,
+          `20M run governed by the clock, not the floor: ${big.slices} slices (~${Math.round(20_000_000 / big.slices)} photons each)`);
+  }
 
   // Pathological clock (frozen / coarsened below the budget, as under
   // Firefox's resistFingerprinting): the wall-clock break never fires, so
   // MAX_SLICE_PHOTONS is the only thing bounding a slice. Without that cap a
   // single slice would swallow the entire run and freeze the tab (and the
   // Stop button) -- this gate is what motivated adding it.
-  const frozen = simulateLoop({ n: 1_000_000, sliceMs: 40, costPerPhotonMs: 0 });
-  check(frozen.ran === 1_000_000 && frozen.slices === Math.ceil(1_000_000 / MAX_SLICE_PHOTONS),
-        `frozen clock: still yields every ${MAX_SLICE_PHOTONS} photons (${frozen.slices} slices), never one unbounded slice`);
+  // Fast mode is the case MAX_SLICE_PHOTONS actually governs: no small-run
+  // floor applies there, so without the cap a frozen clock would swallow the
+  // whole run in one slice.
+  const frozenFast = simulateLoop({ n: 1_000_000, sliceMs: 40, costPerPhotonMs: 0, fastMode: true });
+  check(frozenFast.ran === 1_000_000 && frozenFast.slices === Math.ceil(1_000_000 / MAX_SLICE_PHOTONS),
+        `frozen clock, fast mode: still yields every ${MAX_SLICE_PHOTONS} photons (${frozenFast.slices} slices), never one unbounded slice`);
+  // Normal mode under the same frozen clock is bounded even tighter, by the
+  // n/TARGET small-run floor.
+  const frozenNormal = simulateLoop({ n: 1_000_000, sliceMs: 40, costPerPhotonMs: 0 });
+  check(frozenNormal.ran === 1_000_000 && frozenNormal.slices === TARGET_STEPS_NORMAL,
+        `frozen clock, normal mode: bounded by the n/TARGET floor (${frozenNormal.slices} slices)`);
 
   // Realistic budget behavior: at the measured 0.64M photons/s (1.56 µs each),
   // a 40 ms fast slice should hold ~25k photons and a 5M run ~200 slices --

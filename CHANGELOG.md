@@ -6,7 +6,33 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-*(nothing yet)*
+### Added (2026-07-20, test aid — run timer)
+
+- **Run-time readout in the stats panel**: wall-clock elapsed for the current/last
+  ensemble plus the achieved rate (e.g. `Run time: 21.80 s @ 0.92M photons/s [fast
+  mode]`), live during normal-mode runs and echoed on the fast-mode counter (the only
+  live readout there). Time spent paused is excluded. Added because browser run-to-run
+  spread at 20M photons is ~4 s — thermal drift on sustained runs — which is the same
+  size as the performance differences being compared, making stopwatch timing unable to
+  resolve them. Marked `TEST AID` in the source (`state.runTiming`, three call sites in
+  `runControl.js`, `StatsPanel.runTimingLine`) so it can be removed cleanly when no
+  longer needed.
+
+### Fixed (2026-07-20, P4 follow-up — small-run visual evolution)
+
+- **Short runs regained their photon-by-photon build-up.** A purely wall-clock slice
+  budget is the wrong shape for small runs: at ~0.7M photons/s a 12 ms slice holds
+  ~8000 photons, so the default 10k-photon run completed in one or two slices and ~20 ms
+  — the browser never got a frame in between and the 200 ms refresh gate never fired, so
+  it rendered as a single flash of the final state rather than the progressive
+  accumulation v6.0.5 showed. Normal mode now also floors the cadence on photon count:
+  each slice is capped at n/40 photons and a heavy refresh is forced every n/40 photons,
+  guaranteeing ~40 visible steps regardless of how fast the run is. For large runs both
+  photon-based triggers are strictly looser than the wall-clock ones (at 20M they would
+  fire every 500k photons versus the time gate's ~140k), so they cost nothing there and
+  the v6.0.6 timing is unchanged. Fast mode is unaffected — it has nothing to show.
+  New regression gates in `verify_p4.mjs` pin both ends: a 10k run must yield ~40 times,
+  and a 20M run must still be governed by the clock (~2400 slices, ~8400 photons each).
 
 ## [v6.0.6] — 2026-07-20
 

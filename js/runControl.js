@@ -60,6 +60,19 @@ const MAX_SLICE_PHOTONS = 200000;
 //     grows with N, which is exactly why a fixed chunk cadence degraded late
 //     in long runs while a wall-clock gate holds the feel constant.
 const REFRESH_HEAVY_MIN_MS = 200;
+// SMALL-RUN FLOOR (2026-07-20 follow-up, user report). A pure wall-clock
+// budget is the wrong shape for small runs: at ~0.7M photons/s a 12 ms slice
+// holds ~8000 photons, so a default 10k run finished in one or two slices and
+// ~20 ms -- the browser never got a frame in between and the 200 ms refresh
+// gate never fired, so it rendered as a single flash of the final state
+// instead of the photon-by-photon build-up the pre-P4 fixed 1000-photon
+// chunking gave. Normal mode therefore ALSO caps each slice at n/TARGET
+// photons and forces a heavy refresh every n/TARGET photons, guaranteeing
+// ~TARGET visual steps no matter how fast the run is. For large runs these
+// photon-based triggers are strictly looser than the wall-clock ones (at 20M
+// they'd fire every 500k photons vs the time gate's ~140k), so they cost
+// nothing there and the time gate governs, exactly as before.
+const TARGET_STEPS_NORMAL = 40;
 // Fast mode only: repaint the (static) 3D scene every Nth animation frame
 // instead of every frame -- see RunControl.animate.
 const FAST_RENDER_EVERY_N_FRAMES = 3;
@@ -323,8 +336,28 @@ export const RunControl = {
       // second pass over the run.
       const fastMode = UI.getFastMode();
       const sliceMs  = fastMode ? SLICE_MS_FAST : SLICE_MS_NORMAL;
+      // Small-run floor (see TARGET_STEPS_NORMAL): in normal mode a slice also
+      // never exceeds n/TARGET photons, and a heavy refresh is forced every
+      // n/TARGET photons. Fast mode has nothing to show, so it keeps the plain
+      // clock-bounded slice.
+      const stepPhotons  = Math.max(1, Math.ceil(n / TARGET_STEPS_NORMAL));
+      const slicePhotons = fastMode ? MAX_SLICE_PHOTONS
+                                    : Math.min(MAX_SLICE_PHOTONS, stepPhotons);
       let lastRefresh = performance.now();
+      let sinceHeavy = 0;       // photons simulated since the last heavy refresh
       let pauseShown = false;   // fast mode: full refresh done for this pause?
+
+      // TEST AID (see state.runTiming): wall-clock the batch, excluding time
+      // spent paused. Three touch points only -- start here, pause accounting
+      // in chunk(), stop at endRunTiming().
+      let pauseStartMs = null;
+      state.runTiming = { startMs: performance.now(), endMs: 0, pausedMs: 0,
+                          photons: n, fastMode, running: true };
+      function endRunTiming() {
+        if (!state.runTiming.running) return;
+        state.runTiming.endMs = performance.now();
+        state.runTiming.running = false;
+      }
 
       // Snapshot the simulation parameters and path cap ONCE per batch
       // (review R4): getSimParams()/getMaxPaths() cascade through ~12 DOM
@@ -372,6 +405,7 @@ export const RunControl = {
         // count wherever it stood at the moment Stop was clicked; Reset is
         // the only way forward from here.
         if (state.isStopped) {
+          endRunTiming();
           fullRefresh();
           return;
         }
@@ -379,6 +413,7 @@ export const RunControl = {
         // or a single Step request (Step advances exactly one photon).
         // Latency is one slice (<=40 ms in fast mode) -- imperceptible.
         if (state.isPaused && !state.stepRequested) {
+          if (pauseStartMs === null) pauseStartMs = performance.now();   // TEST AID
           // Fast mode: pausing is the user asking to LOOK at the run, so pay
           // for one full refresh on entry (once per pause, not per idle tick)
           // and restore the counter when they resume.
@@ -388,6 +423,10 @@ export const RunControl = {
           }
           setTimeout(chunk, 100);
           return;
+        }
+        if (pauseStartMs !== null) {   // TEST AID: don't charge pause to the run
+          state.runTiming.pausedMs += performance.now() - pauseStartMs;
+          pauseStartMs = null;
         }
         if (fastMode && pauseShown) {
           pauseShown = false;
@@ -406,9 +445,13 @@ export const RunControl = {
           // SLICE_CLOCK_GRANULARITY sub-batches so the clock check itself
           // stays off the per-photon path.
           const sliceStart = performance.now();
-          const sliceCap = Math.min(remaining, MAX_SLICE_PHOTONS);
+          const sliceCap = Math.min(remaining, slicePhotons);
+          // Clock granularity never exceeds the slice itself -- otherwise a
+          // small-run slice (n/TARGET photons, possibly < 256) would overshoot
+          // its cap on the first sub-batch.
+          const gran = Math.min(SLICE_CLOCK_GRANULARITY, sliceCap);
           while (m < sliceCap) {
-            const k = Math.min(SLICE_CLOCK_GRANULARITY, sliceCap - m);
+            const k = Math.min(gran, sliceCap - m);
             runPhotons(k);
             m += k;
             if (performance.now() - sliceStart >= sliceMs) break;
@@ -416,9 +459,15 @@ export const RunControl = {
         }
 
         remaining -= m;
+        sinceHeavy += m;
         const finished = remaining <= 0;
         const now = performance.now();
-        const heavyDue = !fastMode && (now - lastRefresh >= REFRESH_HEAVY_MIN_MS);
+        // Heavy refresh when EITHER trigger fires: the wall-clock gate (bounds
+        // the cost of long runs) or the photon-count step (guarantees
+        // ~TARGET_STEPS_NORMAL visible steps in short ones -- see
+        // TARGET_STEPS_NORMAL). Whichever is tighter for the run at hand wins.
+        const heavyDue = !fastMode &&
+          (now - lastRefresh >= REFRESH_HEAVY_MIN_MS || sinceHeavy >= stepPhotons);
 
         // Endpoint maintenance is now SPLIT the same way the panel is
         // (2026-07-20 follow-up): the trim is O(overshoot) bookkeeping that
@@ -438,6 +487,7 @@ export const RunControl = {
         }
 
         if (finished || steppingOnce) {
+          if (finished) endRunTiming();   // TEST AID (a Step is not a run end)
           fullRefresh();
         } else if (fastMode) {
           RunControl.updateFastCounter(total - remaining, total);
@@ -446,8 +496,9 @@ export const RunControl = {
           // expensive rebuilds on the wall-clock gate. Order matters only in
           // that updateDisplay() below already includes the text write, so the
           // gated branch doesn't repeat it.
-          if (now - lastRefresh >= REFRESH_HEAVY_MIN_MS) {
+          if (heavyDue) {
             lastRefresh = now;
+            sinceHeavy = 0;
             Scene.rebuildHistograms();
             StatsPanel.updateDisplay();
           } else {
@@ -492,7 +543,16 @@ export const RunControl = {
       }
       if (subEl) {
         const pct = total > 0 ? Math.floor(100 * done / total) : 0;
-        subEl.textContent = `${pct}% — display paused (fast mode)`;
+        // TEST AID: elapsed + live rate here too -- in fast mode the stats
+        // panel isn't refreshing, so this is the only live readout.
+        const t = state.runTiming;
+        let timing = "";
+        if (t && t.running) {
+          const secs = (performance.now() - t.startMs - t.pausedMs) / 1000;
+          const rate = secs > 0 ? (done / secs) / 1e6 : 0;
+          timing = ` — ${secs.toFixed(1)} s @ ${rate.toFixed(2)}M/s`;
+        }
+        subEl.textContent = `${pct}% — display paused (fast mode)${timing}`;
       }
     },
 

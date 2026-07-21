@@ -198,6 +198,25 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
     // on every explicit refresh -- nothing the plots display can change
     // MID-photon, since the photon was already recorded before its animation
     // began.
+    // TEST AID (2026-07-20, P4 performance work -- delete with state.runTiming
+    // and its runControl.js call sites when no longer needed; grep "TEST AID").
+    // Wall-clock elapsed for the current/last instant batch plus the achieved
+    // photon rate, so build-to-build comparisons don't rely on a stopwatch --
+    // browser run-to-run spread at 20M was ~4 s, the same size as the effects
+    // being measured. Live while a run is in flight (normal mode refreshes the
+    // text every slice), frozen at the final value afterwards. Time spent
+    // paused is excluded. Returns "" before any batch has run.
+    runTimingLine() {
+      const t = state.runTiming;
+      if (!t || (!t.running && !t.endMs)) return "";
+      const ms = (t.running ? performance.now() : t.endMs) - t.startMs - t.pausedMs;
+      if (!(ms > 0)) return "";
+      const rate = (SimStats.stats.launched / (ms / 1000)) / 1e6;
+      return `\nRun time: ${(ms / 1000).toFixed(2)} s @ ${rate.toFixed(2)}M photons/s` +
+             `${t.fastMode ? " [fast mode]" : ""}${t.running ? " (running)" : ""}` +
+             `${t.pausedMs > 0 ? " (excl. pause)" : ""}`;
+    },
+
     updateStatsText() {
       const s = SimStats.stats;
       const launched = Math.max(s.launched, 1);
@@ -292,7 +311,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       // keyboard focus survive every updateDisplay() call untouched.
       document.getElementById("statsTop").innerHTML =
 `Launched: ${s.launched}
-${activeInfo}`;
+${activeInfo}${StatsPanel.runTimingLine()}`;
 
       document.getElementById("statsMain").innerHTML =
 `<b>FINAL OUTCOMES</b>
