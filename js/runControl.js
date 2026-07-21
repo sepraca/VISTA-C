@@ -347,7 +347,7 @@ export const RunControl = {
       let sinceHeavy = 0;       // photons simulated since the last heavy refresh
       let pauseShown = false;   // fast mode: full refresh done for this pause?
 
-      // TEST AID (see state.runTiming): wall-clock the batch, excluding time
+      // Run timer (see state.runTiming): wall-clock the batch, excluding time
       // spent paused. Three touch points only -- start here, pause accounting
       // in chunk(), stop at endRunTiming().
       let pauseStartMs = null;
@@ -413,7 +413,7 @@ export const RunControl = {
         // or a single Step request (Step advances exactly one photon).
         // Latency is one slice (<=40 ms in fast mode) -- imperceptible.
         if (state.isPaused && !state.stepRequested) {
-          if (pauseStartMs === null) pauseStartMs = performance.now();   // TEST AID
+          if (pauseStartMs === null) pauseStartMs = performance.now();   // run timer: mark pause start
           // Fast mode: pausing is the user asking to LOOK at the run, so pay
           // for one full refresh on entry (once per pause, not per idle tick)
           // and restore the counter when they resume.
@@ -424,7 +424,7 @@ export const RunControl = {
           setTimeout(chunk, 100);
           return;
         }
-        if (pauseStartMs !== null) {   // TEST AID: don't charge pause to the run
+        if (pauseStartMs !== null) {   // run timer: don't charge pause to the run
           state.runTiming.pausedMs += performance.now() - pauseStartMs;
           pauseStartMs = null;
         }
@@ -487,7 +487,7 @@ export const RunControl = {
         }
 
         if (finished || steppingOnce) {
-          if (finished) endRunTiming();   // TEST AID (a Step is not a run end)
+          if (finished) endRunTiming();   // run timer: stop (a Step is not a run end)
           fullRefresh();
         } else if (fastMode) {
           RunControl.updateFastCounter(total - remaining, total);
@@ -543,7 +543,7 @@ export const RunControl = {
       }
       if (subEl) {
         const pct = total > 0 ? Math.floor(100 * done / total) : 0;
-        // TEST AID: elapsed + live rate here too -- in fast mode the stats
+        // Run timer: elapsed + live rate here too -- in fast mode the stats
         // panel isn't refreshing, so this is the only live readout.
         const t = state.runTiming;
         let timing = "";

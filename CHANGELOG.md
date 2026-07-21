@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A2)
+
+- **The run timer is now a permanent feature**, no longer marked `TEST AID`. Added during
+  the P4 work to time batches, it earns a permanent place: browser run-to-run spread at
+  20M photons is ~4 s of thermal drift — the same size as the settings/build differences
+  a user would otherwise try to read off a stopwatch — so an in-app elapsed + photon-rate
+  readout (in the stats panel, and on the fast-mode counter where the panel isn't
+  refreshing) is the only reliable measurement. Comment-only change; behavior identical.
+
+### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A1)
+
+- **Renamed the eight path-length accumulators** from `*PathLengths` / `*Paths` to a
+  consistent `*PathHist` suffix (`reflectedPathHist`, `netTransmittedPathHist`,
+  `sideTransmittedPathHist`[`CloudOnly`], `sideEscapeUpPathHist`, `sideEscapeDownPathHist`,
+  `bypassPathHist`[`CloudOnly`]). Since review P5 these hold streaming histogram
+  accumulators (`{counts, sum, n, …}`), not arrays — the old names invited exactly the
+  bug that shipped twice (`for…of` iterating nothing; `.length` → `undefined` → `NaN`
+  panel titles). The `Hist` suffix makes both misuses read as obviously wrong. Purely
+  mechanical (1:1 rename, no value changes): all seven suites green, every golden
+  byte-identical. Segment-accessor names (`reflectedPathSegments`, etc.) were left as-is
+  — they correctly describe "the populations for this view" and renaming them would reach
+  into exportUtils and the generators for no clarity gain. The flat suffix was chosen
+  over a `SimStats.pathHists.{…}` namespace: it fixes the naming lie with minimal churn,
+  and would also collide conceptually with the new per-row `pathHist` golden field.
+
 ### Tests (2026-07-21 — pre-v6.1 refactoring pass, items A3 + B)
 
 - **One-command test runner** (`tests/run_all.mjs`): runs the whole battery (phase 3/4

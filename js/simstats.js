@@ -326,27 +326,27 @@ export const SimStats = {
     //     histogram counts stay bit-identical too.
     // `.length` is replaced by `.n` on these objects; see the call sites in
     // bottomPanel.js (zero-spike counts) and exportUtils.js (segLen).
-    reflectedPathLengths: null,
+    reflectedPathHist: null,
     // Optical paths of photons that delivered energy to the surface:
     // terminal "transmitted" (A_s = 0) or "surface_absorbed" (A_s > 0).
     // Count identically equals the net-transmittance count
     // (transmitted - surfaceReflected), photon for photon.
-    netTransmittedPathLengths: null,        // base-derived (geometry "a") surface-deposited paths
-    sideTransmittedPathLengths: null,       // side-derived surface-deposited paths, RAW (mixes genuine cloud-side arrivals with clear-direct's trivial zero-path arrivals -- see TODO "3.B")
-    // Decontaminated (touchedCloud=true only) subset of sideTransmittedPathLengths,
+    netTransmittedPathHist: null,        // base-derived (geometry "a") surface-deposited paths
+    sideTransmittedPathHist: null,       // side-derived surface-deposited paths, RAW (mixes genuine cloud-side arrivals with clear-direct's trivial zero-path arrivals -- see TODO "3.B")
+    // Decontaminated (touchedCloud=true only) subset of sideTransmittedPathHist,
     // used by the default (non-domain-wide) Transmitted path view so a clear-direct
     // photon's exact-zero path (no optical depth in the clear-air gap) doesn't
     // crash the reported mean. For legacy illumination modes (touchedCloud always
-    // true) this is bit-identical to sideTransmittedPathLengths.
-    sideTransmittedPathLengthsCloudOnly: null,
-    sideEscapeUpPaths: null,                // GENUINE upward side-wall escapes (join R under all_faces / R_domain)
-    sideEscapeDownPaths: null,              // terminal downward side escapes (join T under all_faces / T_domain)
-    bypassPaths: null,                      // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
-    // Decontaminated (touchedCloud=true only) subset of bypassPaths -- the
+    // true) this is bit-identical to sideTransmittedPathHist.
+    sideTransmittedPathHistCloudOnly: null,
+    sideEscapeUpPathHist: null,                // GENUINE upward side-wall escapes (join R under all_faces / R_domain)
+    sideEscapeDownPathHist: null,              // terminal downward side escapes (join T under all_faces / T_domain)
+    bypassPathHist: null,                      // surface-reflected upward bypass, RAW (mixes genuine clear-via-cloud paths with clear-direct's trivial zero-path entries -- see TODO "3.B")
+    // Decontaminated (touchedCloud=true only) subset of bypassPathHist -- the
     // "clear-via-cloud" (d) component only, excluding clear-direct (c). Used to
     // scale the entire-domain Reflected path-length panel's axis without being
     // crushed by the (legitimate, but panel-breaking) clear-direct zero-spike.
-    bypassPathsCloudOnly: null,
+    bypassPathHistCloudOnly: null,
     surfaceInteractionEvents: [],   // capped at SURFACE_EVENT_CAP
 
     // Current surface-absorption grid extent factor (× cloud extent). Legacy/
@@ -525,10 +525,10 @@ export const SimStats = {
       // (P5) Fresh streaming accumulators rather than fresh arrays -- allocating
       // new ones (vs zero-filling in place) keeps reset() O(1) in the previous
       // run's photon count and lets the old buffers be collected together.
-      SimStats.reflectedPathLengths = makePathHist();  SimStats.netTransmittedPathLengths = makePathHist();
-      SimStats.sideTransmittedPathLengths = makePathHist();  SimStats.sideTransmittedPathLengthsCloudOnly = makePathHist();
-      SimStats.sideEscapeUpPaths = makePathHist();  SimStats.sideEscapeDownPaths = makePathHist();
-      SimStats.bypassPaths = makePathHist();  SimStats.bypassPathsCloudOnly = makePathHist();
+      SimStats.reflectedPathHist = makePathHist();  SimStats.netTransmittedPathHist = makePathHist();
+      SimStats.sideTransmittedPathHist = makePathHist();  SimStats.sideTransmittedPathHistCloudOnly = makePathHist();
+      SimStats.sideEscapeUpPathHist = makePathHist();  SimStats.sideEscapeDownPathHist = makePathHist();
+      SimStats.bypassPathHist = makePathHist();  SimStats.bypassPathHistCloudOnly = makePathHist();
     },
 
     // --- Observation geometry combiners ------------------------------------
@@ -821,8 +821,8 @@ export const SimStats = {
     // Path-length constituent arrays for the active geometry (returned as a
     // list of segments so consumers iterate without allocating a concat copy).
     reflectedPathSegments() {
-      if (!SimStats._sidesIncluded()) return [SimStats.reflectedPathLengths];
-      return [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths];
+      if (!SimStats._sidesIncluded()) return [SimStats.reflectedPathHist];
+      return [SimStats.reflectedPathHist, SimStats.sideEscapeUpPathHist];
     },
     transmittedPathSegments() {
       // Uses the cloud-only decontaminated side array (v6.0.1, see TODO "3.B") so
@@ -830,8 +830,8 @@ export const SimStats = {
       // clear-air gap) doesn't crash the reported mean. For legacy modes this is
       // bit-identical (touchedCloud always true, so no entries are excluded).
       return SimStats._sidesIncluded()
-        ? [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths]
-        : [SimStats.netTransmittedPathLengths];
+        ? [SimStats.netTransmittedPathHist, SimStats.sideTransmittedPathHistCloudOnly, SimStats.sideEscapeDownPathHist]
+        : [SimStats.netTransmittedPathHist];
     },
     // Domain-wide (bypass-inclusive) path-segment variants for the "Show
     // entire-domain plots" toggle (v6.0) -- same pattern as
@@ -846,21 +846,21 @@ export const SimStats = {
     // the old "scene" -- see _obsGeom() comment) -- called out as its own
     // function anyway so it's independent of the dropdown, not just coincidentally
     // matching one of its settings.
-    // NOTE (v6.0.1, TODO "3.B"): these deliberately return the RAW bypassPaths/
-    // sideTransmittedPathLengths arrays, including the clear-direct population's
+    // NOTE (v6.0.1, TODO "3.B"): these deliberately return the RAW bypassPathHist/
+    // sideTransmittedPathHist arrays, including the clear-direct population's
     // exact-zero-path entries -- unlike transmittedPathSegments() above, this is
     // NOT decontaminated, because "entire domain" is supposed to show the true,
     // complete population. That zero-path spike is a real physical fact (clear-
     // sky photons genuinely travel zero optical path before reaching the
     // surface), not a bookkeeping artifact, and it grows with the domain factor
     // M. bottomPanel.js's drawPathOverlay() separates it from the plotted bars
-    // and reports its count as text instead, using SimStats.bypassPathsCloudOnly/
-    // sideTransmittedPathLengthsCloudOnly (length difference = clear-direct count).
+    // and reports its count as text instead, using SimStats.bypassPathHistCloudOnly/
+    // sideTransmittedPathHistCloudOnly (length difference = clear-direct count).
     reflectedPathSegmentsDomainWide() {
-      return [SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPaths];
+      return [SimStats.reflectedPathHist, SimStats.sideEscapeUpPathHist, SimStats.bypassPathHist];
     },
     transmittedPathSegmentsDomainWide() {
-      return [SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengths, SimStats.sideEscapeDownPaths];
+      return [SimStats.netTransmittedPathHist, SimStats.sideTransmittedPathHist, SimStats.sideEscapeDownPathHist];
     },
 
     // --- Shared path-histogram spec (v6.0.1, review R2) -------------------
@@ -886,16 +886,16 @@ export const SimStats = {
 
     // Histogram x-axis maximum. Scaled from the GENUINE (touchedCloud=true)
     // path population only, independent of the Observation-geometry dropdown
-    // and the entire-domain toggle: reflectedPathLengths/sideEscapeUpPaths/
-    // netTransmittedPathLengths/sideEscapeDownPaths are always clean by
-    // construction; bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly
+    // and the entire-domain toggle: reflectedPathHist/sideEscapeUpPathHist/
+    // netTransmittedPathHist/sideEscapeDownPathHist are always clean by
+    // construction; bypassPathHistCloudOnly/sideTransmittedPathHistCloudOnly
     // exclude the clear-direct zero-path spike (see TODO "3.B"). Scaling from
     // the raw, contaminated arrays would crush the axis toward zero and clip
     // most of the genuine population into the overflow bin.
     pathAxisMax() {
       const scaleMean = Math.max(
-        SimStats.segMean([SimStats.reflectedPathLengths, SimStats.sideEscapeUpPaths, SimStats.bypassPathsCloudOnly]),
-        SimStats.segMean([SimStats.netTransmittedPathLengths, SimStats.sideTransmittedPathLengthsCloudOnly, SimStats.sideEscapeDownPaths]));
+        SimStats.segMean([SimStats.reflectedPathHist, SimStats.sideEscapeUpPathHist, SimStats.bypassPathHistCloudOnly]),
+        SimStats.segMean([SimStats.netTransmittedPathHist, SimStats.sideTransmittedPathHistCloudOnly, SimStats.sideEscapeDownPathHist]));
       // Representative scale rather than the rare-event maximum: keeps the bulk
       // of the distributions visible; long-tail photons clip into the last bin.
       return Math.max(10, Math.ceil((2.5 * Math.max(scaleMean, 1)) / 10) * 10);
@@ -1044,13 +1044,13 @@ export const SimStats = {
           SimStats.muReflPixelBins[mi] += 1;
           SimStats.bdfReflPixelWeights[bi] += 1;
         }
-        addPath(SimStats.reflectedPathLengths, result.totalPath);
+        addPath(SimStats.reflectedPathHist, result.totalPath);
       } else if (result.status === Status.TRANSMITTED) {
         // Terminal at A_s = 0 only: a genuine cloud-base crossing (never
         // clear-direct -- at A_s = 0, surfaceInteraction always returns
         // "surface_absorbed" instead, since the albedo draw can never succeed).
         SimStats.stats.finalTransmitted++;
-        addPath(SimStats.netTransmittedPathLengths, result.totalPath);
+        addPath(SimStats.netTransmittedPathHist, result.totalPath);
         SimStats.muTransBaseBins[muBinIndex(Math.abs(result.dirZ ?? 0))] += 1;
         SimStats.bdfTransBaseWeights[bdfBinIndex(result.dirX, result.dirY, result.dirZ)] += 1;
         // Bug fix (user report, 2026-07): physics.js now computes the actual
@@ -1076,13 +1076,13 @@ export const SimStats = {
             SimStats.stats.surfaceBypassUp++;
             SimStats.muBypassBins[ei] += 1;
             SimStats.bdfBypassWeights[eb] += 1;
-            addPath(SimStats.bypassPaths, result.totalPath);
+            addPath(SimStats.bypassPathHist, result.totalPath);
             // R's (c)/(d) split (see TODO "Component / outcome bookkeeping"):
             // touchedCloud=false => (c) clear-direct (never touched the cloud box
             // at all); touchedCloud=true => (d) today's clear-via-cloud meaning.
             if (result.touchedCloud) {
               SimStats.stats.bypassViaCloud++;
-              addPath(SimStats.bypassPathsCloudOnly, result.totalPath);
+              addPath(SimStats.bypassPathHistCloudOnly, result.totalPath);
             } else {
               SimStats.stats.bypassClearDirect++;
             }
@@ -1090,13 +1090,13 @@ export const SimStats = {
             SimStats.stats.sideEscapeUp++;
             SimStats.muSideEscUpBins[ei] += 1;
             SimStats.bdfSideEscUpWeights[eb] += 1;
-            addPath(SimStats.sideEscapeUpPaths, result.totalPath);
+            addPath(SimStats.sideEscapeUpPathHist, result.totalPath);
           }
         } else {
           SimStats.stats.sideEscapeDown++;
           SimStats.muSideEscDownBins[ei] += 1;
           SimStats.bdfSideEscDownWeights[eb] += 1;
-          addPath(SimStats.sideEscapeDownPaths, result.totalPath);
+          addPath(SimStats.sideEscapeDownPathHist, result.totalPath);
         }
       } else if (result.status === Status.SURFACE_ABSORBED) {
         SimStats.stats.surfaceAbsorbed++;
@@ -1121,16 +1121,16 @@ export const SimStats = {
         const ai = muBinIndex(Math.abs(result.dirZ ?? 0));
         const ab = bdfBinIndex(result.dirX, result.dirY, result.dirZ);
         if (result.viaSide) {
-          addPath(SimStats.sideTransmittedPathLengths, result.totalPath);
+          addPath(SimStats.sideTransmittedPathHist, result.totalPath);
           SimStats.muTransSideBins[ai] += 1;
           SimStats.bdfTransSideWeights[ab] += 1;
           if (result.touchedCloud) {
-            addPath(SimStats.sideTransmittedPathLengthsCloudOnly, result.totalPath);
+            addPath(SimStats.sideTransmittedPathHistCloudOnly, result.totalPath);
             SimStats.muTransSideCloudOnlyBins[ai] += 1;
             SimStats.bdfTransSideCloudOnlyWeights[ab] += 1;
           }
         } else {
-          addPath(SimStats.netTransmittedPathLengths, result.totalPath);
+          addPath(SimStats.netTransmittedPathHist, result.totalPath);
           SimStats.muTransBaseBins[ai] += 1;
           SimStats.bdfTransBaseWeights[ab] += 1;
         }

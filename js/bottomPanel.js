@@ -342,14 +342,14 @@ export const BottomPanel = {
       // factor M to the point of eventually dominating the total count. No
       // axis choice can show it proportionally alongside genuine structure, so
       // it's reported as a separate count instead of being forced into the
-      // bars. bypassPathsCloudOnly/sideTransmittedPathLengthsCloudOnly hold the
+      // bars. bypassPathHistCloudOnly/sideTransmittedPathHistCloudOnly hold the
       // touchedCloud=true (genuine) subset; the length difference from the raw
       // arrays is exactly the clear-direct count (see TODO "3.B" verification).
       // `.n` (was `.length`): these are streaming accumulators since review P5;
       // `n` counts every recorded path, zeros included, exactly as the array
       // length did -- so this difference is still the clear-direct count.
-      const reflZeroCount  = showEntireDomainPath ? (SimStats.bypassPaths.n - SimStats.bypassPathsCloudOnly.n) : 0;
-      const transZeroCount = showEntireDomainPath ? (SimStats.sideTransmittedPathLengths.n - SimStats.sideTransmittedPathLengthsCloudOnly.n) : 0;
+      const reflZeroCount  = showEntireDomainPath ? (SimStats.bypassPathHist.n - SimStats.bypassPathHistCloudOnly.n) : 0;
+      const transZeroCount = showEntireDomainPath ? (SimStats.sideTransmittedPathHist.n - SimStats.sideTransmittedPathHistCloudOnly.n) : 0;
       // `.n` (was `.length`): streaming accumulators since review P5. Missing
       // this call site made both panel titles read "N=NaN" (user report,
       // 2026-07-20) -- undefined propagates silently through +, so it is worth

@@ -340,8 +340,8 @@ export const UI = {
     // --- Outcome color map ---
     // Maps a photon exit status (+ optional bypass flag) to a Three.js hex color.
     // bypass (2026-07): SIDE_ESCAPE covers two physically distinct events that
-    // physics.js already tags separately (see simstats.js's bypassPaths vs.
-    // sideEscapeUpPaths, and the R/T/A/S bucketing that treats them
+    // physics.js already tags separately (see simstats.js's bypassPathHist vs.
+    // sideEscapeUpPathHist, and the R/T/A/S bucketing that treats them
     // differently) -- a genuine cloud-side-wall crossing (bypass falsy,
     // bounded to the cloud's own wall) vs. a surface-reflected photon that
     // ascends without ever touching a cloud face again (bypass true; since

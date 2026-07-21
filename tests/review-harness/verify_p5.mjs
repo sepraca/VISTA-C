@@ -51,10 +51,10 @@ function refAxisMax(refl3, trans3) {
 }
 
 // The eight populations, in the order record() feeds them.
-const NAMES = ["reflectedPathLengths", "netTransmittedPathLengths",
-               "sideTransmittedPathLengths", "sideTransmittedPathLengthsCloudOnly",
-               "sideEscapeUpPaths", "sideEscapeDownPaths",
-               "bypassPaths", "bypassPathsCloudOnly"];
+const NAMES = ["reflectedPathHist", "netTransmittedPathHist",
+               "sideTransmittedPathHist", "sideTransmittedPathHistCloudOnly",
+               "sideEscapeUpPathHist", "sideEscapeDownPathHist",
+               "bypassPathHist", "bypassPathHistCloudOnly"];
 
 // Run N photons, capturing BOTH the streaming accumulators (from SimStats)
 // and a raw-array shadow copy built by watching the same per-photon values.
@@ -132,9 +132,9 @@ for (const c of CASES) {
   // in their final digits; bin counts and bin_max do not.
   {
     let worstRel = 0;
-    for (const combo of [["reflectedPathLengths", "sideEscapeUpPaths"],
-                         ["netTransmittedPathLengths", "sideTransmittedPathLengthsCloudOnly", "sideEscapeDownPaths"],
-                         ["reflectedPathLengths", "sideEscapeUpPaths", "bypassPaths"]]) {
+    for (const combo of [["reflectedPathHist", "sideEscapeUpPathHist"],
+                         ["netTransmittedPathHist", "sideTransmittedPathHistCloudOnly", "sideEscapeDownPathHist"],
+                         ["reflectedPathHist", "sideEscapeUpPathHist", "bypassPathHist"]]) {
       const ref = refSegMean(combo.map(nm => shadow[nm]));
       const str = SimStats.segMean(combo.map(nm => SimStats[nm]));
       if (ref !== 0) worstRel = Math.max(worstRel, Math.abs(ref - str) / Math.abs(ref));
@@ -144,8 +144,8 @@ for (const c of CASES) {
   }
 
   // Axis max: the value that drives bin_max in every export and figure.
-  const refl3  = [shadow.reflectedPathLengths, shadow.sideEscapeUpPaths, shadow.bypassPathsCloudOnly];
-  const trans3 = [shadow.netTransmittedPathLengths, shadow.sideTransmittedPathLengthsCloudOnly, shadow.sideEscapeDownPaths];
+  const refl3  = [shadow.reflectedPathHist, shadow.sideEscapeUpPathHist, shadow.bypassPathHistCloudOnly];
+  const trans3 = [shadow.netTransmittedPathHist, shadow.sideTransmittedPathHistCloudOnly, shadow.sideEscapeDownPathHist];
   const refMax = refAxisMax(refl3, trans3);
   const strMax = SimStats.pathAxisMax();
   check(refMax === strMax, `pathAxisMax bit-identical: ${strMax} (reference ${refMax})`);
@@ -153,12 +153,12 @@ for (const c of CASES) {
   // The histograms themselves, over every segment combination the app can
   // ask for: the two dropdown views and the two entire-domain views.
   const COMBOS = [
-    ["reflected (top-base)",      ["reflectedPathLengths"]],
-    ["reflected (all_faces)",     ["reflectedPathLengths", "sideEscapeUpPaths"]],
-    ["reflected (domain-wide)",   ["reflectedPathLengths", "sideEscapeUpPaths", "bypassPaths"]],
-    ["transmitted (top-base)",    ["netTransmittedPathLengths"]],
-    ["transmitted (all_faces)",   ["netTransmittedPathLengths", "sideTransmittedPathLengthsCloudOnly", "sideEscapeDownPaths"]],
-    ["transmitted (domain-wide)", ["netTransmittedPathLengths", "sideTransmittedPathLengths", "sideEscapeDownPaths"]]
+    ["reflected (top-base)",      ["reflectedPathHist"]],
+    ["reflected (all_faces)",     ["reflectedPathHist", "sideEscapeUpPathHist"]],
+    ["reflected (domain-wide)",   ["reflectedPathHist", "sideEscapeUpPathHist", "bypassPathHist"]],
+    ["transmitted (top-base)",    ["netTransmittedPathHist"]],
+    ["transmitted (all_faces)",   ["netTransmittedPathHist", "sideTransmittedPathHistCloudOnly", "sideEscapeDownPathHist"]],
+    ["transmitted (domain-wide)", ["netTransmittedPathHist", "sideTransmittedPathHist", "sideEscapeDownPathHist"]]
   ];
   let histOk = true, worstDiff = 0, totalBinned = 0;
   for (const [label, names] of COMBOS) {
@@ -188,13 +188,13 @@ for (const c of CASES) {
            Math.abs(h.width - 10 / (24 * h.m)) < 1e-15;
   });
   check(nestOk, `fine-grid nesting invariant holds for all populations (m = ${[...new Set(ms)].sort((a,b)=>b-a).join(", ")}; ` +
-                `range ${(SimStats.reflectedPathLengths.width * (1 << 17)).toFixed(0)} optical depths)`);
+                `range ${(SimStats.reflectedPathHist.width * (1 << 17)).toFixed(0)} optical depths)`);
 }
 
 // ---- Memory / scaling claim ----------------------------------------------
 console.log("\n=== Fixed-size storage (the point of P5) ===");
 {
-  const h = SimStats.reflectedPathLengths;
+  const h = SimStats.reflectedPathHist;
   const bytesEach = h.counts.BYTES_PER_ELEMENT * h.counts.length;
   const totalMB = (bytesEach * NAMES.length) / 1e6;
   check(h.counts.length === (1 << 17) && totalMB < 6,
@@ -229,7 +229,7 @@ console.log("\n=== Axis sweep: bin_max = 10 … 2000 (every multiple of 10) ==="
     for (const d of r.surfaceReflectionDirs)  SimStats.registerSurfaceReflection(d);
     if (r.status === "reflected") raw.push(r.totalPath ?? 0);
   }
-  const h = SimStats.reflectedPathLengths;
+  const h = SimStats.reflectedPathHist;
   let bad = [], checked = 0;
   for (let niceMax = 10; niceMax <= 2000; niceMax += 10) {
     const ref = refPathHistogramCounts([raw], niceMax);
@@ -256,7 +256,7 @@ console.log("\n=== No stale `.length` on path populations (static scan) ===");
 {
   const { readFileSync, readdirSync } = await import("node:fs");
   const dir = new URL("../../js/", import.meta.url);
-  const POPS = /(reflectedPathLengths|netTransmittedPathLengths|sideTransmittedPathLengths(CloudOnly)?|sideEscapeUpPaths|sideEscapeDownPaths|bypassPaths(CloudOnly)?|reflSegs|transSegs|netSegs|Segments\(\))/;
+  const POPS = /(reflectedPathHist|netTransmittedPathHist|sideTransmittedPathHist(CloudOnly)?|sideEscapeUpPathHist|sideEscapeDownPathHist|bypassPathHist(CloudOnly)?|reflSegs|transSegs|netSegs|Segments\(\))/;
   const offenders = [];
   for (const f of readdirSync(dir).filter(f => f.endsWith(".js"))) {
     const src = readFileSync(new URL(f, dir), "utf8");
