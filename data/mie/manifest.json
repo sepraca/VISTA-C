@@ -1,0 +1,67 @@
+{
+  "format": "vista-c-mie",
+  "version": 1,
+  "source": "MODIS_Phase Functions_netCDF4 / write_phase_function_nc4.py",
+  "note": "Wavelengths are nominal MODIS band centers (UI labels); the phase functions are RSR-band-integrated. ssa and g vary with r_eff.",
+  "n_angles": 1000,
+  "n_radii": 24,
+  "cer_um": [
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.0,
+    12.0,
+    13.0,
+    14.0,
+    15.0,
+    16.0,
+    17.0,
+    18.0,
+    19.0,
+    20.0,
+    22.0,
+    24.0,
+    26.0,
+    28.0,
+    30.0
+  ],
+  "grid_file": "mie_grid.json",
+  "bands": [
+    {
+      "band": 1,
+      "wavelength_um": 0.65,
+      "label": "MODIS band 1 \u2014 0.65 \u00b5m",
+      "file": "mie_band_1.json"
+    },
+    {
+      "band": 2,
+      "wavelength_um": 0.86,
+      "label": "MODIS band 2 \u2014 0.86 \u00b5m",
+      "file": "mie_band_2.json"
+    },
+    {
+      "band": 6,
+      "wavelength_um": 1.64,
+      "label": "MODIS band 6 \u2014 1.64 \u00b5m",
+      "file": "mie_band_6.json"
+    },
+    {
+      "band": 7,
+      "wavelength_um": 2.13,
+      "label": "MODIS band 7 \u2014 2.13 \u00b5m",
+      "file": "mie_band_7.json"
+    },
+    {
+      "band": 20,
+      "wavelength_um": 3.75,
+      "label": "MODIS band 20 \u2014 3.75 \u00b5m",
+      "file": "mie_band_20.json"
+    }
+  ]
+}
