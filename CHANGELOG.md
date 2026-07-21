@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added (2026-07-21 — tooling/data, groundwork for v6.1 Mie phase functions)
+
+- **Offline netCDF→browser converter and MODIS Mie phase-function assets.**
+  `tools/mie_convert.py` reads the five source `.nc` files (MODIS bands 1/2/6/7/20;
+  gitignored) and emits `data/mie/` browser JSON: a shared angle/weight grid plus one
+  per-band file (sampling CDF, phase function, and per-r_eff cer/ssa/g/qext, transposed
+  to `[radius][angle]`), and a manifest. `tools/mie_validate.py` independently re-reads
+  the emitted JSON and cross-checks it against the source (round-trip, transpose
+  correctness, g = Σwt·pf·µ to ~5e-5, CDFs sampling-ready). **Not yet wired into the
+  app** — this is the data groundwork; the sampling kernel and UI come next. No change to
+  any existing behavior, gate, or golden.
+
 ### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A2)
 
 - **The run timer is now a permanent feature**, no longer marked `TEST AID`. Added during
