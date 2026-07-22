@@ -6,16 +6,17 @@ inverse-CDF sampling. Deliberately re-reads the EMITTED JSON (not the converter'
 in-memory arrays) so it validates the actual files the app will ship.
 
 Checks per band:
-  1. Round-trip: JSON pf / pf_cumul equal the source arrays to the stored
-     significant-figure precision (proves nothing was lost or reordered).
-  2. Transpose correctness: JSON pf_cumul[k] (radius k, all angles) == source
-     pf_cumul[:, k]. The single most likely converter bug is an axis swap.
-  3. Physics re-derived FROM THE JSON: normalization Σ wt·pf = 1 and
+  1. Round-trip + transpose: JSON pf[k] (radius k, all angles) == source
+     pf[:, k] to the stored precision. An axis swap is the likeliest bug.
+  2. Physics re-derived FROM THE JSON: normalization Σ wt·pf = 1 and
      g = Σ wt·pf·µ (using the shared-grid wt/xmu), matching the JSON's own g and
      the source g.
-  4. Sampling readiness: pf_cumul monotone, [0]=0, [-1]=1, spans [0,1].
-  5. Manifest/grid consistency: shared xmu/wt/cer match every band; manifest
-     lists all bands.
+  3. SAMPLING READINESS — the real point: build the sampling CDF the browser
+     will build (cumsum(wt·pf)/T), confirm it is monotone with cdf[0]=0, and
+     that DISCRETE-NODE inversion gives ⟨µ⟩ = Σ mass_i·µ_i = g. This is what
+     the file's pf_cumul failed (it gave ⟨µ⟩≈0.96); we verify the emitted pf
+     samples correctly.
+  4. Manifest/grid consistency: shared cer matches; manifest lists all bands.
 
 Usage:  python3 tools/mie_validate.py  [--src ...] [--out data/mie]
 Exit 0 iff every check passes.
@@ -66,24 +67,20 @@ def main():
         j = load(args.out, f"mie_band_{b}.json")
         ds = xr.open_dataset(os.path.join(args.src, f"phase_function_MODIS_b{b}.nc"))
         src_pf  = np.array(ds.pf,  dtype=np.float64)   # [angle, radius]
-        src_cum = np.array(ds.pf_cumul, dtype=np.float64)
         src_g   = np.array(ds.g, dtype=np.float64)
         src_cer = np.array(ds.cer, dtype=np.float64)
         ds.close()
 
         jpf  = np.array(j["pf"])        # [radius][angle]
-        jcum = np.array(j["pf_cumul"])
         jg   = np.array(j["g"])
         n_rad = j["n_radii"]
 
-        # (2) transpose correctness + (1) round-trip, jointly: jcum[k] == src_cum[:,k]
+        # (1) transpose correctness + round-trip: jpf[k] == src_pf[:,k]
         rel = lambda a, b: np.max(np.abs(a - b) / np.maximum(1e-12, np.abs(b)))
-        cum_rt = max(rel(jcum[k], src_cum[:, k]) for k in range(n_rad))
-        pf_rt  = max(rel(jpf[k],  src_pf[:, k])  for k in range(n_rad))
-        check(cum_rt < RT_TOL, f"pf_cumul round-trip + transpose (max rel {cum_rt:.1e})")
-        check(pf_rt  < RT_TOL, f"pf round-trip + transpose (max rel {pf_rt:.1e})")
+        pf_rt = max(rel(jpf[k], src_pf[:, k]) for k in range(n_rad))
+        check(pf_rt < RT_TOL, f"pf round-trip + transpose (max rel {pf_rt:.1e})")
 
-        # (3) physics re-derived from JSON pf using the shared-grid wt/xmu
+        # (2) physics re-derived from JSON pf using the shared-grid wt/xmu
         norm  = (wt[None, :] * jpf).sum(axis=1)              # per radius
         gcalc = (wt[None, :] * jpf * xmu[None, :]).sum(axis=1)
         check(np.max(np.abs(norm - 1)) < NORM_TOL,
@@ -93,12 +90,19 @@ def main():
         check(np.max(np.abs(jg - src_g)) < RT_TOL * np.max(src_g),
               f"stored g round-trips source g (max {np.max(np.abs(jg-src_g)):.1e})")
 
-        # (4) sampling readiness of every radius's CDF
-        ok_cdf = all(jcum[k, 0] == 0 and abs(jcum[k, -1] - 1) < 1e-4
-                     and np.all(np.diff(jcum[k]) >= -1e-9) for k in range(n_rad))
-        check(ok_cdf, "every r_eff CDF: [0]=0, monotone, [-1]=1")
+        # (3) SAMPLING READINESS: build cdf = cumsum(wt·pf)/T (as the browser
+        # will), confirm cdf[0]=0 & monotone, and that discrete-node inversion
+        # ⟨µ⟩ = Σ mass_i·µ_i reproduces g. This is the check pf_cumul failed.
+        mass = wt[None, :] * jpf                              # [radius, angle]
+        T = mass.sum(axis=1, keepdims=True)
+        disc_mean = (mass * xmu[None, :]).sum(axis=1) / T[:, 0]
+        check(np.max(np.abs(disc_mean - src_g)) < G_TOL,
+              f"discrete-sampled ⟨µ⟩ = g (max {np.max(np.abs(disc_mean-src_g)):.1e}) — CDF sampling-ready")
+        cdf = np.cumsum(np.concatenate([np.zeros((n_rad,1)), mass[:, :-1]], axis=1), axis=1) / T
+        ok_cdf = bool(np.all(cdf[:, 0] == 0) and np.all(np.diff(cdf, axis=1) >= -1e-12))
+        check(ok_cdf, "built CDF: cdf[0]=0, monotone non-decreasing (every r_eff)")
 
-        # (5) shared cer matches
+        # (4) shared cer matches
         check(np.array_equal(np.array(j["cer_um"]).astype(np.float32),
                              src_cer.astype(np.float32)), "cer matches source")
 

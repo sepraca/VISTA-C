@@ -21,8 +21,17 @@ Design (see TODO-post-v6.0.7.md, section C):
 Normalization convention IN THESE FILES (verified, not assumed — see the asserts):
   Σ_i wt_i · pf_i = 1  per radius   (matches the file's `pf_norm`)
   g = Σ_i wt_i · pf_i · µ_i         (no ½ factor; reproduces tabulated `g`)
-  pf_cumul: running integral of the normalized pf from µ=+1 (forward) to µ=−1,
-            pf_cumul[0]=0, monotone increasing, pf_cumul[-1]=1.
+
+SAMPLING CDF — a deliberate design decision (2026-07-22): this converter does NOT
+ship the file's `pf_cumul`. That variable is the cumulative of `pf` ALONE (no
+quadrature weights); inverting it in µ over-weights the forward peak and yields a
+sampled ⟨µ⟩ ≈ 0.96 instead of the tabulated g ≈ 0.80 (found via the ⟨µ⟩-vs-g gate in
+verify_mie_sampling.mjs). The CORRECT µ-space CDF weights each node by wt·pf. We emit
+`pf` (needed for the plot anyway) and let the browser build the CDF = cumsum(wt·pf)/T
+at band selection (Physics.buildMieCdf) — so there is a single CDF construction, no
+redundant/possibly-stale stored CDF, and ~half the per-band file size. This converter
+ASSERTS that discrete-node inversion of that CDF reproduces g, so the emitted `pf` is
+proven sampling-ready.
 
 Usage:
     python3 tools/mie_convert.py
@@ -77,7 +86,6 @@ def main():
         ang = np.array(ds.ang, dtype=np.float64)
         wt  = np.array(ds.wt,  dtype=np.float64)
         pf  = np.array(ds.pf,  dtype=np.float64)      # [angle, radius]
-        cum = np.array(ds.pf_cumul, dtype=np.float64) # [angle, radius]
         cer = np.array(ds.cer, dtype=np.float64)
         ssa = np.array(ds.ssa, dtype=np.float64)
         g   = np.array(ds.g,   dtype=np.float64)
@@ -103,13 +111,6 @@ def main():
             if not np.array_equal(cer.astype(np.float32), ref_cer.astype(np.float32)):
                 issues.append("cer grid differs from band 1")
 
-        # CDF: 0 at forward, monotone, 1 at back — per radius column
-        if not np.all(cum[0, :] == 0):
-            issues.append("pf_cumul[0] ≠ 0 for some radius")
-        if abs(cum[-1, :].min() - 1) > TOL_CDF or abs(cum[-1, :].max() - 1) > TOL_CDF:
-            issues.append(f"pf_cumul[-1] ∉ 1±{TOL_CDF} (range {cum[-1,:].min()}..{cum[-1,:].max()})")
-        if not np.all(np.diff(cum, axis=0) >= -1e-9):
-            issues.append("pf_cumul not monotone non-decreasing")
         if np.any(pf <= 0):
             issues.append("pf has non-positive entries")
 
@@ -121,15 +122,29 @@ def main():
         if dnorm > TOL_NORM: issues.append(f"max|Σwt·pf − 1| = {dnorm:.2e} > {TOL_NORM}")
         if dg > TOL_G:       issues.append(f"max|g_calc − g_tab| = {dg:.2e} > {TOL_G}")
 
+        # SAMPLING-READY: the browser builds cdf = cumsum(wt·pf)/T; discrete-node
+        # inversion has ⟨µ⟩ = Σ mass_i·µ_i = g. Assert it here so the emitted `pf`
+        # is proven to sample correctly (this is what pf_cumul failed to do).
+        mass = wt[:, None] * pf                         # [angle, radius]
+        T = mass.sum(axis=0)
+        disc_mean = (mass * xmu[:, None]).sum(axis=0) / T
+        dgs = np.max(np.abs(disc_mean - g))
+        if dgs > TOL_G:
+            issues.append(f"max|discrete-sampled ⟨µ⟩ − g| = {dgs:.2e} > {TOL_G} (CDF not sampling-ready)")
+
         status = "OK  " if not issues else "FAIL"
         if issues: all_ok = False
         print(f"{status} band {b:2d} (λ~{WAVELENGTH_UM[b]} µm): "
               f"{n_rad} r_eff, ssa {ssa.min():.3f}..{ssa.max():.3f}, "
-              f"g {g.min():.3f}..{g.max():.3f} | max|g_calc−g|={dg:.1e} max|norm−1|={dnorm:.1e}")
+              f"g {g.min():.3f}..{g.max():.3f} | max|g_calc−g|={dg:.1e} "
+              f"max|⟨µ⟩_sample−g|={dgs:.1e} max|norm−1|={dnorm:.1e}")
         for it in issues:
             print("       ! " + it)
 
-        # --- write per-band asset (transpose 2-D arrays to [radius][angle]) ---
+        # --- write per-band asset (transpose pf to [radius][angle]) ---
+        # `pf[k]` is radius k's phase function at the shared angle nodes; the
+        # browser builds the sampling CDF from it + grid `wt`. The file's
+        # pf_cumul is intentionally NOT emitted (see module docstring).
         band_obj = {
             "band": b,
             "wavelength_um": WAVELENGTH_UM[b],
@@ -140,9 +155,7 @@ def main():
             "ssa": sig(ssa, args.sigfigs),
             "g": sig(g, args.sigfigs),
             "qext": sig(qext, args.sigfigs),
-            # [radius][angle]: pf_cumul[k] is radius k's full 1000-pt CDF (contiguous)
-            "pf_cumul": [sig(cum[:, k], args.sigfigs) for k in range(n_rad)],
-            "pf":       [sig(pf[:, k],  args.sigfigs) for k in range(n_rad)],
+            "pf": [sig(pf[:, k], args.sigfigs) for k in range(n_rad)],
         }
         with open(os.path.join(args.out, f"mie_band_{b}.json"), "w") as f:
             json.dump(band_obj, f, separators=(",", ":"))

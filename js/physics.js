@@ -43,10 +43,13 @@ export const Physics = {
       return (1 + g * g - term * term) / (2 * g);
     },
 
-    // Rotate direction vector dir into a new direction sampled from the
-    // HG phase function with asymmetry parameter g.
-    scatterDirectionHG(dir, g) {
-      const muS = Physics.sampleHGCosTheta(g);
+    // Rotate `dir` by a sampled scattering cosine muS about a uniform azimuth.
+    // Phase-function-INDEPENDENT: HG and Mie each sample muS their own way, then
+    // share this rotation. Draws exactly one RNG value (the azimuth) -- so a
+    // scatter costs (one muS draw) + (one azimuth draw) in BOTH models. Because
+    // this was extracted from scatterDirectionHG verbatim, the RNG order and
+    // arithmetic are unchanged, so HG remains bit-identical (goldens verify).
+    applyScatter(dir, muS) {
       const sinS = Math.sqrt(Math.max(0, 1 - muS * muS));
       const phi = 2 * Math.PI * RNG.rand();
       const cosPhi = Math.cos(phi);
@@ -79,6 +82,73 @@ export const Physics = {
         y: muS * w.y + sinS * (cosPhi * u.y + sinPhi * v.y),
         z: muS * w.z + sinS * (cosPhi * u.z + sinPhi * v.z)
       });
+    },
+
+    // Rotate `dir` into a new direction sampled from the HG phase function
+    // with asymmetry parameter g. (Rotation now lives in applyScatter.)
+    scatterDirectionHG(dir, g) {
+      return Physics.applyScatter(dir, Physics.sampleHGCosTheta(g));
+    },
+
+    // Build the µ-space sampling CDF for one r_eff of a Mie phase function
+    // (Phase 5 / v6.1). `pfCol` is that r_eff's phase function P(µ_i) at the
+    // shared Gauss-Legendre nodes; `wt` are the GL quadrature weights (∫dµ ≈
+    // Σ wt_i f_i). The probability MASS at node i is wt_i·P_i (the phase
+    // function is already normalized so Σ wt·P = 1), so the cumulative
+    // distribution is the running sum of wt·P, normalized to end at 1.
+    //
+    // IMPORTANT — this is NOT the file's `pf_cumul`. That variable is the
+    // cumulative of P alone (no quadrature weights); inverting it in µ
+    // over-weights the forward peak and yields <µ> ≈ 0.96 instead of the
+    // tabulated g ≈ 0.80 (caught by verify_mie_sampling.mjs's <µ>-vs-g gate).
+    // The correct µ-CDF weights each node by wt·P. Built browser-side from the
+    // emitted `pf` + grid `wt` (the converter deliberately does not ship a
+    // CDF, so there is no chance of a wrong one going stale). Called ONCE per
+    // band+r_eff selection, never per photon.
+    //
+    // Returns a length-N array with cdf[0]=0, monotone non-decreasing; the
+    // implied cdf[N] = 1. cdf[i] is the cumulative mass BEFORE node i, so a
+    // draw ξ ∈ [cdf[i], cdf[i+1]) selects node i.
+    buildMieCdf(pfCol, wt) {
+      const n = pfCol.length;
+      const cdf = new Float64Array(n);
+      let acc = 0;
+      for (let i = 0; i < n; i++) { cdf[i] = acc; acc += wt[i] * pfCol[i]; }
+      const inv = acc > 0 ? 1 / acc : 0;      // acc = Σ wt·P ≈ 1; normalize exactly
+      for (let i = 0; i < n; i++) cdf[i] *= inv;
+      return cdf;
+    },
+
+    // Sample cos(scattering angle) from a tabulated Mie phase function by
+    // inverting its µ-space CDF (build with buildMieCdf). DISCRETE-NODE
+    // sampling: return the node µ whose probability bin the draw falls in --
+    // no within-bin interpolation. This reproduces the tabulated asymmetry g
+    // EXACTLY in the Gauss-Legendre sense (Σ mass_i·µ_i = g to float
+    // precision; verify_mie_sampling.mjs confirms <µ> = g to ~5e-5, the float32
+    // floor), which is the strongest consistency claim available and simpler
+    // than interpolation. The 1000 GL nodes are dense (esp. near the forward
+    // peak), so the angular quantization is far finer than any downstream bin
+    // (BRF 19×72, path histograms) and invisible in practice. One RNG draw,
+    // matching HG's single muS draw (photon-for-photon RNG structure identical
+    // between models). `xmu` runs forward (+1) to back (−1), index-aligned to
+    // cdf.
+    sampleMieCosTheta(cdf, xmu) {
+      const xi = RNG.rand();                 // [0, 1)
+      // Largest lo with cdf[lo] <= xi (cdf[0] = 0, so lo ≥ 0 always).
+      let lo = 0, hi = cdf.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (cdf[mid] <= xi) lo = mid; else hi = mid - 1;
+      }
+      return xmu[lo];
+    },
+
+    // Rotate `dir` into a new direction sampled from a tabulated Mie phase
+    // function (see sampleMieCosTheta). Sibling of scatterDirectionHG; not yet
+    // wired into simulatePhoton (that is the C6 UI/dispatch step) -- until then
+    // HG is the only path a run takes, so HG stays bit-identical.
+    scatterDirectionMie(dir, cdf, xmu) {
+      return Physics.applyScatter(dir, Physics.sampleMieCosTheta(cdf, xmu));
     },
 
     // First intersection of a ray with the cloud box

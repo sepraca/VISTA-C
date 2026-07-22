@@ -6,17 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Added (2026-07-21 — tooling/data, groundwork for v6.1 Mie phase functions)
+### Added (2026-07-21/22 — groundwork for v6.1 Mie phase functions)
 
-- **Offline netCDF→browser converter and MODIS Mie phase-function assets.**
+- **Offline netCDF→browser converter + MODIS Mie assets + sampling kernel.**
   `tools/mie_convert.py` reads the five source `.nc` files (MODIS bands 1/2/6/7/20;
-  gitignored) and emits `data/mie/` browser JSON: a shared angle/weight grid plus one
-  per-band file (sampling CDF, phase function, and per-r_eff cer/ssa/g/qext, transposed
-  to `[radius][angle]`), and a manifest. `tools/mie_validate.py` independently re-reads
-  the emitted JSON and cross-checks it against the source (round-trip, transpose
-  correctness, g = Σwt·pf·µ to ~5e-5, CDFs sampling-ready). **Not yet wired into the
-  app** — this is the data groundwork; the sampling kernel and UI come next. No change to
-  any existing behavior, gate, or golden.
+  gitignored) and emits `data/mie/` browser JSON: a shared angle/weight grid, one
+  per-band file (phase function `pf` transposed to `[radius][angle]`, plus per-r_eff
+  cer/ssa/g/qext), and a manifest (~1.24 MB total). `tools/mie_validate.py` independently
+  re-reads the emitted JSON and cross-checks it vs the source.
+- **`Physics.buildMieCdf` + `Physics.sampleMieCosTheta`** (physics.js): the browser
+  builds the µ-space sampling CDF `cumsum(wt·pf)/T` at band+r_eff selection and draws
+  the scattering cosine by discrete-node inversion, reproducing the tabulated asymmetry
+  g to the float32 floor (~2e-5). Gated by `tests/review-harness/verify_mie_sampling.mjs`
+  (in `run_all.mjs`). The shared scatter-rotation was extracted to `Physics.applyScatter`
+  so HG and Mie share it; **HG is bit-identical** (all three goldens MATCH).
+- Design note: the source files' `pf_cumul` is the cumulative of the phase function in
+  scattering ANGLE (∫p dθ), which lacks the sinθ solid-angle Jacobian — inverting it
+  over-weights the forward peak (sampled ⟨µ⟩≈0.96 vs g≈0.80), so it is deliberately not
+  shipped; the correct µ-space CDF `cumsum(wt·pf)` (wt = the dµ measure) is built
+  browser-side instead. Caught by the ⟨µ⟩-vs-g gate, and cross-confirmed against the
+  project author's prior standalone Python Mie MC, which builds the identical
+  `cumsum(pf*wt)` CDF with discrete-node sampling.
+- **Not yet wired into the app** — the UI selector + simulatePhoton dispatch are next
+  (C6). No change to any existing behavior, gate, or golden.
 
 ### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A2)
 
