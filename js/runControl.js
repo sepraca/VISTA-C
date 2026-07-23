@@ -14,6 +14,7 @@ import { Photons } from './photons.js';
 import { BottomPanel } from './bottomPanel.js';
 import { Export } from './exportUtils.js';
 import { Status } from './constants.js';
+import { Mie } from './mie.js';
 
 // Instant-mode batching (review P4, 2026-07-20 — replaces the fixed
 // CHUNK_SIZE = 1000 photons / DISPLAY_EVERY_CHUNKS = 10 pair).
@@ -220,7 +221,7 @@ export const RunControl = {
     },
 
     getSimParams: function() {
-      return {
+      return RunControl._applyMiePhaseParams({
         tauCloud:          world.tauCloud,
         slabW:             world.slabW,
         slabD:             world.slabD,
@@ -236,11 +237,116 @@ export const RunControl = {
         // boundary, 2026-07 fix -- see UI.getEffectiveDomainFactor doc comment.
         domainFactor:      UI.getEffectiveDomainFactor(),
         domainBoundary:    UI.getDomainBoundary()
-      };
+      });
+    },
+
+    // Overlay the Mie phase-function selection onto a base sim-params object
+    // (v6.1, C6). When a Mie band+r_eff is active and loaded, the scatter is
+    // drawn from its tabulated CDF (mieCdf/mieXmu) and ω₀/g are the derived
+    // per-(band,r_eff) values, NOT the UI inputs (those are shown disabled).
+    // No-op under HG, so the returned object is unchanged for every legacy run.
+    _applyMiePhaseParams: function(p) {
+      const m = state.mie;
+      if (m.active && m.ready && m.sel) {
+        p.mieCdf = m.sel.cdf;
+        p.mieXmu = m.sel.xmu;
+        p.omega0 = m.sel.ssa;   // derived single-scattering albedo
+        p.g      = m.sel.g;     // derived asymmetry (kernel ignores it under Mie)
+      }
+      return p;
+    },
+
+    // ---- Mie phase-function UI (v6.1, C6-B) ------------------------------
+    _savedG: null,          // user's HG g / ω₀ inputs, stashed across a Mie round-trip
+    _savedOmega0: null,
+
+    // Phase-function selector changed: "hg" (Henyey-Greenstein) or "mie".
+    // Async because switching to Mie loads its assets. onchange in index.html.
+    onPhaseModeChange: async function() {
+      const mode = document.getElementById("phaseMode")?.value ?? "hg";
+      const group = document.getElementById("mieControls");
+      const gEl = document.getElementById("gValue");
+      const oEl = document.getElementById("omega0");
+
+      if (mode !== "mie") {
+        // Back to HG: restore the user's own g / ω₀ and re-enable the inputs.
+        if (group) group.style.display = "none";
+        if (gEl) { gEl.disabled = false; if (RunControl._savedG != null) gEl.value = RunControl._savedG; }
+        if (oEl) { oEl.disabled = false; if (RunControl._savedOmega0 != null) oEl.value = RunControl._savedOmega0; }
+        RunControl._savedG = RunControl._savedOmega0 = null;
+        state.mie.active = false; state.mie.ready = false; state.mie.sel = null;
+        RunControl.resetScene();
+        return;
+      }
+
+      // Switching to Mie: stash the user's g / ω₀ (they show under HG), then
+      // disable the inputs and show the derived values once loaded.
+      if (gEl) RunControl._savedG = gEl.value;
+      if (oEl) RunControl._savedOmega0 = oEl.value;
+      if (group) group.style.display = "contents";
+      if (gEl) gEl.disabled = true;
+      if (oEl) oEl.disabled = true;
+      state.mie.active = true; state.mie.ready = false;
+
+      try {
+        await Mie.ensureCore();
+        RunControl._populateMieDropdowns();
+        await RunControl.onMieSelectionChange();   // loads current band + r_eff
+      } catch (err) {
+        showLimitWarning("Could not load Mie phase-function data — reverting to Henyey-Greenstein.");
+        const sel = document.getElementById("phaseMode");
+        if (sel) sel.value = "hg";
+        await RunControl.onPhaseModeChange();
+      }
+    },
+
+    // Band or r_eff dropdown changed: load/select and refresh derived ω₀ / g.
+    onMieSelectionChange: async function() {
+      if (!state.mie.active) return;
+      const band = parseInt(document.getElementById("mieBand")?.value ?? "1", 10);
+      const k    = parseInt(document.getElementById("mieReff")?.value ?? "0", 10);
+      state.mie.ready = false;
+      const sel = await Mie.select(band, k);
+      state.mie.sel = sel;
+      state.mie.ready = true;
+      // Show the derived ω₀ / g in the (disabled) inputs so the coupling is visible.
+      const gEl = document.getElementById("gValue");
+      const oEl = document.getElementById("omega0");
+      if (gEl) gEl.value = sel.g.toFixed(4);
+      if (oEl) oEl.value = sel.ssa.toFixed(4);
+      RunControl.resetScene();   // new scattering ⇒ clear accumulated stats
+    },
+
+    // Populate the band + r_eff dropdowns once, from the loaded manifest/grid.
+    _populateMieDropdowns: function() {
+      const bandSel = document.getElementById("mieBand");
+      const reffSel = document.getElementById("mieReff");
+      if (!bandSel || !reffSel || bandSel.options.length > 0) return;   // once
+      for (const b of Mie.bands()) {
+        const o = document.createElement("option");
+        o.value = String(b.band);
+        o.textContent = b.label;                       // "MODIS band 6 — 1.64 µm"
+        bandSel.appendChild(o);
+      }
+      const cer = Mie.cerGrid();
+      cer.forEach((c, i) => {
+        const o = document.createElement("option");
+        o.value = String(i);                           // index into the r_eff grid
+        o.textContent = `${c} µm`;
+        reffSel.appendChild(o);
+      });
+      const dflt = cer.indexOf(10);                    // default ≈ 10 µm if present
+      reffSel.value = String(dflt >= 0 ? dflt : Math.floor(cer.length / 2));
+    },
+
+    // True when a Mie run is requested but its assets have not finished loading.
+    _mieNotReady: function() {
+      return state.mie.active && !state.mie.ready;
     },
 
     runOne: async function() {
       if (state.isAnimating) return;
+      if (RunControl._mieNotReady()) { showLimitWarning("Mie phase function still loading — try again in a moment."); return; }
 
       // Successive Launch One clicks draw new, distinct photons from the
       // advancing RNG stream and accumulate into the statistics.
@@ -270,6 +376,7 @@ export const RunControl = {
 
     runEnsemble: async function() {
       if (state.isAnimating) return;
+      if (RunControl._mieNotReady()) { showLimitWarning("Mie phase function still loading — try again in a moment."); return; }
 
       // Reproducible ensemble mode:
       // each Launch Ensemble starts from the same seed and a clean state.

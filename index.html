@@ -590,6 +590,23 @@
          The blur handler only clamps and refreshes the display. -->
     <input id="pixelFraction" type="number" value="1.00" min="0.05" max="1" step="0.05" onblur="UI.getPixelFraction(); StatsPanel.updateDisplay()">
 
+    <!-- Scattering phase function (v6.1): Henyey-Greenstein (analytic, g input)
+         or a tabulated Mie phase function for a MODIS cloud-retrieval band at a
+         chosen effective radius. Under Mie, ω₀ and g become read-only values
+         derived from (band, r_eff) -- see RunControl.onPhaseModeChange. -->
+    <label>Scattering phase function</label>
+    <select id="phaseMode" onchange="RunControl.onPhaseModeChange()">
+      <option value="hg" selected>Henyey-Greenstein</option>
+      <option value="mie">Mie (MODIS band)</option>
+    </select>
+
+    <div id="mieControls" style="display:none">
+      <label style="padding-left:10px; color:#f7f44a">MODIS band</label>
+      <select id="mieBand" onchange="RunControl.onMieSelectionChange()"></select>
+      <label style="padding-left:10px; color:#f7f44a">Effective radius r<sub>eff</sub></label>
+      <select id="mieReff" onchange="RunControl.onMieSelectionChange()"></select>
+    </div>
+
     <label>HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
 

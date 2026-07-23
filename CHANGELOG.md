@@ -33,8 +33,15 @@ All notable changes to this project are documented here. The format is based on
   loads the `data/mie/` assets on demand and builds/caches the per-(band,r_eff) CDF.
   `verify_mie_transport.mjs` (in run_all) drives full photons through the Mie path:
   ω₀=1 conserves energy exactly, larger r_eff (more forward-peaked) transmits more, and
-  HG-default is bit-identical. **Still dormant in the app** — the UI selector that sets
-  `mieCdf` is the next step (C6-B); browser behavior is unchanged until then.
+  HG-default is bit-identical.
+- **UI selector (C6-B, 2026-07-22):** a "Scattering phase function" control (Henyey-
+  Greenstein vs "Mie (MODIS band)"); choosing Mie reveals band + r_eff dropdowns (24
+  tabulated radii), loads the assets via `js/mie.js`, and sets ω₀ and g to the derived
+  per-(band,r_eff) values shown read-only (the user's own g/ω₀ are restored on switching
+  back to HG). `RunControl.getSimParams` overlays `mieCdf`/`mieXmu`/derived ω₀ when Mie is
+  active (no-op under HG, so every HG run is unchanged); a Launch is gated until the async
+  asset load completes. Export/schema and the in-app phase-function plot are the remaining
+  C6 steps.
 
 ### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A2)
 

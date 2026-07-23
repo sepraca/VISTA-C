@@ -72,6 +72,14 @@ export const state = {
   // end); pausedMs is excluded from the reported elapsed time. Costs two
   // performance.now() calls per run.
   runTiming: { startMs: 0, endMs: 0, pausedMs: 0, photons: 0, fastMode: false, running: false },
+
+  // Mie phase function selection (v6.1, C6). active=false → Henyey-Greenstein
+  // (default; every legacy run). When the user picks a MODIS band + r_eff and
+  // its assets finish loading, `ready` becomes true and `sel` holds the
+  // Mie.select() result { cdf, xmu, ssa, g, band, reffIndex, cer,
+  // wavelength_um, pf, angDeg }. RunControl.getSimParams reads this to set
+  // mieCdf/mieXmu/omega0 for the kernel; a run is gated until ready.
+  mie: { active: false, ready: false, sel: null },
   stepRequested:         false,
   activePhotonID:        null,
   activePhotonStep:      0,
