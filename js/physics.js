@@ -490,7 +490,12 @@ export const Physics = {
 
       const { tauCloud, slabW, slabD, theta0, g, omega0,
               surfaceAlbedo, betaExt, surfaceDistanceKm, entryMode,
-              domainFactor, domainBoundary } = params;
+              domainFactor, domainBoundary,
+              // Mie phase function (v6.1, C6): when mieCdf is present the
+              // scatter is drawn from the tabulated Mie CDF instead of HG.
+              // Default null → HG path, so every existing (HG) run is
+              // bit-identical (mieCdf key simply absent from its params).
+              mieCdf = null, mieXmu = null } = params;
       // Periodic domain boundary (Phase 3) only applies under "uniform_domain"
       // illumination (same gating as domainFactor itself -- meaningless
       // otherwise). domainHalfW/domainHalfD are the fundamental-tile half-
@@ -942,7 +947,12 @@ export const Physics = {
           return {status: Status.ABSORBED, xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 
-        dir = Physics.scatterDirectionHG(dir, g);
+        // HG vs Mie dispatch (C6). Both consume the same 2 RNG draws (muS,
+        // azimuth), so the RNG stream structure is identical; the branch test
+        // itself draws nothing. HG when mieCdf is null (every legacy run).
+        dir = mieCdf
+          ? Physics.scatterDirectionMie(dir, mieCdf, mieXmu)
+          : Physics.scatterDirectionHG(dir, g);
         scatterings++;
       }
 

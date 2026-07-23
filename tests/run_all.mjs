@@ -80,6 +80,7 @@ gate("verify_phase4 (rigorous BRF/BTF)",  "tests/review-harness/verify_phase4.mj
 gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");
 gate("verify_p5 (streaming path hist)",   "tests/review-harness/verify_p5.mjs");
 gate("verify_mie_sampling (⟨µ⟩=g)",       "tests/review-harness/verify_mie_sampling.mjs");
+gate("verify_mie_transport (dispatch)",   "tests/review-harness/verify_mie_transport.mjs");
 gate("check_golden_ud (uniform domain)",  "tests/golden-snapshots/check_golden_ud.mjs");
 gate("check_golden_periodic",             "tests/golden-snapshots/check_golden_periodic.mjs");
 

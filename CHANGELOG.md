@@ -27,8 +27,14 @@ All notable changes to this project are documented here. The format is based on
   browser-side instead. Caught by the ⟨µ⟩-vs-g gate, and cross-confirmed against the
   project author's prior standalone Python Mie MC, which builds the identical
   `cumsum(pf*wt)` CDF with discrete-node sampling.
-- **Not yet wired into the app** — the UI selector + simulatePhoton dispatch are next
-  (C6). No change to any existing behavior, gate, or golden.
+- **Kernel dispatch + loader (C6-A, 2026-07-22):** `simulatePhoton` now branches HG vs
+  Mie on a `mieCdf` param (absent/null ⇒ HG, so every existing run is bit-identical —
+  all three goldens MATCH); the shared scatter rotation is `applyScatter`. `js/mie.js`
+  loads the `data/mie/` assets on demand and builds/caches the per-(band,r_eff) CDF.
+  `verify_mie_transport.mjs` (in run_all) drives full photons through the Mie path:
+  ω₀=1 conserves energy exactly, larger r_eff (more forward-peaked) transmits more, and
+  HG-default is bit-identical. **Still dormant in the app** — the UI selector that sets
+  `mieCdf` is the next step (C6-B); browser behavior is unchanged until then.
 
 ### Changed (2026-07-21 — pre-v6.1 refactoring pass, item A2)
 
