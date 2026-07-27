@@ -1,6 +1,6 @@
 // bottomPanel.js — Canvas-based plot drawing: μ histograms, BDF, path-length.
 
-import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
+import { SimStats, MU_BINS, BDF_MU_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI } from './ui.js';
 import { state } from './state.js';
 import { EntryMode } from './constants.js';
@@ -249,62 +249,51 @@ export const BottomPanel = {
       ctx2.fillText("μ = |cos(Θ)|", x0 + width / 2, yAxis + 36);
     },
 
-    smoothNearNadirAzimuth: function(grid, maxThetaDeg=5.0) {
-      // At very small zenith angles, azimuth is physically ill-conditioned:
-      // many φ bins correspond to almost the same direction (and at θ=0 they all
-      // collapse to one direction). Always average across φ for near-nadir rings
-      // to suppress Monte Carlo bin noise — this is a display-only cosmetic; the
-      // JSON export uses the raw, unaveraged grid.
-      for (let ir = 0; ir < grid.thetaBins; ir++) {
-        let rowTheta = null;
-        for (let ip = 0; ip < grid.phiBins; ip++) {
-          const info = grid.binInfo[ir][ip];
-          if (info) {
-            rowTheta = info.thetaDeg;
-            break;
-          }
-        }
-
-        if (rowTheta === null || rowTheta > maxThetaDeg) continue;
-
-        let sum = 0;
-        for (let ip = 0; ip < grid.phiBins; ip++) sum += grid.bdf[ir][ip];
-        const avg = sum / grid.phiBins;
-
-        for (let ip = 0; ip < grid.phiBins; ip++) {
-          grid.bdf[ir][ip] = avg;
-          if (grid.binInfo[ir][ip]) {
-            grid.binInfo[ir][ip].bdf = avg;
-          }
-        }
-      }
-
-      // Recompute max after smoothing.
-      grid.maxValue = 0;
-      for (let ir = 0; ir < grid.thetaBins; ir++) {
-        for (let ip = 0; ip < grid.phiBins; ip++) {
-          if (grid.bdf[ir][ip] > grid.maxValue) grid.maxValue = grid.bdf[ir][ip];
-        }
-      }
-
+    // RETIRED 2026-07-27 (uniform-µ BDF binning).
+    //
+    // This used to average the BDF across all φ for near-nadir rings, because the old
+    // uniform-θ grid gave the θ≈0 rings a vanishing Δµ (~0.001) and therefore almost no
+    // photons — the plot centre was pure Monte Carlo noise and had to be cosmetically
+    // smoothed. Under uniform-µ binning every bin subtends the SAME solid angle, so the
+    // nadir cap collects as many photons as any other bin and needs no special casing.
+    // Kept as an identity pass-through so any external caller keeps working; delete once
+    // no callers remain.
+    smoothNearNadirAzimuth: function(grid) {
       return grid;
+    },
+
+    // Colour-scale maximum in use for the CURRENT draw. Set once per overlay by
+    // resolveBdfScaleMax() so the polar plots and the colour bar cannot disagree.
+    _activeScaleMax: 1.0,
+
+    // Resolve the colour-scale max from the UI. Manual: the user's value.
+    // Auto: the 99th percentile of positive bins across the displayed grids --
+    // deliberately NOT the raw maximum, since a single sparse bin (common near
+    // the limb, or at small f_pix) would otherwise compress everything else.
+    resolveBdfScaleMax: function(grids) {
+      if (!UI.getBdfScaleAuto()) return UI.getBdfScaleMax();
+
+      const vals = [];
+      for (const g of grids) {
+        if (!g || !g.bdf) continue;
+        for (let ir = 0; ir < g.thetaBins; ir++) {
+          for (let ip = 0; ip < g.phiBins; ip++) {
+            const v = g.bdf[ir][ip];
+            if (v > 0 && Number.isFinite(v)) vals.push(v);
+          }
+        }
+      }
+      if (!vals.length) return 1.0;
+      vals.sort((a, b) => a - b);
+      const p99 = vals[Math.min(vals.length - 1, Math.floor(0.99 * vals.length))];
+      return p99 > 0 ? p99 : 1.0;
     },
 
     mapBdfToColorFraction: function(value) {
       if (value <= 0) return 0;
-
-      // Absolute BDF display:
-      // color scale is true BDF from 0 to 1, with values above 1 clipped.
-      let x = Math.max(0, Math.min(1, value));
-
-      if (UI.getBdfColorScaleMode() !== "log") {
-        return x;
-      }
-
-      // Log display from BDF = 0.01 to 1.
-      const floor = 0.01;
-      const clipped = Math.max(floor, x);
-      return Math.log10(clipped / floor) / Math.log10(1 / floor);
+      // Linear BDF display from 0 to the active scale max, values above clipped.
+      const vmax = BottomPanel._activeScaleMax > 0 ? BottomPanel._activeScaleMax : 1.0;
+      return Math.max(0, Math.min(1, value / vmax));
     },
 
     drawPathOverlay: function() {
@@ -523,8 +512,13 @@ export const BottomPanel = {
         ? { nRef: nTop, sidesIncluded: SimStats._sidesIncluded() }
         : {};
 
-      const reflectedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(reflWeightsUsed, reflOpts));
-      const transmittedGrid = BottomPanel.smoothNearNadirAzimuth(BottomPanel.computeBdfGrid(transmittedWeights, transOpts));
+      const reflectedGrid = BottomPanel.computeBdfGrid(reflWeightsUsed, reflOpts);
+      const transmittedGrid = BottomPanel.computeBdfGrid(transmittedWeights, transOpts);
+
+      // Resolve the colour-scale max ONCE, from both grids together, so the two
+      // polar plots and the shared colour bar are all on the same scale.
+      BottomPanel._activeScaleMax =
+        BottomPanel.resolveBdfScaleMax([reflectedGrid, transmittedGrid]);
 
       BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflTitleUsed);
       BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, transmittedTitle);
@@ -545,7 +539,7 @@ export const BottomPanel = {
         : isDomainBdf
         ? "Net down−up at surface (cloud-touched only; excludes clear-direct)"
         : "Net down−up at surface";
-      ctx2.fillText(`${transCaption}; near-nadir φ averaged.`, w / 2, 212);
+      ctx2.fillText(`${transCaption}; uniform-µ bins (equal solid angle).`, w / 2, 212);
 
       // Normalization note (Phase 4). The 226-line is free in the rigorous
       // case (the clear-direct note below only draws for entire-domain views).
@@ -560,9 +554,9 @@ export const BottomPanel = {
         // grid can hold <2 counts/bin -- the map then reads as clipped
         // speckle (empty bins black, single counts ≥1), not a smooth BRF.
         // The normalization is fine; the statistics aren't. Warn below
-        // an average of 2 counts/bin over the 19×72 grid.
+        // an average of 2 counts/bin over the 45×120 grid.
         const pixExits = pixelActiveBdf ? SimStats.pixelReflectedCount() : 0;
-        const sparse = pixelActiveBdf && pixExits < 2 * BDF_THETA_BINS * BDF_PHI_BINS;
+        const sparse = pixelActiveBdf && pixExits < 2 * BDF_MU_BINS * BDF_PHI_BINS;
         ctx2.fillText(
           pixelActiveBdf
             ? `BRF(pixel): N_pixel=${SimStats.nPixelIncident().toFixed(0)}, exits=${pixExits}` +
@@ -597,7 +591,7 @@ export const BottomPanel = {
     },
 
     // Build the displayable BDF/BRF grid from a flat incremental weight array
-    // (length BDF_THETA_BINS * BDF_PHI_BINS, accumulated in SimStats).
+    // (length BDF_MU_BINS * BDF_PHI_BINS, accumulated in SimStats).
     //
     // opts (Phase 4, all optional -- omitting them reproduces the historical
     // N-normalized BDF exactly, which remains the correct DOMAIN-MEAN quantity
@@ -612,7 +606,7 @@ export const BottomPanel = {
     //                 only observation A_proj ≡ W², so this stays false and the
     //                 formula collapses to the plain 1/nRef normalization.
     computeBdfGrid: function(weightsFlat, opts = {}) {
-      const thetaBins = BDF_THETA_BINS;
+      const thetaBins = BDF_MU_BINS;
       const phiBins = BDF_PHI_BINS;
       const weights = Array.from({ length: thetaBins }, (_, ir) =>
         Array.from({ length: phiBins }, (_, ip) => weightsFlat[ir * phiBins + ip]));
@@ -622,21 +616,22 @@ export const BottomPanel = {
       const nIncident = Math.max(opts.nRef ?? SimStats.stats.launched, 1);
       const sidesIncluded = opts.sidesIncluded ?? false;
       const dPhi = 2 * Math.PI / phiBins;
-      const dTheta = (Math.PI / 2) / (thetaBins - 1);
+
+      // Uniform-µ grid (2026-07-27): Δµ is CONSTANT, so every bin has the same solid
+      // angle Δω = Δµ·Δφ. Row ir spans µ ∈ [1−(ir+1)Δµ, 1−ir·Δµ], nadir-first — this
+      // must stay in lockstep with bdfBinIndex() in simstats.js.
+      const deltaMu = 1 / thetaBins;
 
       let maxValue = 0;
 
       for (let ir = 0; ir < thetaBins; ir++) {
-        const theta0 = Math.max(0, (ir - 0.5) * dTheta);
-        const theta1 = Math.min(Math.PI / 2, (ir + 0.5) * dTheta);
+        const muUpper = 1 - ir * deltaMu;              // closer to nadir
+        const muLower = Math.max(0, 1 - (ir + 1) * deltaMu);
 
-        // μ decreases from cos(theta0) to cos(theta1).
-        const muUpper = Math.cos(theta0);
-        const muLower = Math.cos(theta1);
-        const deltaMu = Math.max(1e-12, muUpper - muLower);
+        const theta0 = Math.acos(Math.max(0, Math.min(1, muUpper)));
+        const theta1 = Math.acos(Math.max(0, Math.min(1, muLower)));
 
-        // Use area-weighted mean μ for the bin, i.e. the midpoint in μ-space.
-        // This is better behaved than cos(theta_center), especially for wide θ bins.
+        // Midpoint in µ-space = the solid-angle-weighted mean µ of the bin.
         const muCenter = Math.max(1e-6, 0.5 * (muUpper + muLower));
 
         const thetaCenter = Math.acos(Math.max(0, Math.min(1, muCenter)));
@@ -680,35 +675,88 @@ export const BottomPanel = {
     drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title) {
       const thetaBins = grid.thetaBins;
       const phiBins = grid.phiBins;
-      const dTheta = (Math.PI / 2) / (thetaBins - 1);
 
-      // Draw cells as polar annular sectors.
-      for (let ir = 0; ir < thetaBins; ir++) {
-        const theta0 = Math.max(0, (ir - 0.5) * dTheta);
-        const theta1 = Math.min(Math.PI / 2, (ir + 0.5) * dTheta);
-        const r0 = radius * theta0 / (Math.PI / 2);
-        const r1 = radius * theta1 / (Math.PI / 2);
+      // ---- Pixel rasterization (2026-07-27), replacing per-cell sector fills ----
+      //
+      // The old code stroked one filled canvas path per bin. At 19×72 that was fine
+      // (~45 device px² per cell), but the uniform-µ grid puts 5400 cells into the same
+      // 70-px-radius disc (~11 px²/cell), and because uniform-µ rings thin toward the
+      // limb the outer rings fall to ~2 device px. Canvas anti-aliases every one of
+      // those 5400 paths, so each shared edge leaves a partial-coverage seam — 5400
+      // seams beating against the pixel grid produced a very visible moiré /
+      // "interference" texture in the panel and the exported PNG.
+      //
+      // Instead we rasterize the disc directly: for every DEVICE pixel, map (x,y) →
+      // (θ,φ) → bin, supersampled SS×SS and averaged. There are no paths to anti-alias,
+      // so there are no seams; sub-pixel cells area-average correctly instead of
+      // aliasing; and it is faster than 5400 arc() fills. Rendering happens on an
+      // offscreen canvas at device resolution and is then drawn through the existing
+      // transform, so it composites normally over the panel background.
+      const deltaMu = 1 / thetaBins;
+      const dPhi = 2 * Math.PI / phiBins;
 
-        for (let ip = 0; ip < phiBins; ip++) {
-          const value = grid.bdf[ir][ip];
-          if (value <= 0) continue;
+      const dpr = (ctx2.getTransform ? (ctx2.getTransform().a || 1) : 1);
+      const size = Math.max(2, Math.ceil(2 * radius * dpr));
+      const Rd = size / 2;
+      // 3×3 samples/pixel normally; drop to 2×2 on very high-DPI canvases so the
+      // per-redraw cost stays bounded (cost ∝ size²·SS²).
+      const SS = size > 420 ? 2 : 3;
+      const inv = 1 / SS;
 
-          const frac = BottomPanel.mapBdfToColorFraction(value);
-
-          // Draw sector centered at φ = ip * Δφ.
-          const dPhi = 2 * Math.PI / phiBins;
-          const a0 = -Math.PI / 2 + (ip - 0.5) * dPhi;
-          const a1 = -Math.PI / 2 + (ip + 0.5) * dPhi;
-
-          ctx2.beginPath();
-          ctx2.arc(cx, cy, r1, a0, a1, false);
-          ctx2.arc(cx, cy, r0, a1, a0, true);
-          ctx2.closePath();
-
-          ctx2.fillStyle = BottomPanel.bdfColorMap(frac);
-          ctx2.fill();
+      // 257-entry colour LUT so bdfColorMap() (which builds a CSS string) is called
+      // once per level rather than once per pixel.
+      if (!BottomPanel._lut) {
+        BottomPanel._lut = new Uint8Array(258 * 3);
+        for (let i = 0; i <= 257; i++) {
+          const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(BottomPanel.bdfColorMap(i / 257));
+          if (m) {
+            BottomPanel._lut[i * 3]     = +m[1];
+            BottomPanel._lut[i * 3 + 1] = +m[2];
+            BottomPanel._lut[i * 3 + 2] = +m[3];
+          }
         }
       }
+      const lut = BottomPanel._lut;
+
+      const off = document.createElement("canvas");
+      off.width = size; off.height = size;
+      const octx = off.getContext("2d");
+      const img = octx.createImageData(size, size);
+      const px = img.data;
+
+      const TWO_PI = 2 * Math.PI;
+      for (let iy = 0; iy < size; iy++) {
+        for (let ix = 0; ix < size; ix++) {
+          let acc = 0, hits = 0;
+          for (let sy = 0; sy < SS; sy++) {
+            const y = iy + (sy + 0.5) * inv - Rd;
+            for (let sx = 0; sx < SS; sx++) {
+              const x = ix + (sx + 0.5) * inv - Rd;
+              const r = Math.sqrt(x * x + y * y);
+              if (r > Rd) continue;
+              // radius is linear in θ; screen +y is down and φ=0 points "up"
+              const theta = (r / Rd) * (Math.PI / 2);
+              const mu = Math.cos(theta);
+              const ir = Math.min(thetaBins - 1, Math.max(0, Math.floor((1 - mu) * thetaBins)));
+              let phi = Math.atan2(x, -y);          // 0 at screen-up, increasing CW
+              if (phi < 0) phi += TWO_PI;
+              const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhi / 2) % TWO_PI) / dPhi));
+              acc += grid.bdf[ir][ip];
+              hits++;
+            }
+          }
+          if (!hits) continue;                       // outside the disc: leave transparent
+          const frac = BottomPanel.mapBdfToColorFraction(acc / hits);
+          const li = Math.max(0, Math.min(257, Math.round(frac * 257))) * 3;
+          const o = (iy * size + ix) * 4;
+          px[o]     = lut[li];
+          px[o + 1] = lut[li + 1];
+          px[o + 2] = lut[li + 2];
+          px[o + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
+      ctx2.drawImage(off, cx - radius, cy - radius, 2 * radius, 2 * radius);
 
       // Grid rings and spokes
       ctx2.strokeStyle = "rgba(226,232,240,0.62)";
@@ -764,7 +812,7 @@ export const BottomPanel = {
 
     drawColorBar: function(ctx2, x, y, w, h, label) {
       const steps = 120;
-      const isLog = UI.getBdfColorScaleMode() === "log";
+      const vmax = BottomPanel._activeScaleMax > 0 ? BottomPanel._activeScaleMax : 1.0;
 
       for (let i = 0; i < steps; i++) {
         const t = i / (steps - 1);
@@ -781,18 +829,8 @@ export const BottomPanel = {
       ctx2.textAlign = "left";
       ctx2.textBaseline = "middle";
 
-      function drawTick(value, labelText) {
-        let yTick;
-
-        if (isLog) {
-          const floor = 0.01;
-          const v = Math.max(floor, Math.min(1, value));
-          const frac = Math.log10(v / floor) / Math.log10(1 / floor);
-          yTick = y + h * (1 - frac);
-        } else {
-          const frac = Math.max(0, Math.min(1, value));
-          yTick = y + h * (1 - frac);
-        }
+      function drawTick(frac01, labelText) {
+        const yTick = y + h * (1 - Math.max(0, Math.min(1, frac01)));
 
         ctx2.strokeStyle = "#e2e8f0";
         ctx2.lineWidth = 1.0;
@@ -805,16 +843,11 @@ export const BottomPanel = {
         ctx2.fillText(labelText, x + w + 7, yTick);
       }
 
-      if (isLog) {
-        drawTick(1.0, "1.0");
-        drawTick(0.1, "0.1");
-        drawTick(0.01, "0.01");
-      } else {
-        drawTick(1.0, "1");
-        drawTick(0.75, "0.75");
-        drawTick(0.5, "0.5");
-        drawTick(0.25, "0.25");
-        drawTick(0.0, "0");
+      // Ticks are fractions of the active max, labelled with the ABSOLUTE value
+      // so the reader always sees real BDF numbers regardless of the scale set.
+      const fmt = (v) => (vmax >= 1 ? v.toFixed(2) : vmax >= 0.1 ? v.toFixed(3) : v.toExponential(1));
+      for (const f of [1.0, 0.75, 0.5, 0.25, 0.0]) {
+        drawTick(f, f === 0 ? "0" : fmt(f * vmax));
       }
 
       ctx2.save();
@@ -822,7 +855,7 @@ export const BottomPanel = {
       ctx2.rotate(-Math.PI / 2);
       ctx2.textAlign = "center";
       ctx2.textBaseline = "middle";
-      ctx2.fillText(isLog ? `Log ${label}` : label, 0, 0);
+      ctx2.fillText(UI.getBdfScaleAuto() ? `${label} (auto)` : label, 0, 0);
       ctx2.restore();
     },
 

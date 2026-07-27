@@ -43,13 +43,63 @@ const { RNG } = await import(`${BASE}rng.js`);
 const { Physics } = await import(`${BASE}physics.js`);
 const { SimStats } = await import(`${BASE}simstats.js`);
 const { Export } = await import(`${BASE}exportUtils.js`);
+const { state } = await import(`${BASE}state.js`);
+
+// Optional Mie phase function (2026-07-27, C6-C). Env-driven so the positional
+// CLI contract above is unchanged for every existing caller:
+//   MIE_BAND=<1|2|6|7|20> MIE_REFF_INDEX=<0..23> node gen_export.mjs ...
+// Unset => Henyey-Greenstein with g below, exactly as before. Sets state.mie so
+// Export.getExportDataObject() emits inputs.phase_function.type = "mie" with the
+// band-averaged g / ω₀, and overlays the sampling CDF into the kernel params the
+// same way runControl._applyMiePhaseParams does in the browser.
+const mieBand = process.env.MIE_BAND ? parseInt(process.env.MIE_BAND, 10) : null;
+const mieK = process.env.MIE_REFF_INDEX ? parseInt(process.env.MIE_REFF_INDEX, 10) : 0;
+let mieSel = null;
+if (mieBand !== null) {
+  const { readFileSync } = await import("node:fs");
+  const DATA = new URL("../../data/mie/", import.meta.url);
+  const load = (f) => JSON.parse(readFileSync(new URL(f, DATA)));
+  const grid = load("mie_grid.json");
+  const band = load(`mie_band_${mieBand}.json`);
+  const WT = Float64Array.from(grid.wt);
+  const XMU = Float64Array.from(grid.xmu);
+  mieSel = {
+    band: mieBand, reffIndex: mieK,
+    cer: band.cer_um[mieK], ssa: band.ssa[mieK], g: band.g[mieK],
+    wavelength_um: band.wavelength_um,
+    cdf: Physics.buildMieCdf(Float64Array.from(band.pf[mieK]), WT),
+    xmu: XMU
+  };
+  state.mie.active = true; state.mie.ready = true; state.mie.sel = mieSel;
+}
+
+// HG_G lets an HG control be run at a MATCHED asymmetry parameter (e.g. the
+// band-averaged g of a Mie selection), so an HG-vs-Mie comparison isolates the
+// phase-function SHAPE instead of confounding it with a different g.
+const hgG = process.env.HG_G ? Number(process.env.HG_G) : 0.85;
+
+// Keep the DOM shim in lockstep with the kernel params. Export.getExportDataObject()
+// reads inputs.hg_g / inputs.ssa_omega0 via UI.getG()/getOmega0(), i.e. from the shim —
+// NOT from `params` — so without this the file would record g=0.85 while the run
+// actually used HG_G (or, under Mie, the band-averaged values the browser writes into
+// those inputs). Mirrors runControl.onMieSelectionChange.
+domValues.gValue = String(mieSel ? mieSel.g : hgG);
+if (mieSel) domValues.omega0 = String(mieSel.ssa);
+
+// TAU_CLOUD overrides the default optical depth (10). Optically thinner clouds keep
+// low scattering orders dominant, so single-scattering angular structure (cloudbow,
+// glory) survives instead of being washed out by multiple scattering.
+const tauCloud = process.env.TAU_CLOUD ? Number(process.env.TAU_CLOUD) : 10;
+domValues.tauCloud = String(tauCloud);
 
 const params = {
-  tauCloud: 10, slabW: 40, slabD: 40,
+  tauCloud, slabW: 40, slabD: 40,
   theta0: th0 * Math.PI / 180,
-  g: 0.85, omega0: 1.0,
+  g: mieSel ? mieSel.g : hgG,
+  omega0: mieSel ? mieSel.ssa : 1.0,
   surfaceAlbedo: As, betaExt: 10.0, surfaceDistanceKm: 0.5,
-  entryMode: mode, domainFactor: M, domainBoundary: boundary
+  entryMode: mode, domainFactor: M, domainBoundary: boundary,
+  ...(mieSel ? { mieCdf: mieSel.cdf, mieXmu: mieSel.xmu } : {})
 };
 
 RNG.reset(42);

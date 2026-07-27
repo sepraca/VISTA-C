@@ -1,7 +1,7 @@
 // exportUtils.js — PNG download and diagnostic header generation.
 
 import { state, UI_PANEL_WIDTH } from './state.js';
-import { SimStats, MU_BINS, BDF_THETA_BINS, BDF_PHI_BINS } from './simstats.js';
+import { SimStats, MU_BINS, BDF_MU_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
 import { EntryMode, DomainBoundary } from './constants.js';
@@ -257,13 +257,25 @@ export const Export = {
     },
 
     getExportParameterLines: function() {
+      // C6-C (2026-07-27): under Mie, the two scattering rows are REPLACED in place
+      // (never added to) with the band / r_eff identity and the band-averaged g, ω₀.
+      // The header must stay exactly 12 lines -- downloadBottomPanel slices it in
+      // fixed groups of 3. Before this, a Mie run rendered as "HG g: 0.86", which is
+      // indistinguishable from a genuine HG run at the same asymmetry parameter.
+      const mieSel = (state.mie && state.mie.active) ? state.mie.sel : null;
+      const scatterLines = mieSel
+        ? [`Mie: MODIS band ${mieSel.band} (${mieSel.wavelength_um.toFixed(2)} µm),` +
+             ` r_eff: ${mieSel.cer.toFixed(1)} µm`,
+           `g (band-avg): ${mieSel.g.toFixed(4)} ,   ω₀ (band-avg): ${mieSel.ssa.toFixed(5)}`]
+        : [`HG g: ${UI.getG().toFixed(2)}`,
+           `SSA (ω₀): ${UI.getOmega0().toFixed(2)}`];
       return [
         `Photons: ${SimStats.stats.launched}`,
         `COT (τ): ${UI.getTauCloud().toFixed(2)}`,
         `Horizontal extent: ${UI.getHorizontalExtent().toFixed(1)}`,
         `Θ₀: ${(UI.getTheta0Rad() * 180 / Math.PI).toFixed(1)}°`,
-        `HG g: ${UI.getG().toFixed(2)}`,
-        `SSA (ω₀): ${UI.getOmega0().toFixed(2)}`,
+        scatterLines[0],
+        scatterLines[1],
         `Surface Albedo A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
@@ -786,7 +798,22 @@ export const Export = {
     // effective clear-air share). Purely additive; 1.0-1.3 readers remain
     // compatible, but open-boundary uniform-domain results are NOT
     // numerically comparable across the 1.3→1.4 boundary at Θ₀ > 0.
-    SCHEMA_VERSION: "1.4",
+    // 1.5 (2026-07-27) — TWO BREAKING CHANGES, both deliberate:
+    //   (a) BDF/BRF/BTF GRID is now UNIFORM IN µ, 45 µ × 120 φ (was 19 θ × 72 φ
+    //       uniform in θ). Every bin subtends equal solid angle Δω = Δµ·Δφ, so
+    //       counts are statistically uniform across the hemisphere. All bdf.*
+    //       arrays change shape; added bdf.n_mu_bins, bdf.mu_edges and
+    //       bdf.binning="uniform_mu" (n_theta_bins kept as a deprecated alias).
+    //       theta_centers_deg is now acos(mu_centers) and is NOT evenly spaced —
+    //       this also resolves the pre-1.5 inconsistency where theta_centers_deg
+    //       were acos(µ-midpoint) while the description claimed 0,5,…,90°.
+    //   (b) inputs.phase_function records the scattering choice (C6-C), so a Mie
+    //       run is no longer indistinguishable from an HG run with the same g.
+    // Also note: results produced BEFORE 2026-07-27 came from an RNG whose 32-bit
+    // state was not masked (see TODO D.0). Means were unbiased, but per-bin noise
+    // was inflated for runs above ~175k photons; 1.5 exports are the first with
+    // trustworthy uncertainties. Pre-1.5 files are NOT statistically comparable.
+    SCHEMA_VERSION: "1.5",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -807,6 +834,41 @@ export const Export = {
         surface_distance_km: UI.getSurfaceDistanceKm(),
         photon_illumination: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side" | "uniform_domain"
         rng_seed: RNG.currentSeed(),
+        // --- Phase function (schema 1.5, C6-C) ---
+        // Before 1.5 a Mie run was indistinguishable from an HG run in the export:
+        // hg_g / ssa_omega0 carried the DERIVED band-averaged values with nothing
+        // recording that they came from a Mie table, so e.g. band 1 / r_eff=10µm
+        // exported as a plain "g=0.86" HG run. This block makes a Mie export
+        // self-identifying. Note hg_g / ssa_omega0 above are retained unchanged for
+        // backward compatibility and, under Mie, equal the band-averaged values here.
+        phase_function: (function () {
+          const sel = state.mie && state.mie.active ? state.mie.sel : null;
+          if (!sel) {
+            return {
+              type: "hg",
+              description: "Henyey-Greenstein with user-set asymmetry parameter g.",
+              g: UI.getG(),
+              omega0: UI.getOmega0()
+            };
+          }
+          return {
+            type: "mie",
+            description: "Tabulated Mie phase function for a MODIS cloud-retrieval " +
+                         "band at the selected liquid-water effective radius. g and " +
+                         "omega0 are BAND-AVERAGED values supplied with the table " +
+                         "(not fitted): g = Σ wt·pf·µ over the table's Gauss-Legendre " +
+                         "µ grid. The transport samples the tabulated phase function " +
+                         "directly, so g is diagnostic only — it does not drive the " +
+                         "scattering the way the HG g does.",
+            modis_band: sel.band,
+            wavelength_um: sel.wavelength_um,
+            r_eff_um: sel.cer,
+            r_eff_index: sel.reffIndex,
+            g_band_averaged: sel.g,
+            omega0_band_averaged: sel.ssa,
+            units: { wavelength_um: "micrometers", r_eff_um: "micrometers" }
+          };
+        })(),
         units: {
           tau_cloud: "optical depth (dimensionless)",
           horizontal_extent: "optical depth (slab width in τ-units)",
@@ -996,7 +1058,7 @@ export const Export = {
       const netGrid  = BottomPanel.computeBdfGrid(SimStats.transmittedBdfWeights());
 
       const thetaCentersDeg = [], muCentersBdf = [], deltaMu = [];
-      for (let ir = 0; ir < BDF_THETA_BINS; ir++) {
+      for (let ir = 0; ir < BDF_MU_BINS; ir++) {
         const info = reflGrid.binInfo[ir][0];
         thetaCentersDeg.push(info.thetaDeg);
         muCentersBdf.push(info.mu);
@@ -1004,11 +1066,25 @@ export const Export = {
       }
       const phiCentersDeg = [];
       for (let ip = 0; ip < BDF_PHI_BINS; ip++) phiCentersDeg.push(netGrid.binInfo[0][ip].phiDeg);
+      // Explicit µ bin edges for the BDF GRID (schema 1.5): descending 1 → 0,
+      // nadir-first, so consumers never have to re-derive the grid from centres.
+      // NOTE the name: `muEdges` is already taken in this scope by the µ exit-angle
+      // HISTOGRAM edges (MU_BINS, above) — a different grid with a different bin
+      // count. Do not merge them.
+      const bdfMuEdges = [];
+      for (let ir = 0; ir <= BDF_MU_BINS; ir++) bdfMuEdges.push(Math.max(0, 1 - ir / BDF_MU_BINS));
 
       const bdf = {
         description: "Bidirectional distribution function BDF = (W/N)·π/(µ·Δµ·Δφ). " +
-                     "Rows are exit zenith Θ bins (0,5,…,90°), columns azimuth φ " +
-                     "bins (0,5,…,355°). 'weights' are raw, non-negative " +
+                     "GRID (schema 1.5, 2026-07-27): rows are UNIFORM-µ exit bins, " +
+                     "NOT uniform-θ. Row ir spans µ ∈ [1−(ir+1)/n_mu_bins, " +
+                     "1−ir/n_mu_bins], ordered nadir-first (row 0 is the nadir cap, " +
+                     "row n_mu_bins−1 the grazing ring), so every bin subtends the " +
+                     "same solid angle Δω = Δµ·Δφ and photon counts are statistically " +
+                     "uniform across the hemisphere. Use mu_centers / mu_edges for " +
+                     "quantitative work; theta_centers_deg = acos(mu_centers) is " +
+                     "provided for labelling and is NOT evenly spaced. Columns are " +
+                     "azimuth φ bins centred on 0,3,…,357°. 'weights' are raw, non-negative " +
                      "terminal-event bin tallies W (v6.0.1: each photon +1 at its " +
                      "terminal exit/arrival direction; surface reflections are never " +
                      "binned); 'bdf' is the normalized function. Transmitted grids " +
@@ -1021,14 +1097,17 @@ export const Export = {
                      "decontaminated tallies the panels plot; normalized BDF is " +
                      "exported for the raw grid only (renormalize the cloud-only " +
                      "weights with the same (W/N)·π/(µ·Δµ·Δφ) if needed). These " +
-                     "values are raw/unsmoothed; the PNG figure φ-averages the " +
-                     "innermost near-nadir ring (θ<5°) for display only, so the PNG " +
-                     "and this JSON differ at that ring.",
-        n_theta_bins: BDF_THETA_BINS,
+                     "values are raw/unsmoothed. As of schema 1.5 the PNG applies no " +
+                     "near-nadir φ-averaging either (equal-solid-angle bins removed " +
+                     "the need), so the PNG and this JSON now show the same grid.",
+        n_mu_bins: BDF_MU_BINS,
         n_phi_bins: BDF_PHI_BINS,
-        theta_centers_deg: thetaCentersDeg,   // length n_theta_bins
-        mu_centers: muCentersBdf,             // length n_theta_bins
-        delta_mu: deltaMu,                    // length n_theta_bins
+        n_theta_bins: BDF_MU_BINS,            // DEPRECATED alias of n_mu_bins (pre-1.5 readers)
+        binning: "uniform_mu",                // was "uniform_theta" before schema 1.5
+        mu_edges: bdfMuEdges,                 // length n_mu_bins+1, descending 1 → 0
+        theta_centers_deg: thetaCentersDeg,   // = acos(mu_centers); NOT evenly spaced
+        mu_centers: muCentersBdf,             // length n_mu_bins
+        delta_mu: deltaMu,                    // length n_mu_bins (constant = 1/n_mu_bins)
         phi_centers_deg: phiCentersDeg,       // length n_phi_bins
         delta_phi_rad: netGrid.binInfo[0][0].deltaPhi,
         N_incident: reflGrid.binInfo[0][0].N,

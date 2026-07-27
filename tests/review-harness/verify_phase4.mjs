@@ -15,8 +15,11 @@ globalThis.window = { devicePixelRatio: 2 };
 const BASE = new URL("../../js/", import.meta.url).href;
 const { RNG } = await import(`${BASE}rng.js`);
 const { Physics } = await import(`${BASE}physics.js`);
-const { SimStats } = await import(`${BASE}simstats.js`);
+const { SimStats, BDF_MU_BINS, BDF_PHI_BINS } = await import(`${BASE}simstats.js`);
 const { BottomPanel } = await import(`${BASE}bottomPanel.js`);
+// Never hardcode the BDF grid shape here — it changed 19θ×72φ (uniform θ) →
+// 45µ×120φ (uniform µ) on 2026-07-27 and silently broke Gate 3's azimuth.
+const NPHI = BDF_PHI_BINS;
 
 let fails = 0;
 const check = (name, ok) => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) fails++; };
@@ -64,7 +67,7 @@ domValues.observationGeometry = "all_faces";
   let ok = true;
   for (const ir of [3, 10, 17]) for (const ip of [0, 18, 45]) {
     const info = old.binInfo[ir][ip];
-    const expect = old.bdf[ir][ip] / SimStats.aProjOverTop(info.mu, ip * (2 * Math.PI / 72));
+    const expect = old.bdf[ir][ip] / SimStats.aProjOverTop(info.mu, ip * (2 * Math.PI / NPHI));
     if (Math.abs(brf.bdf[ir][ip] - expect) > 1e-12 * Math.max(1, expect)) ok = false;
   }
   check("all_faces obs: BRF = BDF / (A_proj/W²) per bin", ok);
@@ -110,10 +113,10 @@ check("UD M=1 ≡ legacy top at theta0=0 (margin=0): N_top identical and BRF gri
 // uniform-top BRF by the ~1.41× surface-recycling brightening (dilution gone) ----
 run({ ...P0, theta0: 0, surfaceAlbedo: 0.5, entryMode: "top" }, 400000);
 const t = BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(), { nRef: SimStats.nTopIncident() });
-const tMid = t.bdf.slice(4, 13).flat().reduce((a, b) => a + b) / (9 * 72);
+const tMid = t.bdf.slice(4, 13).flat().reduce((a, b) => a + b) / (9 * NPHI);
 run({ ...P0, theta0: 0, surfaceAlbedo: 0.5, entryMode: "uniform_domain", domainFactor: 4 }, 400000);
 const u = BottomPanel.computeBdfGrid(SimStats.reflectedBdfWeights(), { nRef: SimStats.nTopIncident() });
-const uMid = u.bdf.slice(4, 13).flat().reduce((a, b) => a + b) / (9 * 72);
+const uMid = u.bdf.slice(4, 13).flat().reduce((a, b) => a + b) / (9 * NPHI);
 const enh = uMid / tMid;
 check(`UD M=4 vs top (Θ₀=0, Aₛ=0.5): BRF enhancement ${enh.toFixed(3)} in [1.30, 1.55]`,
       enh > 1.30 && enh < 1.55);
@@ -142,7 +145,7 @@ run({ ...P0, theta0: 0, surfaceAlbedo: 0.0, entryMode: "top" }, 400000);
   // than the face average -- but within a loose physical band.
   const full = BottomPanel.computeBdfGrid(SimStats.bdfReflWeights,  { nRef: SimStats.nTopIncident() });
   const pix  = BottomPanel.computeBdfGrid(SimStats.bdfReflPixelWeights, { nRef: nPix });
-  const mid = g => g.bdf.slice(2, 12).flat().reduce((a, b) => a + b) / (10 * 72);
+  const mid = g => g.bdf.slice(2, 12).flat().reduce((a, b) => a + b) / (10 * NPHI);
   const ratio = mid(pix) / mid(full);
   check(`f_pix=0.5 pixel BRF / whole-face BRF = ${ratio.toFixed(3)} in [1.00, 1.35] (center brighter than edges)`,
         ratio >= 1.0 && ratio <= 1.35);

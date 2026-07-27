@@ -21,8 +21,23 @@ import { EntryMode, ObsGeom, DEFAULT_OBS_GEOM, DomainBoundary, Status } from './
 
 // Bin-layout constants (shared with bottomPanel.js).
 export const MU_BINS = 20;          // exit-angle histograms
-export const BDF_THETA_BINS = 19;   // zenith bins centered at 0,5,...,90 deg
-export const BDF_PHI_BINS = 72;     // azimuth bins centered at 0,5,...,355 deg
+// BDF/BRF/BTF angular grid — UNIFORM IN µ = cos(θ), not in θ (changed 2026-07-27).
+//
+// Every bin subtends the SAME solid angle (Δω = Δµ·Δφ, Δµ = 1/BDF_MU_BINS), so photon
+// counts are statistically uniform across the hemisphere and the whole plot carries one
+// noise level. The previous uniform-θ grid (19 bins of 5°) gave the near-nadir bins a
+// vanishing Δµ (~0.001 for the θ=0 bin) and hence almost no photons, which is why the
+// plot centre was grainy and why a near-nadir azimuthal smoothing hack was needed —
+// that hack is now retired.
+//
+// Resolution trade (Δθ = Δµ/sinθ): finest at grazing (~1.3° at θ=90°), ~1.7° across the
+// cloudbow band (θ≈50–70°), coarsening toward nadir where the innermost bin is a single
+// 0–12.1° cap. That cap is inherent to equal-solid-angle binning: near-nadir angular
+// detail (e.g. the glory at overhead sun) is deliberately traded for uniform statistics.
+//
+// Row ordering is preserved from the old grid: index 0 = nadir, index N-1 = grazing.
+export const BDF_MU_BINS = 45;      // µ bins, uniform in µ over [0,1]; Δµ = 1/45
+export const BDF_PHI_BINS = 120;    // azimuth bins centered at 0,3,...,357 deg
 
 // µ histogram bin index. Reversed axis: µ=1 in bin 0, µ=0 in the last bin.
 // Must match the historical binning in drawMuOverlayHistogram exactly.
@@ -32,16 +47,19 @@ function muBinIndex(mu) {
 }
 
 // BDF grid bin indices for an exit direction {x, y, z}.
-// Must match the historical binning in computeBdfGrid exactly.
+// Must match the bin edges used in computeBdfGrid exactly.
+//
+// µ bins are uniform in µ = |cos θ| and ordered nadir-first, so row ir spans
+// µ ∈ [1 − (ir+1)/N, 1 − ir/N]:  ir = 0 is the nadir cap (µ near 1), ir = N−1 the
+// grazing ring (µ near 0). φ bins stay CENTER-ALIGNED on 0° so the principal plane
+// falls at a bin centre and the φ ↔ 360−φ mirror pairing stays exact.
 function bdfBinIndex(dx, dy, dz) {
   const muAbs = Math.max(0, Math.min(1, Math.abs(dz ?? 0)));
-  const theta = Math.acos(muAbs);
 
   let phi = Math.atan2(dy ?? 0, dx ?? 0);
   if (phi < 0) phi += 2 * Math.PI;
 
-  const dTheta = (Math.PI / 2) / (BDF_THETA_BINS - 1);
-  const ir = Math.min(BDF_THETA_BINS - 1, Math.max(0, Math.round(theta / dTheta)));
+  const ir = Math.min(BDF_MU_BINS - 1, Math.max(0, Math.floor((1 - muAbs) * BDF_MU_BINS)));
 
   const dPhi = 2 * Math.PI / BDF_PHI_BINS;
   const phiCentered = (phi + dPhi / 2) % (2 * Math.PI);
@@ -251,22 +269,22 @@ export const SimStats = {
     // degenerate single-angle spike. For legacy illumination modes (touchedCloud
     // always true) this is bit-identical to muTransSideBins.
     muTransSideCloudOnlyBins: new Float64Array(MU_BINS),
-    bdfReflWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfTransBaseWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfTransSideWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfTransSideCloudOnlyWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfReflWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
+    bdfTransBaseWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
+    bdfTransSideWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
+    bdfTransSideCloudOnlyWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
     // Terminal side-wall escape angular distributions, split by vertical
     // direction. Used only by observation geometry "b": upward escapes join the
     // reflected channel, downward escapes join the transmitted channel.
     muSideEscUpBins:   new Float64Array(MU_BINS),
     muSideEscDownBins: new Float64Array(MU_BINS),
-    bdfSideEscUpWeights:   new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
-    bdfSideEscDownWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfSideEscUpWeights:   new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
+    bdfSideEscDownWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
     // Surface-reflected upward bypass (no cloud face): a subset peeled out of the
     // upward-escape pool. Joins the ENTIRE DOMAIN block's R_domain always;
     // stays in S under "all_faces" (the observation-geometry dropdown).
     muBypassBins:     new Float64Array(MU_BINS),
-    bdfBypassWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfBypassWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
     // Sub-cloud observation pixel (Phase 4): cloud-TOP-face exits whose exit
     // position falls inside the centered pixel |x|,|y| ≤ f_pix·W/2. One
     // parallel accumulator set, gated by an exact geometric test at record
@@ -276,7 +294,7 @@ export const SimStats = {
     // Observation-geometry dropdown does not apply to the pixel view.
     // At f_pix = 1 these are bit-identical to muReflBins/bdfReflWeights.
     muReflPixelBins:     new Float64Array(MU_BINS),
-    bdfReflPixelWeights: new Float64Array(BDF_THETA_BINS * BDF_PHI_BINS),
+    bdfReflPixelWeights: new Float64Array(BDF_MU_BINS * BDF_PHI_BINS),
     // Cached at reset() (record() must not read the DOM per photon): pixel
     // half-width in position units, and f_pix for the N_pixel reference.
     _pixelFrac: 1,

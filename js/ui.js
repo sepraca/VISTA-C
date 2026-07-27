@@ -338,7 +338,15 @@ export const UI = {
 
     // --- Plot control inputs ---
     getBottomPanelMode:   function() { return document.getElementById("bottomPanelMode")?.value ?? "mu"; },
-    getBdfColorScaleMode: function() { return document.getElementById("bdfColorScale")?.value ?? "linear"; },
+    // BDF/BRF colour-scale maximum (2026-07-27, replaces the retired log toggle).
+    // Auto resolves to a high percentile of the displayed grids (see
+    // BottomPanel.resolveBdfScaleMax) rather than the raw max, so a single hot
+    // Monte Carlo bin cannot blow out the scale.
+    getBdfScaleMax: function() {
+      const v = parseFloat(document.getElementById("bdfScaleMax")?.value);
+      return (Number.isFinite(v) && v > 0) ? v : 1.0;
+    },
+    getBdfScaleAuto: function() { return document.getElementById("bdfScaleAuto")?.checked ?? false; },
     getShowSurfaceHeatmap: function() { return document.getElementById("showSurfaceHeatmap")?.checked ?? true; },
 
     // --- Outcome color map ---

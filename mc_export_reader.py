@@ -154,9 +154,65 @@ class MCExport:
     def clear_direct_mu_bin_index(self) -> int | None:
         return self.raw["mu_histograms"].get("clear_direct_mu_bin_index")
 
+    # ---- Phase function (schema >= 1.5, C6-C) -----------------------------
+    @property
+    def phase_function(self) -> dict:
+        """Scattering choice for this run.
+
+        Schema >= 1.5 records it explicitly. For older files we synthesize an
+        equivalent HG record from inputs.hg_g / inputs.ssa_omega0 -- note that a
+        PRE-1.5 MIE RUN IS INDISTINGUISHABLE FROM AN HG RUN in the file (that
+        ambiguity is exactly why 1.5 added this block), so such files are
+        reported as {'type': 'hg', 'assumed': True}.
+        """
+        pf = self.raw.get("inputs", {}).get("phase_function")
+        if pf is not None:
+            return pf
+        inp = self.raw.get("inputs", {})
+        return {"type": "hg", "assumed": True,
+                "g": inp.get("hg_g"), "omega0": inp.get("ssa_omega0")}
+
+    @property
+    def is_mie(self) -> bool:
+        return self.phase_function.get("type") == "mie"
+
     # ---- BDF --------------------------------------------------------------
     @property
+    def bdf_binning(self) -> str:
+        """'uniform_mu' (schema >= 1.5) or 'uniform_theta' (pre-1.5).
+
+        This is NOT cosmetic: pre-1.5 grids are 19 theta x 72 phi with bins of
+        equal DELTA-THETA, 1.5+ grids are 45 mu x 120 phi with bins of equal
+        SOLID ANGLE. Array shapes and bin meanings both change, so grids from
+        the two eras must not be compared element-wise.
+        """
+        return self.raw["bdf"].get("binning", "uniform_theta")
+
+    @property
+    def n_mu_bins(self) -> int:
+        b = self.raw["bdf"]
+        return int(b.get("n_mu_bins", b.get("n_theta_bins")))
+
+    @property
+    def mu_edges(self) -> np.ndarray:
+        """Bin edges in mu, descending 1 -> 0 (nadir-first). Schema >= 1.5.
+
+        Reconstructed from centers +/- delta_mu/2 for pre-1.5 files.
+        """
+        b = self.raw["bdf"]
+        if "mu_edges" in b:
+            return np.asarray(b["mu_edges"], float)
+        mu = np.asarray(b["mu_centers"], float)
+        dmu = np.asarray(b["delta_mu"], float)
+        return np.concatenate([mu + dmu / 2.0, [max(0.0, mu[-1] - dmu[-1] / 2.0)]])
+
+    @property
     def theta_centers_deg(self) -> np.ndarray:
+        """acos(mu_centers) in degrees.
+
+        Schema >= 1.5: NOT evenly spaced (equal solid angle, not equal theta).
+        Use mu_centers / mu_edges for quantitative work.
+        """
         return np.asarray(self.raw["bdf"]["theta_centers_deg"], float)
 
     @property
@@ -372,8 +428,18 @@ def print_summary(exp: MCExport) -> None:
     print(f"  cloud optical depth: {inp['tau_cloud']:.4g}")
     print(f"  horizontal extent  : {inp['horizontal_extent']:.4g} (tau-units)")
     print(f"  solar zenith Theta0: {inp['theta0_deg']:.3f} deg  (mu0 = {inp['mu0']:.4f})")
-    print(f"  HG asymmetry g     : {inp['hg_g']:.4g}")
-    print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")
+    pf = exp.phase_function
+    if pf.get("type") == "mie":
+        print(f"  phase function     : Mie -- MODIS band {pf['modis_band']} "
+              f"({pf['wavelength_um']:.2f} um), r_eff = {pf['r_eff_um']:.1f} um")
+        print(f"  g (band-averaged)  : {pf['g_band_averaged']:.4f}   [diagnostic; "
+              f"transport samples the tabulated phase function]")
+        print(f"  omega0 (band-avg)  : {pf['omega0_band_averaged']:.5f}")
+    else:
+        note = "  [assumed: pre-1.5 file cannot distinguish Mie]" if pf.get("assumed") else ""
+        print(f"  phase function     : Henyey-Greenstein{note}")
+        print(f"  HG asymmetry g     : {inp['hg_g']:.4g}")
+        print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")
     print(f"  surface albedo A_s : {inp['surface_albedo']:.4g}")
     print(f"  photon illumination: {inp.get('photon_illumination', 'center')}")
     if "launched_cloud_top" in cnt:   # schema >= 1.3

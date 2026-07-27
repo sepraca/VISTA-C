@@ -268,36 +268,62 @@ export const RunControl = {
       const gEl = document.getElementById("gValue");
       const oEl = document.getElementById("omega0");
 
+      const gLab = document.getElementById("gLabel");
+      const oLab = document.getElementById("omega0Label");
+      const gOut = document.getElementById("gMieReadout");
+      const oOut = document.getElementById("omega0MieReadout");
+
       if (mode !== "mie") {
-        // Back to HG: restore the user's own g / ω₀ and re-enable the inputs.
+        // Back to HG: restore the user's own g / ω₀, re-show the editable inputs.
         if (group) group.style.display = "none";
-        if (gEl) { gEl.disabled = false; if (RunControl._savedG != null) gEl.value = RunControl._savedG; }
-        if (oEl) { oEl.disabled = false; if (RunControl._savedOmega0 != null) oEl.value = RunControl._savedOmega0; }
+        if (gEl) { gEl.disabled = false; gEl.style.display = ""; if (RunControl._savedG != null) gEl.value = RunControl._savedG; }
+        if (oEl) { oEl.disabled = false; oEl.style.display = ""; if (RunControl._savedOmega0 != null) oEl.value = RunControl._savedOmega0; }
+        if (gOut) gOut.style.display = "none";
+        if (oOut) oOut.style.display = "none";
+        if (gLab) gLab.textContent = "HG asymmetry parameter (g)";
+        if (oLab) oLab.textContent = "Single-scattering albedo (ω₀)";
         RunControl._savedG = RunControl._savedOmega0 = null;
         state.mie.active = false; state.mie.ready = false; state.mie.sel = null;
         RunControl.resetScene();
         return;
       }
 
-      // Switching to Mie: stash the user's g / ω₀ (they show under HG), then
-      // disable the inputs and show the derived values once loaded.
+      // Switching to Mie: stash the user's g / ω₀ (restored on the way back), then
+      // REPLACE the now-inert inputs with read-only band-averaged readouts rather
+      // than leaving greyed-out boxes occupying the space.
       if (gEl) RunControl._savedG = gEl.value;
       if (oEl) RunControl._savedOmega0 = oEl.value;
       if (group) group.style.display = "contents";
-      if (gEl) gEl.disabled = true;
-      if (oEl) oEl.disabled = true;
+      if (gEl) { gEl.disabled = true; gEl.style.display = "none"; }
+      if (oEl) { oEl.disabled = true; oEl.style.display = "none"; }
+      if (gOut) { gOut.style.display = ""; gOut.textContent = "—"; }
+      if (oOut) { oOut.style.display = ""; oOut.textContent = "—"; }
+      if (gLab) gLab.textContent = "Mie g (band-averaged)";
+      if (oLab) oLab.textContent = "Mie ω₀ (band-averaged)";
       state.mie.active = true; state.mie.ready = false;
 
+      // Revert to HG ONLY if the Mie ASSETS fail to load. This guard used to also
+      // wrap onMieSelectionChange(), which ends in resetScene() -> a panel redraw:
+      // any unrelated rendering exception was therefore caught here and silently
+      // reverted phaseMode to "hg", which hid #mieControls and looked to the user
+      // like the band / r_eff dropdowns had disappeared. Keep the guard tight, and
+      // never swallow the error object.
       try {
         await Mie.ensureCore();
         RunControl._populateMieDropdowns();
-        await RunControl.onMieSelectionChange();   // loads current band + r_eff
       } catch (err) {
+        console.error("VISTA-C: Mie asset load failed —", err);
         showLimitWarning("Could not load Mie phase-function data — reverting to Henyey-Greenstein.");
         const sel = document.getElementById("phaseMode");
         if (sel) sel.value = "hg";
         await RunControl.onPhaseModeChange();
+        return;
       }
+
+      // Selection + redraw run OUTSIDE the revert guard: if this throws it is a
+      // display bug, not a missing-asset problem, and must surface rather than
+      // tear down the user's phase-function choice.
+      await RunControl.onMieSelectionChange();   // loads current band + r_eff
     },
 
     // Band or r_eff dropdown changed: load/select and refresh derived ω₀ / g.
@@ -309,11 +335,20 @@ export const RunControl = {
       const sel = await Mie.select(band, k);
       state.mie.sel = sel;
       state.mie.ready = true;
-      // Show the derived ω₀ / g in the (disabled) inputs so the coupling is visible.
+      // Surface the BAND-AVERAGED g / ω₀ for this (band, r_eff). The readouts are
+      // what the user sees; the hidden inputs are kept in sync so any consumer
+      // still reading UI.getG()/getOmega0() sees the same numbers (the authoritative
+      // path is _applyMiePhaseParams, which overlays from state.mie.sel).
       const gEl = document.getElementById("gValue");
       const oEl = document.getElementById("omega0");
       if (gEl) gEl.value = sel.g.toFixed(4);
       if (oEl) oEl.value = sel.ssa.toFixed(4);
+      const gOut = document.getElementById("gMieReadout");
+      const oOut = document.getElementById("omega0MieReadout");
+      // 3 dp for g in the panel readout (author preference, 2026-07-27); the JSON
+      // export keeps full precision, and the PNG header keeps 4 dp.
+      if (gOut) gOut.textContent = sel.g.toFixed(3);
+      if (oOut) oOut.textContent = sel.ssa.toFixed(5);
       RunControl.resetScene();   // new scattering ⇒ clear accumulated stats
     },
 

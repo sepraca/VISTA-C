@@ -224,12 +224,20 @@ for ci, (which, ttl) in enumerate([('refl','Reflected'),('net','Net transmitted 
 
 # ---------- Row 4: BDF polar heatmaps (radiance) ----------
 # Build polar bin edges shared by all runs (fixed export grid).
-phi_c = np.asarray(A.raw['bdf']['phi_centers_deg'], float)         # 0,5,...,355
-th_c  = np.asarray(A.raw['bdf']['theta_centers_deg'], float)       # ~0,5,...,90
+phi_c = np.asarray(A.raw['bdf']['phi_centers_deg'], float)         # 1.5: 0,3,...,357
+th_c  = np.asarray(A.raw['bdf']['theta_centers_deg'], float)       # 1.5: acos(mu), uneven
 dphi = 360.0 / len(phi_c)
 phi_edges = np.radians(np.concatenate([phi_c - dphi/2, [phi_c[-1] + dphi/2]]))
-th_edges = np.empty(len(th_c)+1)
-th_edges[1:-1] = 0.5*(th_c[:-1]+th_c[1:]); th_edges[0]=0.0; th_edges[-1]=90.0
+
+# Radial edges. Schema >= 1.5 bins uniformly in mu, so the theta edges are
+# acos(mu_edges) and are NOT evenly spaced -- taking midpoints between theta
+# centres (the pre-1.5 approach, kept as the fallback) would misplace every ring.
+_mu_edges = A.raw['bdf'].get('mu_edges')
+if _mu_edges is not None:
+    th_edges = np.degrees(np.arccos(np.clip(np.asarray(_mu_edges, float), 0.0, 1.0)))
+else:
+    th_edges = np.empty(len(th_c)+1)
+    th_edges[1:-1] = 0.5*(th_c[:-1]+th_c[1:]); th_edges[0]=0.0; th_edges[-1]=90.0
 
 def polar_grid(exp, which):
     g = exp.reflected_bdf if which=='refl' else exp.net_transmitted_bdf

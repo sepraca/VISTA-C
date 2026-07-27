@@ -98,8 +98,19 @@
   }
 
   select#bottomPanelMode,
-  select#bdfColorScale {
+  input#bdfScaleMax {
     width: 104px;
+  }
+
+  /* Read-only band-averaged g / ω₀ shown in place of the HG inputs under Mie.
+     Yellow matches the MODIS band / r_eff labels so the derived values read as
+     part of the Mie group rather than as editable settings. */
+  .mie-readout {
+    width: 104px;
+    color: #f7f44a;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    align-self: center;
   }
 
   input[type="checkbox"] {
@@ -607,11 +618,18 @@
       <select id="mieReff" onchange="RunControl.onMieSelectionChange()"></select>
     </div>
 
-    <label>HG asymmetry parameter (g)</label>
+    <!-- Under Mie these two rows swap the editable inputs for read-only readouts of
+         the BAND-AVERAGED g and ω₀ of the selected (band, r_eff) -- see
+         RunControl.onPhaseModeChange / onMieSelectionChange. Showing the values
+         (rather than greying out dead inputs) makes the band/r_eff → (g, ω₀)
+         coupling explicit, which is the pedagogical point of the Mie option. -->
+    <label id="gLabel">HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
+    <span id="gMieReadout" class="mie-readout" style="display:none"></span>
 
-    <label>Single-scattering albedo (ω₀)</label>
+    <label id="omega0Label">Single-scattering albedo (ω₀)</label>
     <input id="omega0" type="number" value="1.00" min="0" max="1" step="0.01" onblur="UI.getOmega0()">
+    <span id="omega0MieReadout" class="mie-readout" style="display:none"></span>
 
     <label>Surface albedo (A<sub>s</sub>)</label>
     <input id="surfaceAlbedo" type="number" value="0.00" min="0" max="1" step="0.01" onblur="UI.getSurfaceAlbedo(); Scene.buildCloudBox()">
@@ -632,11 +650,16 @@
       <option value="hidden">hidden</option>
     </select>
 
-    <label>BDF color scale</label>
-    <select id="bdfColorScale" onchange="BottomPanel.drawBottomPanel()">
-      <option value="linear" selected>linear 0–1</option>
-      <option value="log">log 0.01–1</option>
-    </select>
+    <!-- 2026-07-27: the old "log 0.01–1" option was retired in favour of a
+         user-settable colour-scale maximum. A fixed max of 1.0 wastes most of
+         the colour range on cloud BRFs (typically ~0.2), flattening the Mie
+         features (cloudbow, glory) we now resolve with uniform-µ binning. -->
+    <label for="bdfScaleMax">BDF color max</label>
+    <input id="bdfScaleMax" type="number" min="0.001" max="10" step="0.05" value="1.0"
+           onchange="BottomPanel.drawBottomPanel()" oninput="BottomPanel.drawBottomPanel()">
+
+    <label for="bdfScaleAuto">BDF color max: auto</label>
+    <input id="bdfScaleAuto" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
 
     <label id="showEntireDomainPlotsLabel" for="showEntireDomainPlots">Show entire-domain plots</label>
     <input id="showEntireDomainPlots" type="checkbox" onchange="BottomPanel.drawBottomPanel()">

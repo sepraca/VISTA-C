@@ -81,6 +81,11 @@ gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");
 gate("verify_p5 (streaming path hist)",   "tests/review-harness/verify_p5.mjs");
 gate("verify_mie_sampling (⟨µ⟩=g)",       "tests/review-harness/verify_mie_sampling.mjs");
 gate("verify_mie_transport (dispatch)",   "tests/review-harness/verify_mie_transport.mjs");
+// RNG integrity (2026-07-27). Guards the unmasked-state bug class: the shipped
+// generator must stay bit-identical to a correctly-masked reference far past the
+// 4,917,758-draw float64 divergence point, and BDF mirror symmetry must stay Poisson
+// at high N. Verified to FAIL (both gates) when the original bug is reintroduced.
+gate("verify_rng (state mask / variance)", "tests/review-harness/verify_rng.mjs");
 gate("check_golden_ud (uniform domain)",  "tests/golden-snapshots/check_golden_ud.mjs");
 gate("check_golden_periodic",             "tests/golden-snapshots/check_golden_periodic.mjs");
 

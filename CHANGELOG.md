@@ -6,6 +6,92 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (2026-07-27 — CRITICAL: Monte Carlo random number generator)
+
+- **`js/rng.js`: the Mulberry32 state was never masked back to 32 bits.** The generator
+  advanced its state with `t += 0x6D2B79F5`, but in JavaScript `t` is a float64 that
+  grows without bound instead of wrapping mod 2³². Past 2⁵³ — reached after **4,917,758
+  draws ≈ 175k photons** — the addition can no longer be represented exactly, so it
+  rounds and the low bits of the state are progressively forced to zero. Since the
+  mixing step reads `t mod 2³²`, the effective state space collapsed from 2³² to
+  2^(32−k), degrading the generator the longer a run went. Fixed by masking:
+  `t = (t + 0x6D2B79F5) >>> 0`.
+  - **Impact.** Means and fluxes were UNBIASED (verified: R = 21.719% buggy vs 21.707%
+    fixed, ⟨|µ_exit|⟩ 0.63968 vs 0.64018), but **per-bin variance was inflated and all
+    uncertainty estimates were wrong** for any run above ~175k photons, worsening with
+    run length. Diagnostic: the BDF mirror-symmetry reduced-χ² (1.0 = pure Poisson)
+    ran 0.99 → 3.76 → 6.27 → 11.5 at 3M/5M/8M/12M photons before the fix, and holds
+    0.99–0.93 across the same range after. Identical behaviour under HG and Mie, so
+    this was never a phase-function issue. This is why increasing photon count stopped
+    visibly reducing BRDF noise.
+  - **Reproducibility.** The stream is bit-identical to the old one only for the first
+    4,917,758 draws (~174k photons Mie / ~167k HG), so the 500k-photon goldens changed
+    and were regenerated under D1 discipline. The HG bit-identical contract was broken
+    once, deliberately, for a correctness fix.
+  - Verified `>>> 0` (unsigned) is bit-identical to the canonical `| 0` (signed) over
+    160M draws across 8 seeds and end-to-end through transport; `>>> 0` was chosen so
+    the state stays a true unsigned counter for future non-bitwise uses (e.g. per-worker
+    sub-stream offsets). Full analysis in the gitignored TODO §D.0.
+
+### Changed (2026-07-27 — BDF/BRF/BTF angular grid, BREAKING for exports)
+
+- **The BDF grid is now UNIFORM IN µ = cos θ: 45 µ × 120 φ (was 19 θ × 72 φ uniform in
+  θ).** Every bin subtends the same solid angle Δω = Δµ·Δφ, so photon counts are
+  statistically uniform across the hemisphere instead of starving the near-nadir bins
+  (the old θ=0 bin had Δµ ≈ 0.001). Rows are ordered nadir-first. Resolution improves
+  everywhere except near nadir: Δθ ≈ 1.3° at the limb and ≈ 1.7° across the cloudbow
+  band (θ ≈ 50–70°), versus a single 0–12.1° nadir cap — an inherent trade of
+  near-nadir angular detail for uniform statistics.
+- **Retired `smoothNearNadirAzimuth`** (now an identity pass-through): it existed only
+  to cosmetically hide the old grid's starved nadir rings. The PNG and the JSON export
+  now show the same grid.
+- **Polar BDF plots are rasterized per pixel instead of drawn as 5400 canvas sectors.**
+  At the finer grid the outer rings fall to ~2 device px, and anti-aliasing 5400
+  independently-filled paths produced a visible moiré/interference texture in the panel
+  and the exported PNG. The disc is now sampled per device pixel (3×3 supersampled,
+  2×2 on very high-DPI canvases) into an offscreen ImageData — no paths, no seams, and
+  faster. Verified all 5400 bin centres round-trip to their own bin, orientation
+  unchanged (screen up = φ=0°).
+- **Export schema 1.4 → 1.5.** `bdf` gains `n_mu_bins`, `mu_edges`, and
+  `binning: "uniform_mu"`; `n_theta_bins` is kept as a deprecated alias. All `bdf.*`
+  arrays change shape. `theta_centers_deg` is now `acos(mu_centers)` and is documented
+  as deliberately unevenly spaced — this also resolves the pre-1.5 inconsistency where
+  those values were already `acos(µ-midpoint)` while the description claimed 0,5,…,90°.
+  **Pre-1.5 files are not element-wise comparable, and not statistically comparable
+  either** (see the RNG fix above).
+- **BDF colour scale: the "log 0.01–1" option is replaced by a user-settable maximum
+  plus an Auto checkbox.** A fixed max of 1.0 wasted most of the colour range on cloud
+  BRFs of ~0.2, flattening the Mie features. Auto uses the 99th percentile across both
+  displayed grids (not the raw max, so one hot bin cannot blow out the scale); the max
+  is resolved once per draw so the plots and colour bar always agree, and colour-bar
+  ticks are labelled with absolute BDF values.
+
+### Added (2026-07-27 — C6-C: phase-function provenance in exports)
+
+- **`inputs.phase_function` in the JSON export.** For Mie: `modis_band`,
+  `wavelength_um`, `r_eff_um`, `r_eff_index`, `g_band_averaged`, `omega0_band_averaged`.
+  Previously a Mie run was indistinguishable from an HG run in the export — `hg_g` /
+  `ssa_omega0` carried the derived values with nothing recording their origin, so
+  band 1 / r_eff = 10 µm exported as a plain "g = 0.86" HG run. `hg_g`/`ssa_omega0` are
+  retained unchanged for older readers. The band-averaged g is flagged as diagnostic
+  only: the transport samples the tabulated phase function directly.
+- **PNG header names the scattering.** Under Mie the two scattering rows are replaced
+  in place (the header must stay at 12 lines) with
+  `Mie: MODIS band 1 (0.65 µm), r_eff: 10.0 µm` and `g (band-avg): … , ω₀ (band-avg): …`.
+- **UI: under Mie the inert g/ω₀ inputs are replaced by read-only band-averaged
+  readouts** (labelled "Mie g (band-averaged)" / "Mie ω₀ (band-averaged)") instead of
+  greyed-out boxes, making the (band, r_eff) → (g, ω₀) coupling explicit. The band and
+  r_eff dropdowns are unchanged; switching back to HG restores the user's own values.
+- **`mc_export_reader.py`**: new `phase_function`, `is_mie`, `bdf_binning`, `n_mu_bins`,
+  `mu_edges`. Pre-1.5 files are handled — `bdf_binning` reports `uniform_theta`,
+  `mu_edges` is reconstructed from centres, and the phase function is reported as
+  `{'type': 'hg', 'assumed': True}` rather than silently claiming HG, since a pre-1.5
+  Mie run genuinely cannot be identified.
+- Hardened `onPhaseModeChange`: its revert-to-HG `catch` previously also wrapped the
+  selection + redraw, so any unrelated rendering exception silently tore down Mie mode
+  and hid the band/r_eff dropdowns. The guard now covers only asset loading and logs
+  the error instead of swallowing it.
+
 ### Added (2026-07-21/22 — groundwork for v6.1 Mie phase functions)
 
 - **Offline netCDF→browser converter + MODIS Mie assets + sampling kernel.**
