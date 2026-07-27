@@ -323,6 +323,15 @@ export const SimStats = {
     footTrans: {nBins: 0, counts: null},
     footSurfAbs: {nBins: 0, counts: null},
 
+    // DISPLAY-ONLY diagnostic (2026-07-27): surface landings that fell OUTSIDE the
+    // surface-absorption heatmap's extent and so were not binned (see
+    // _addSurfaceFootprint — they used to be clamped into the edge cells, which
+    // invented a hot spot). Deliberately kept OUT of `stats`, because `stats` is what
+    // the golden snapshots capture and this is a rendering diagnostic carrying no
+    // physics: adding it there would churn every golden for no reason. These photons
+    // remain fully counted in R/T/A/S.
+    surfFootOffGrid: 0,
+
     // ---- Path-length populations (review P5, 2026-07-20) -----------------
     // These were per-photon arrays of raw values, kept because the panel's
     // x-axis adapts to the run and so the binning could not be fixed in
@@ -455,10 +464,32 @@ export const SimStats = {
       // tile is square, so one helper serves x and y alike.
       const xw = SimStats.wrapPeriodic(x);
       const yw = SimStats.wrapPeriodic(y);
-      let ix = Math.floor(((xw + halfW) / extW) * n);
-      let iy = Math.floor(((yw + halfD) / extD) * n);
-      ix = Math.max(0, Math.min(n - 1, ix));
-      iy = Math.max(0, Math.min(n - 1, iy));
+      const ix = Math.floor(((xw + halfW) / extW) * n);
+      const iy = Math.floor(((yw + halfD) / extD) * n);
+      // Out-of-grid landings are DROPPED (and counted separately), not clamped
+      // to the edge cells (bug fix 2026-07-27, author-reported).
+      //
+      // Clamping invented counts at locations where nothing actually landed. It
+      // matters because the clear sub-cloud gap is traversed as
+      // tDown = (tauSurface - ctau)/max(dir.z, 1e-12) with no lateral bound, so a
+      // near-grazing cloud-base or side-wall exit (|dirZ| ~ 1e-6) lands O(1e6)
+      // τ-units away — versus a grid half-width of ~40. Measured at Aₛ=0.01,
+      // τ=10, W=40, Θ₀=60°: 67k of 234k landings fell outside the grid and piled
+      // into the far CORNER cell, giving it 6112 counts against 1855 in the
+      // next-highest cell. Since Scene.addFootprintHeatmap colours each cell
+      // relative to the grid maximum (and lerps toward white near it), that one
+      // fictitious cell captured the entire colour scale and crushed the genuine
+      // sub-cloud footprint to ~3% of full scale — which is why the surface
+      // heatmap's real hot spot appeared to VANISH as soon as Aₛ > 0.
+      //
+      // Dropping is the honest treatment: those photons did reach the surface
+      // (the surface is infinite in this model, so the landings are legitimate),
+      // they simply landed outside the displayed extent. They remain fully
+      // counted in every flux/budget tally — this function is display-only.
+      if (ix < 0 || ix >= n || iy < 0 || iy >= n) {
+        SimStats.surfFootOffGrid++;
+        return;
+      }
       f.counts[ix * n + iy]++;
     },
 
@@ -538,6 +569,7 @@ export const SimStats = {
       SimStats.footRefl  = {nBins: 0, counts: null};
       SimStats.footTrans = {nBins: 0, counts: null};
       SimStats.footSurfAbs = {nBins: 0, counts: null};
+      SimStats.surfFootOffGrid = 0;
       SimStats.ensureFootprintGrids();
       SimStats.surfaceInteractionEvents = [];
       // (P5) Fresh streaming accumulators rather than fresh arrays -- allocating

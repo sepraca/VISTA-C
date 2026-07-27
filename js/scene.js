@@ -534,7 +534,8 @@ export const Scene = {
     // per-instance opacity or emissive. We add those two via onBeforeCompile:
     //   instanceAlpha  -> scales the fragment alpha (old per-cell opacity)
     //   instanceEmis   -> scales an emissive term tinted by the instance color
-    //                     (vColor, supplied by three's USE_INSTANCING_COLOR path)
+    //                     (read from diffuseColor — see the note on the fragment
+    //                      injection below for why NOT vColor)
     // so the look is identical to the old per-cell MeshStandardMaterial. One lazy
     // singleton, reused across rebuilds and all three heatmaps, so the shader
     // compiles once; clearGroup keeps it (userData.shared) instead of disposing it.
@@ -557,8 +558,27 @@ export const Scene = {
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>',
             '#include <common>\nvarying float vAlpha;\nvarying float vEmis;')
+          // BUG FIX 2026-07-27 (introduced v5.4.0, commit 12f8703; present in
+          // v5.4.0 and v6.0.2–v6.0.7). This previously read:
+          //     totalEmissiveRadiance += vColor * vEmis;
+          // `vColor` only EXISTS when three defines USE_COLOR / USE_INSTANCING_COLOR
+          // for the program, and three only sets USE_INSTANCING_COLOR when
+          // `mesh.instanceColor` is non-null AT PROGRAM-COMPILE TIME. setColorAt runs
+          // during the build loop below, so whether the define was present came down
+          // to build-vs-first-render ordering — when it lost that race the fragment
+          // shader failed to compile ("ERROR: 'vColor' : undeclared identifier") and
+          // the console filled with `WebGL: INVALID_OPERATION: useProgram: program not
+          // valid`, with the heatmap meshes silently not drawing.
+          //
+          // `diffuseColor` is unconditional: three declares it at the top of main() as
+          // `vec4 diffuseColor = vec4( diffuse, opacity );` and <color_fragment>, which
+          // runs BEFORE <emissivemap_fragment>, has already folded the instance colour
+          // into it. So this is equivalent in appearance and independent of the defines.
+          // (Confirmed against the actual failing shader dump: the very next lines are
+          // `PhysicalMaterial material; material.diffuseColor = diffuseColor.rgb * ...`,
+          // i.e. diffuseColor is in scope at this exact injection point.)
           .replace('#include <emissivemap_fragment>',
-            '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor * vEmis;')
+            '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vEmis;')
           .replace('#include <dithering_fragment>',
             'gl_FragColor.a *= vAlpha;\n#include <dithering_fragment>');
       };

@@ -6,6 +6,58 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (2026-07-27 — surface-absorption heatmap binning; display-only)
+
+- **`SimStats._addSurfaceFootprint` clamped out-of-grid landings into the edge cells,
+  inventing a hot spot that never existed.** The clear sub-cloud gap is traversed as
+  `tDown = (tauSurface − ctau)/max(dir.z, 1e-12)` with no lateral bound, so a near-grazing
+  cloud-base or side-wall exit (|dirZ| ~ 1e-6, zero surface bounces) lands O(10⁶) τ-units
+  away against a grid half-width of ~40. Those landings were clamped to the nearest edge
+  cell. Measured at Aₛ=0.01, τ=10, W=40, Θ₀=60°: 67k of 234k landings fell outside the
+  grid and piled into the far CORNER cell, giving it 6,112 counts versus 1,855 in the
+  next-highest cell. Because `Scene.addFootprintHeatmap` colours each cell relative to the
+  grid maximum (lerping toward white near it), that one fictitious cell captured the whole
+  colour scale and crushed the genuine sub-cloud footprint to ~3% of full scale — which is
+  why the surface heatmap's real hot spot appeared to VANISH as soon as Aₛ > 0
+  (author-reported). Out-of-grid landings are now DROPPED and tallied in the new
+  `stats.surfaceFootprintOffGrid` instead.
+  - After the fix the peak cell is 225 (Aₛ=0.00) vs 224 (Aₛ=0.01) — agreement to ~1 count,
+    as a 1% albedo change should give; previously 225 vs 6,112. max/mean falls 81.9 → 4.2.
+  - **Display-only**: no flux, budget, export-schema or golden impact; verified R/T/A/S
+    unchanged. Note the displayed footprint is incomplete at high Aₛ (at Aₛ=0.5, 119k
+    landings off-grid vs 72k on-grid) — previously hidden by the clamping, now explicit
+    via the new counter.
+  - Physics re-verified while investigating, all consistent: R rises 0.357 → 0.405 over
+    Aₛ = 0 → 0.5 against an adding estimate of +0.054 for the surface contribution;
+    F_down_sfc scales as (1−Aₛ) with the expected recycling excess; R+T+A+S+Term = 1.00000
+    at every Aₛ. The Aₛ=0 vs Aₛ>0 difference in raw photon STATUS is by design (the
+    `viaSide` / `sideEscapeDown` reattribution) and is NOT a bug — `physics.js` unchanged.
+
+### Fixed (2026-07-27 — footprint-heatmap shader; display-only)
+
+- **`js/scene.js`: the footprint-heatmap material failed to compile its fragment
+  shader.** The `onBeforeCompile` injection read
+  `totalEmissiveRadiance += vColor * vEmis;`, but `vColor` only exists when three.js
+  defines `USE_COLOR`/`USE_INSTANCING_COLOR` for that program — and three sets
+  `USE_INSTANCING_COLOR` only when `mesh.instanceColor` is non-null **at program-compile
+  time**, while `setColorAt` runs during the heatmap build loop. Losing that
+  build-vs-first-render race produced
+  `ERROR: 0:NNNN: 'vColor' : undeclared identifier`, followed by a flood of
+  `WebGL: INVALID_OPERATION: useProgram: program not valid` (254+, then the console
+  stops reporting), with the heatmap meshes silently not drawing. Fixed by reading
+  `diffuseColor.rgb` instead: three declares `diffuseColor` unconditionally at the top
+  of `main()`, and `<color_fragment>` (which folds in the instance colour) runs before
+  `<emissivemap_fragment>`, so the result is identical in appearance but independent of
+  which defines are active.
+  - **Scope: display only.** Physics, statistics, BDF/BRF panels and every export are
+    unaffected — the errors came from `three.module.js` during scene rendering,
+    downstream of the Monte Carlo. `js/scene.js` is outside every test's import graph.
+  - **Age:** introduced in v5.4.0 (`12f8703`, 2026-06-29, "render footprint heatmaps as
+    InstancedMesh"); `git log -S vColor -- js/scene.js` returns that single commit, so
+    the line was unchanged since. Present in v5.4.0 and v6.0.2–v6.0.7 (7 tagged
+    releases). Because the failure depended on an ordering race, it was intermittent
+    between sessions rather than deterministic, which is why it survived a month of use.
+
 ### Fixed (2026-07-27 — CRITICAL: Monte Carlo random number generator)
 
 - **`js/rng.js`: the Mulberry32 state was never masked back to 32 bits.** The generator
