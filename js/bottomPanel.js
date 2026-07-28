@@ -926,20 +926,25 @@ export const BottomPanel = {
         for (let ip = 0; ip < phiBins; ip++) flat[base + ip] = row[ip];
       }
 
-      // Reuse the offscreen canvas AND its ImageData across redraws. Allocating a
-      // fresh <canvas> element plus a size×size ImageData on every redraw is cheap
-      // in Node (where neither exists, which is why the first benchmark missed it
-      // entirely) but expensive in a browser: at dpr=2 that is a DOM element plus
-      // ~313 kB of pixel buffer per plot, twice per redraw, tens of times a second.
-      // Keyed on size alone — everything else about the buffer is size-invariant.
-      let ob = BottomPanel._offBuf;
-      if (!ob || ob.size !== size) {
-        const c = document.createElement("canvas");
-        c.width = size; c.height = size;
-        const cx2 = c.getContext("2d");
-        ob = BottomPanel._offBuf = { size, canvas: c, ctx: cx2, img: cx2.createImageData(size, size) };
-      }
-      const off = ob.canvas, octx = ob.ctx, img = ob.img;
+      // A FRESH offscreen canvas + ImageData per call -- deliberately NOT cached.
+      //
+      // Caching one shared buffer across both polar plots was tried on 2026-07-27 and
+      // REVERTED the same day: the panel draws Reflected and Net-Transmitted in the
+      // same task, so a single shared source canvas gets its second putImageData
+      // before the first drawImage has necessarily sampled it, and BOTH plots ended
+      // up showing the second (transmitted) grid. The reflected plot silently
+      // rendered the wrong data -- author-reported, and it reached a pushed commit.
+      // The two grids are genuinely distinct (verified: 5215/5400 bins differ), so
+      // this was purely a rendering-aliasing bug.
+      //
+      // Do not "optimize" this back into a shared buffer. If it ever needs to be
+      // cached, it must be TWO buffers (one per plot slot) so no source canvas is
+      // mutated between its own putImageData and drawImage. The measured 10× win
+      // came from the index table above, not from this allocation.
+      const off = document.createElement("canvas");
+      off.width = size; off.height = size;
+      const octx = off.getContext("2d");
+      const img = octx.createImageData(size, size);
       const px = img.data;
 
       const SS2 = SS * SS;
