@@ -69,6 +69,12 @@ export const BottomPanel = {
       } else if (mode === "path") {
         title.textContent = "Optical path-length distributions";
         BottomPanel.drawPathOverlay();
+      } else if (mode === "phase") {
+        // No panel heading: p(Θs) depends only on the scattering medium, so the
+        // run-context heading every other mode carries would be misleading here.
+        // The plot's own in-canvas title states band / wavelength / r_eff (or g).
+        title.textContent = "";
+        BottomPanel.drawPhaseOverlay();
       } else {
         title.textContent = "Exit-angle histograms: |μ| = |cos(Θ)|";
         BottomPanel.drawMuOverlay();
@@ -294,6 +300,160 @@ export const BottomPanel = {
       // Linear BDF display from 0 to the active scale max, values above clipped.
       const vmax = BottomPanel._activeScaleMax > 0 ? BottomPanel._activeScaleMax : 1.0;
       return Math.max(0, Math.min(1, value / vmax));
+    },
+
+    // ---- C6-D: scattering phase function, polar (2026-07-27) ----------------
+    //
+    // Conventions deliberately match the author's read_pf_netcdf_file.ipynb so the
+    // in-app panel and his existing figures are directly comparable:
+    //   * polar projection, 0° at TOP, increasing CLOCKWISE
+    //     (matplotlib set_theta_zero_location("N") + set_theta_direction(-1))
+    //   * theta grid every 45°
+    //   * LOG radial axis, 1e-3 … 1e4 (plt.yscale("log"); plt.ylim(1e-3, 1e4))
+    //   * the tabulated 0…180° curve MIRRORED into 0…360° so the lobe is drawn
+    //     whole (notebook: ang_360 = concat(ang, 360 - ang[-2::-1]))
+    //   * radial tick labels offset off-axis (notebook: set_rlabel_position(125))
+    //
+    // Under Mie the selected (band, r_eff) curve is drawn solid, with an HG curve
+    // at the SAME band-averaged g dashed on top -- that comparison is the whole
+    // point of the option: HG cannot express the cloudbow (~140°) or the glory
+    // (→180°) at ANY g, and the panel makes that immediately visible.
+    // Under HG only the analytic curve is drawn.
+    //
+    // Normalization note -- VERIFIED NUMERICALLY against the shipped tables, because
+    // getting it wrong puts the two curves a clean factor of 2 apart and invites a
+    // false conclusion about the Mie/HG difference.
+    //
+    // The Mie tables satisfy Σ wt·pf = 1 with Σ wt = 2 (so the weights carry the
+    // ∫dµ measure) and Σ wt·pf·µ = g. Matching that requires the HALF form:
+    //   p(µ) = ½ (1−g²)/(1+g²−2gµ)^{3/2}
+    // Measured for band 1, r_eff = 10 µm (g = 0.861800): with the ½,
+    // Σ wt·pf_HG = 1.000000 and Σ wt·pf_HG·µ = 0.861800 = g exactly; without it,
+    // those come out 2.000000 and 1.723600 = 2g.
+    _hgPhase: function(muS, g) {
+      const d = 1 + g * g - 2 * g * muS;
+      return 0.5 * (1 - g * g) / Math.pow(Math.max(d, 1e-12), 1.5);
+    },
+
+    drawPhaseOverlay: function() {
+      const canvas2 = document.getElementById("muCanvas");
+      if (!canvas2) return;
+      const { ctx2, w, h } = BottomPanel.getHiDpiPanelContext(canvas2);
+      ctx2.clearRect(0, 0, w, h);
+      ctx2.fillStyle = "#000000";
+      ctx2.fillRect(0, 0, w, h);
+
+      const sel = (state.mie && state.mie.active && state.mie.ready) ? state.mie.sel : null;
+      const gHG = sel ? sel.g : UI.getG();
+
+      const cx = w / 2, cy = h / 2 + 6, R = 96;
+      const RMIN = 1e-3, RMAX = 1e4;
+      const L0 = Math.log10(RMIN), L1 = Math.log10(RMAX);
+      const rOf = (p) => {
+        if (!(p > 0)) return 0;
+        const f = (Math.log10(p) - L0) / (L1 - L0);
+        return R * Math.max(0, Math.min(1, f));
+      };
+      // Θs measured from screen-up, increasing clockwise (see conventions above).
+      const pt = (thDeg, p) => {
+        const a = -Math.PI / 2 + thDeg * Math.PI / 180;
+        const r = rOf(p);
+        return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+      };
+
+      // --- decade rings + radial labels ---
+      ctx2.strokeStyle = "rgba(226,232,240,0.30)";
+      ctx2.lineWidth = 1;
+      ctx2.font = "9px system-ui";
+      ctx2.textAlign = "left";
+      ctx2.textBaseline = "middle";
+      // Start one decade in: the innermost decade collapses to r = 0, so its ring
+      // is a dot and its label lands on the origin under the curve. Matplotlib
+      // suppresses it too, which is why the notebook figure shows 7 labelled
+      // decades (1e-2 … 1e4) over the same 1e-3 … 1e4 range.
+      for (let e = Math.log10(RMIN) + 1; e <= Math.log10(RMAX); e++) {
+        const r = rOf(Math.pow(10, e));
+        ctx2.beginPath();
+        ctx2.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx2.stroke();
+        // rlabel_position(125): labels along the 125° spoke, off the data lobes.
+        const a = -Math.PI / 2 + 125 * Math.PI / 180;
+        ctx2.fillStyle = "rgba(148,163,184,0.85)";
+        ctx2.fillText(`1e${e}`, cx + r * Math.cos(a) + 2, cy + r * Math.sin(a));
+      }
+      // --- 45° spokes ---
+      for (let d = 0; d < 360; d += 45) {
+        const a = -Math.PI / 2 + d * Math.PI / 180;
+        ctx2.beginPath();
+        ctx2.moveTo(cx, cy);
+        ctx2.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
+        ctx2.stroke();
+        ctx2.fillStyle = "#cbd5e1";
+        ctx2.textAlign = "center";
+        ctx2.fillText(`${d}°`, cx + (R + 13) * Math.cos(a), cy + (R + 13) * Math.sin(a));
+      }
+
+      // Draw one curve, mirroring the tabulated 0…180° into 0…360°.
+      const drawCurve = (angDeg, pAt, color, dash, width) => {
+        ctx2.save();
+        ctx2.strokeStyle = color;
+        ctx2.lineWidth = width;
+        ctx2.setLineDash(dash);
+        ctx2.beginPath();
+        let started = false;
+        const emit = (thDeg, p) => {
+          const q = pt(thDeg, p);
+          if (!started) { ctx2.moveTo(q.x, q.y); started = true; } else ctx2.lineTo(q.x, q.y);
+        };
+        for (let i = 0; i < angDeg.length; i++) emit(angDeg[i], pAt(i));
+        // mirror: 360 − θ, skipping the 180° endpoint to avoid duplication
+        for (let i = angDeg.length - 2; i >= 0; i--) emit(360 - angDeg[i], pAt(i));
+        ctx2.closePath();
+        ctx2.stroke();
+        ctx2.restore();
+      };
+
+      if (sel) {
+        const ang = sel.angDeg, pf = sel.pf;
+        // HG at matched g first, so the Mie curve reads on top.
+        drawCurve(ang, (i) => BottomPanel._hgPhase(Math.cos(ang[i] * Math.PI / 180), gHG),
+                  "#f97316", [4, 3], 1.0);
+        drawCurve(ang, (i) => pf[i], "#e2e8f0", [], 1.4);
+      } else {
+        const n = 721, ang = new Float64Array(n);
+        for (let i = 0; i < n; i++) ang[i] = i * 180 / (n - 1);
+        drawCurve(ang, (i) => BottomPanel._hgPhase(Math.cos(ang[i] * Math.PI / 180), gHG),
+                  "#f97316", [], 1.4);
+      }
+
+      // --- title + legend ---
+      ctx2.textAlign = "left";
+      ctx2.textBaseline = "alphabetic";
+      ctx2.font = "11px system-ui";
+      ctx2.fillStyle = "#e2e8f0";
+      ctx2.fillText(sel
+        ? `Phase Function: MODIS band ${sel.band} (${sel.wavelength_um.toFixed(2)} µm), CER = ${sel.cer.toFixed(1)} µm`
+        : `Phase Function: Henyey-Greenstein, g = ${gHG.toFixed(3)}`, 10, 16);
+      ctx2.font = "10px system-ui";
+      ctx2.fillStyle = "#94a3b8";
+      ctx2.fillText("Scattering angle Θs (deg), log radial scale", 10, 31);
+
+      const lx = 10, ly = h - 30;
+      const key = (yy, color, dash, label) => {
+        ctx2.save();
+        ctx2.strokeStyle = color; ctx2.lineWidth = 1.6; ctx2.setLineDash(dash);
+        ctx2.beginPath(); ctx2.moveTo(lx, yy); ctx2.lineTo(lx + 22, yy); ctx2.stroke();
+        ctx2.restore();
+        ctx2.fillStyle = "#cbd5e1";
+        ctx2.font = "10px system-ui";
+        ctx2.fillText(label, lx + 28, yy + 3);
+      };
+      if (sel) {
+        key(ly, "#e2e8f0", [], `Mie  (g = ${sel.g.toFixed(4)}, ω₀ = ${sel.ssa.toFixed(5)})`);
+        key(ly + 14, "#f97316", [4, 3], `Henyey-Greenstein at matched g = ${gHG.toFixed(4)}`);
+      } else {
+        key(ly + 7, "#f97316", [], `Henyey-Greenstein, g = ${gHG.toFixed(3)}`);
+      }
     },
 
     drawPathOverlay: function() {
@@ -718,42 +878,85 @@ export const BottomPanel = {
       }
       const lut = BottomPanel._lut;
 
-      const off = document.createElement("canvas");
-      off.width = size; off.height = size;
-      const octx = off.getContext("2d");
-      const img = octx.createImageData(size, size);
-      const px = img.data;
-
-      const TWO_PI = 2 * Math.PI;
-      for (let iy = 0; iy < size; iy++) {
-        for (let ix = 0; ix < size; ix++) {
-          let acc = 0, hits = 0;
-          for (let sy = 0; sy < SS; sy++) {
-            const y = iy + (sy + 0.5) * inv - Rd;
-            for (let sx = 0; sx < SS; sx++) {
-              const x = ix + (sx + 0.5) * inv - Rd;
-              const r = Math.sqrt(x * x + y * y);
-              if (r > Rd) continue;
-              // radius is linear in θ; screen +y is down and φ=0 points "up"
-              const theta = (r / Rd) * (Math.PI / 2);
-              const mu = Math.cos(theta);
-              const ir = Math.min(thetaBins - 1, Math.max(0, Math.floor((1 - mu) * thetaBins)));
-              let phi = Math.atan2(x, -y);          // 0 at screen-up, increasing CW
-              if (phi < 0) phi += TWO_PI;
-              const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhi / 2) % TWO_PI) / dPhi));
-              acc += grid.bdf[ir][ip];
-              hits++;
+      // PERFORMANCE (2026-07-27): the pixel→bin mapping depends ONLY on
+      // (size, SS, thetaBins, phiBins) — all constant for the whole run — yet the
+      // first version recomputed sqrt/cos/atan2 for every subsample on EVERY
+      // redraw. Measured 21 ms per redraw at dpr=2 and 41 ms at dpr=4 (two plots,
+      // 3×3 or 2×2 supersampling), which at the panel's refresh cadence is a large
+      // share of wall-clock during a live run. It is now precomputed ONCE into a
+      // flat Int32Array of bin indices (−1 = outside the disc) and reused, so each
+      // redraw is table lookups and adds with no transcendental calls.
+      const cache = BottomPanel._rasterCache;
+      if (!cache || cache.size !== size || cache.SS !== SS ||
+          cache.nT !== thetaBins || cache.nP !== phiBins) {
+        const TWO_PI2 = 2 * Math.PI;
+        const idx = new Int32Array(size * size * SS * SS);
+        let q = 0;
+        for (let iy = 0; iy < size; iy++) {
+          for (let ix = 0; ix < size; ix++) {
+            for (let sy = 0; sy < SS; sy++) {
+              const y = iy + (sy + 0.5) * inv - Rd;
+              for (let sx = 0; sx < SS; sx++) {
+                const x = ix + (sx + 0.5) * inv - Rd;
+                const r = Math.sqrt(x * x + y * y);
+                if (r > Rd) { idx[q++] = -1; continue; }
+                // radius is linear in θ; screen +y is down and φ=0 points "up"
+                const theta = (r / Rd) * (Math.PI / 2);
+                const mu = Math.cos(theta);
+                const ir = Math.min(thetaBins - 1, Math.max(0, Math.floor((1 - mu) * thetaBins)));
+                let phi = Math.atan2(x, -y);          // 0 at screen-up, increasing CW
+                if (phi < 0) phi += TWO_PI2;
+                const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhi / 2) % TWO_PI2) / dPhi));
+                idx[q++] = ir * phiBins + ip;
+              }
             }
           }
-          if (!hits) continue;                       // outside the disc: leave transparent
-          const frac = BottomPanel.mapBdfToColorFraction(acc / hits);
-          const li = Math.max(0, Math.min(257, Math.round(frac * 257))) * 3;
-          const o = (iy * size + ix) * 4;
-          px[o]     = lut[li];
-          px[o + 1] = lut[li + 1];
-          px[o + 2] = lut[li + 2];
-          px[o + 3] = 255;
         }
+        BottomPanel._rasterCache = { size, SS, nT: thetaBins, nP: phiBins, idx };
+      }
+      const idx = BottomPanel._rasterCache.idx;
+
+      // Flatten the grid once per redraw (5400 reads) so the inner loop is a
+      // single indexed lookup rather than a nested array deref.
+      const flat = BottomPanel._flatBuf && BottomPanel._flatBuf.length === thetaBins * phiBins
+        ? BottomPanel._flatBuf
+        : (BottomPanel._flatBuf = new Float64Array(thetaBins * phiBins));
+      for (let ir = 0; ir < thetaBins; ir++) {
+        const row = grid.bdf[ir], base = ir * phiBins;
+        for (let ip = 0; ip < phiBins; ip++) flat[base + ip] = row[ip];
+      }
+
+      // Reuse the offscreen canvas AND its ImageData across redraws. Allocating a
+      // fresh <canvas> element plus a size×size ImageData on every redraw is cheap
+      // in Node (where neither exists, which is why the first benchmark missed it
+      // entirely) but expensive in a browser: at dpr=2 that is a DOM element plus
+      // ~313 kB of pixel buffer per plot, twice per redraw, tens of times a second.
+      // Keyed on size alone — everything else about the buffer is size-invariant.
+      let ob = BottomPanel._offBuf;
+      if (!ob || ob.size !== size) {
+        const c = document.createElement("canvas");
+        c.width = size; c.height = size;
+        const cx2 = c.getContext("2d");
+        ob = BottomPanel._offBuf = { size, canvas: c, ctx: cx2, img: cx2.createImageData(size, size) };
+      }
+      const off = ob.canvas, octx = ob.ctx, img = ob.img;
+      const px = img.data;
+
+      const SS2 = SS * SS;
+      for (let p = 0, q = 0; p < size * size; p++) {
+        let acc = 0, hits = 0;
+        for (let s = 0; s < SS2; s++, q++) {
+          const b = idx[q];
+          if (b >= 0) { acc += flat[b]; hits++; }
+        }
+        if (!hits) continue;                         // outside the disc: leave transparent
+        const frac = BottomPanel.mapBdfToColorFraction(acc / hits);
+        const li = Math.max(0, Math.min(257, Math.round(frac * 257))) * 3;
+        const o = p * 4;
+        px[o]     = lut[li];
+        px[o + 1] = lut[li + 1];
+        px[o + 2] = lut[li + 2];
+        px[o + 3] = 255;
       }
       octx.putImageData(img, 0, 0);
       ctx2.drawImage(off, cx - radius, cy - radius, 2 * radius, 2 * radius);

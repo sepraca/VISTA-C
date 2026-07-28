@@ -678,16 +678,28 @@ export const Export = {
         // pixel-identical to before.
         const showEntireDomain = UI.getPhotonEntryMode() === EntryMode.UNIFORM_DOMAIN && UI.getShowEntireDomainPlots();
 
-        const allLines = Export.getExportParameterLines();
+        // Phase-function mode (C6-D, 2026-07-27): export the plot ALONE, with no
+        // header at all. p(Θs) is a property of the scattering medium — it depends
+        // only on (band, r_eff), or on g under HG — and is completely independent of
+        // photon count, geometry, illumination, surface albedo, RNG seed and every
+        // R/T/A/S outcome. Printing that block above the curve implies a dependence
+        // that does not exist (and would read as stale/nonsense before a run, e.g.
+        // "Photons: 0" with an all-zero budget). The curve's own in-panel title
+        // already carries the only things that matter: band, wavelength, r_eff, g, ω₀.
+        const bareplot = (mode === "phase");
+
+        const allLines = bareplot ? [] : Export.getExportParameterLines();
         const lines = showEntireDomain ? allLines.slice(0, -1) : allLines;   // drop trailing "Obs geometry" line
-        const outcome = showEntireDomain ? [] : Export.getOutcomeStatisticLines();
+        const outcome = (bareplot || showEntireDomain) ? [] : Export.getOutcomeStatisticLines();
 
         // Last settings row sits at y=140 regardless (its content just has one
         // fewer item when Obs geometry is dropped); the outcome rows normally
         // run through y=220. When outcome rows are skipped, the domain lines
         // start right after the settings rows instead, one row-height down.
         const domainStartY = showEntireDomain ? 166 : 220;
-        const headerH = Math.round((domainStartY + 16) * scale) + (domainLines.length > 0 ? domainLines.length * domainLineH + Math.round(8 * scale) : 0);
+        // bareplot => zero header: the exported PNG is exactly the panel canvas.
+        const headerH = bareplot ? 0
+          : Math.round((domainStartY + 16) * scale) + (domainLines.length > 0 ? domainLines.length * domainLineH + Math.round(8 * scale) : 0);
         const canvasOut = document.createElement("canvas");
         canvasOut.width = canvas2.width;
         canvasOut.height = canvas2.height + headerH;
@@ -697,20 +709,23 @@ export const Export = {
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvasOut.width, canvasOut.height);
 
-        // Header with key run inputs.
-        ctx.fillStyle = "#f8fafc";
-        ctx.font = `bold ${Math.round(16 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
-        const title = mode === "bdf" ? "BDF polar plots" : (mode === "path" ? "Optical path-length distributions" : "μ histograms");
-        ctx.fillText(title, 14 * scale, 30 * scale);
+        // Header with key run inputs -- skipped entirely for the phase-function
+        // plot, which is run-independent (see `bareplot` above).
+        if (!bareplot) {
+          ctx.fillStyle = "#f8fafc";
+          ctx.font = `bold ${Math.round(16 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          const title = mode === "bdf" ? "BDF polar plots" : (mode === "path" ? "Optical path-length distributions" : "μ histograms");
+          ctx.fillText(title, 14 * scale, 30 * scale);
 
-        ctx.font = `${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          ctx.font = `${Math.round(13 * scale)}px system-ui, -apple-system, Segoe UI, sans-serif`;
 
-        // Settings rows (11 or 12 lines depending on whether Obs geometry was
-        // dropped: 3 / 3 / 3 / 3-or-2 across four rows)
-        ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
-        ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
-        ctx.fillText(lines.slice(6, 9).join(" ,   "), 14 * scale, 114 * scale);
-        ctx.fillText(lines.slice(9, 12).join(" ,   "), 14 * scale, 140 * scale);
+          // Settings rows (11 or 12 lines depending on whether Obs geometry was
+          // dropped: 3 / 3 / 3 / 3-or-2 across four rows)
+          ctx.fillText(lines.slice(0, 3).join(" ,   "), 14 * scale, 62 * scale);
+          ctx.fillText(lines.slice(3, 6).join(" ,   "), 14 * scale, 88 * scale);
+          ctx.fillText(lines.slice(6, 9).join(" ,   "), 14 * scale, 114 * scale);
+          ctx.fillText(lines.slice(9, 12).join(" ,   "), 14 * scale, 140 * scale);
+        }
 
         // Outcome statistics rows (3 lines to prevent truncation) -- skipped
         // entirely when they'd describe a different combiner than the plots

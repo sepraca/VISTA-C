@@ -6,6 +6,71 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Performance (2026-07-27 — Mie sampling 3.5×; BDF rasterizer buffers)
+
+- **`Physics.sampleMieCosTheta`: guide-table CDF inversion replaces the binary search.**
+  Author-reported: Mie runs were markedly slower than HG despite identical post-CDF logic
+  (one RNG draw, one rotation) and near-identical mean scatterings/photon (19.09 vs 19.76).
+  Measured cause: the sampler itself, at **43.9 ns/call versus 7.9 ns** for the analytic HG
+  sampler. At ~19.5 scatters/photon that 36 ns gap alone predicted 0.51 M photons/s against
+  an observed 0.49 (HG: 0.79) — i.e. it accounted for the entire difference.
+  - The cost is **branch misprediction, not memory**: the 1000-node table is 8 kB and
+    L1-resident, but a binary search is ~10 iterations whose memory access depends on the
+    previous comparison, so on unpredictable ξ it neither pipelines nor predicts. (A first
+    micro-benchmark showed only 1.3× because it drew ξ from a small repeating array, which
+    lets the predictor learn the paths; measuring through `RNG.rand()` exposed the real gap.)
+  - Replaced by an indexed guide table: `Physics.buildMieGuide` maps bucket ⌊ξ·4096⌋ to the
+    first CDF node in that bucket, then a 0–1 step forward scan. Still exactly one RNG draw,
+    and it computes the same "largest lo with cdf[lo] ≤ ξ", so results are **bit-identical**.
+    Guide cached against the CDF by identity (~0.01 ms build, only on band/r_eff change).
+  - Verified bit-identical: 0 mismatches over 3,000,000 draws through the real RNG stream,
+    0 over 5,000,100 draws spanning all 5 bands × 5 r_eff, and identical transport over
+    2M photons (same reflected count 616,905, same total scatterings 30,232,955, same FNV
+    hash over every exit direction's raw float64 bits). No golden or physics impact.
+  - **43.9 → 12.5 ns/call (3.5×).** In-browser: Mie 0.49 → **0.72 M photons/s** against
+    HG's 0.76 — the Mie/HG gap falls from 38% to 5%.
+- **BDF polar rasterizer: cache the pixel→bin index table and reuse the offscreen canvas +
+  ImageData.** The per-pixel rasterizer added earlier the same day recomputed
+  `sqrt`/`cos`/`atan2` for every subsample on every redraw, and allocated a fresh `<canvas>`
+  plus a size×size ImageData per plot per redraw. The mapping depends only on
+  (size, SS, µ-bins, φ-bins) — all constant during a run — so it is now built once into a
+  flat `Int32Array`; the buffers are likewise reused. Output verified byte-identical
+  (0 differing pixels over 78,400 at dpr=2 and 313,600 at dpr=4). BDF-panel cost now
+  matches panel-hidden (0.43 vs 0.44 M photons/s in-browser, from 0.35 before).
+  - Note: the allocation cost was invisible to Node benchmarks (no canvas exists there),
+    which is why the first fix addressed only the arithmetic.
+- Confirmed **no kernel regression** since v6.0.7: same-machine back-to-back HG runs give
+  v6.0.7 0.76 vs current 0.79 M photons/s. Earlier apparent slowdowns were a mix of Mie's
+  genuine sampler cost, differing photon counts, and machine state.
+
+### Added (2026-07-27 — C6-D: in-app phase-function panel)
+
+- **New "Phase function" bottom-panel mode** plotting p(Θs) as a polar curve, following
+  the conventions of the author's `read_pf_netcdf_file.ipynb` so in-app and notebook
+  figures are directly comparable: 0° at top, increasing clockwise, θ grid every 45°,
+  LOG radial axis 10⁻³–10⁴, the tabulated 0–180° curve mirrored into 0–360°, and radial
+  tick labels on the 125° spoke. Seven labelled decades (10⁻²–10⁴): the innermost decade
+  collapses to r=0, so its ring is a dot and its label lands on the origin — matplotlib
+  suppresses it for the same reason.
+- Under Mie the selected (band, r_eff) curve is drawn solid with an HG curve at the
+  **same band-averaged g** dashed over it. That comparison is the point of the Mie
+  option: HG cannot express the cloudbow or the glory at any g. Measured for band 1 /
+  r_eff = 10 µm: p_Mie/p_HG = **6.0 at Θs ≈ 140°** (cloudbow) and **16.2 at 180°**
+  (glory). Under HG only the analytic curve is drawn.
+- **HG normalization verified numerically against the shipped tables.** The Mie tables
+  satisfy Σ wt·pf = 1 with Σ wt = 2 and Σ wt·pf·µ = g, so the matching HG form is the
+  HALF form `p = ½(1−g²)/(1+g²−2gµ)^{3/2}` — measured Σ wt·pf_HG = 1.000000 and
+  Σ wt·pf_HG·µ = 0.861800 = g exactly. Without the ½ those are 2.000000 and 2g, which
+  would have placed the two curves a factor of 2 apart and misrepresented the Mie/HG
+  difference.
+- **No run-context header in this mode**, in the panel or the exported PNG: p(Θs) is a
+  property of the scattering medium, depending only on (band, r_eff) — or on g under HG —
+  and is independent of photon count, geometry, illumination, surface albedo, RNG seed and
+  every R/T/A/S outcome. The header would imply a dependence that does not exist (and read
+  as nonsense before a run, e.g. "Photons: 0" with an all-zero budget). The exported PNG
+  is exactly the panel canvas; the plot's own title carries band, wavelength, r_eff, g, ω₀.
+- Display-only: no physics, schema or golden impact.
+
 ### Fixed (2026-07-27 — surface-absorption heatmap binning; display-only)
 
 - **`SimStats._addSurfaceFootprint` clamped out-of-grid landings into the edge cells,
