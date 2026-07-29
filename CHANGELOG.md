@@ -4,7 +4,111 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v6.1.0] — 2026-07-29
+
+### Random number generator replaced: Mulberry32 → xoshiro128\*\* (breaking for reproducibility)
+
+**Every stochastic result in the repository changed.** The physics did not: this is a new
+random stream, and all regenerated artifacts were verified to differ from their predecessors
+only as two seeds of the same code differ (see "D1 verification" below).
+
+- **Why.** Mulberry32 has 32 bits of state, and three consequences were measured, not assumed:
+  - *The period was too short for this application.* A photon consumes ~83 random draws at
+    τ=10 (21.4 step-length + 20.4 scattering angle + 20.4 azimuth + 20.4 absorption test —
+    four draws per scattering, not three). The 2³² period is therefore exhausted after only
+    **~52 million photons**, below the app's own 100 M cap. Past that, photons repeat
+    trajectories exactly and the effective sample size stops growing.
+  - *"Different seeds" were not independent streams.* Mulberry32's state is a counter, so all
+    seeds lie on ONE cycle at different phases. During the C5 DISORT validation, 20 M-photon
+    chunks consuming 1.65×10⁹ draws were seeded only 600 M draws apart — 64 % overlap,
+    ρ ≈ 0.32 — which inflated the variance of the sum as 1+(k−1)ρ and manufactured a spurious
+    ~2 % "residual" against DISORT. Two 20 M runs differenced (Poisson prediction 1.000):
+    **mulberry32 0.362, xoshiro128\*\* 0.960**.
+  - *It was slower.* 7.66 ns/draw vs 4.50; the RNG is 41 % of per-photon cost at τ=10, so the
+    swap is ~20 % faster overall — not a tradeoff.
+- **What replaced it.** xoshiro128\*\* — 128-bit state, 2¹²⁸ period (~4×10³⁶ photons at τ=10,
+  so the ceiling is wall-clock again), 32-bit output, seeded by SplitMix32. Uses only
+  `Math.imul`/xor/shift/rotate, all exact 32-bit integer ops, so the sequence is
+  bit-reproducible across engines. Note the pairing: xoshiro128\*\* goes with SplitMix32;
+  SplitMix64 belongs to xoshiro256\*\*, whose 64-bit arithmetic needs BigInt in JavaScript
+  (measured 58.28 ns/draw, 7.7× slower).
+- **Structurally immune to the 2026-07-27 bug.** That bug was `t += 0x6D2B79F5`, a *floating
+  point* addition on a value that outgrew 2⁵³. The new state update contains no additions at
+  all. Verified: all four state words remain exact uint32 after 200 M draws.
+- **`RNG.jump()` added** — advances 2⁶⁴ draws in constant time. This is now the *only*
+  supported way to derive independent sub-streams (chunked accumulation, future Web Workers).
+  Arithmetic seed offsets are exactly the trap described above and fail silently.
+- **Reproducibility vector** (seed 42) documented in `js/rng.js` and asserted by the gates; it
+  was reproduced by an independent Python implementation written from the algorithm.
+
+### Performance: absorption draw skipped when ω₀ = 1
+
+- The absorption test now short-circuits (`omega0 < 1 && RNG.rand() > omega0`). At ω₀ = 1 the
+  comparison could never succeed, so the draw was pure waste. Measured at τ=10: **82.38 →
+  61.98 draws/photon (−25 %)** for band 1; ω₀ < 1 bands unchanged (82.59 → 82.71, 75.5 →
+  75.41, 59.02 → 59.06), confirming the guard fires only where intended.
+
+### Fixed
+
+- **Run-timer readout survived a reset.** `RunControl.resetScene()` cleared `SimStats` but not
+  `state.runTiming`, and `StatsPanel.runTimingLine()` takes its elapsed time from the latter
+  while taking the rate from the former — so after Reset the panel showed the *previous* run's
+  duration at a 0.00 M photons/s rate (`Run time: 8.18 s @ 0.00M photons/s`), a stale number
+  in the shape of a measurement. `resetScene()` now clears both; zeroing `endMs` is what
+  restores the "no batch yet" state that suppresses the line entirely. `resetScene()` is the
+  single funnel for the Reset button, parameter edits and Mie selection changes, so this
+  covers every path. (Author-reported during v6.1.0 browser verification.)
+
+### Export schema 1.6 — `inputs.rng`
+
+- Adds `inputs.rng = {name, seed}`. **A seed no longer identifies a stream**: seed 42 means a
+  different photon sequence before and after this release, so a run is only reproducible from
+  the file if the file records the generator. `inputs.rng_seed` is retained unchanged; the PNG
+  header line becomes `RNG: xoshiro128** (seed 42)`.
+- `mc_export_reader.py` surfaces `.rng` and reports `{name: "mulberry32", assumed: True}` for
+  pre-1.6 files — an inference, flagged as one rather than silently asserted.
+
+### Tests
+
+- **`verify_rng.mjs` rewritten** (10 gates, 6.3 s). Drops the mulberry32-specific masked
+  reference; adds the seed-42 output/state vector, state-stays-uint32 past 100 M draws,
+  deep-stream uniformity and determinism, `jump()` sub-stream checks, and — the regression
+  test for the defect above — a **seed-independence gate** (two-seed differenced χ², **1.008**;
+  mulberry32 scores 0.362 and fails).
+- **D1 verification, `tests/golden-snapshots/d1_noise_check.py` (new).** Proves a golden
+  difference is a reseed rather than a regression, *before* overwriting anything. It assumes
+  nothing about the estimators' distributions — two earlier analytic-σ versions gave wrong
+  verdicts (one failed pure noise because the generators re-seed every configuration to the
+  same value, so fluctuations appear coherently and the mean does not average down; the other
+  reported **+720,000 σ** from a 0.1 % difference by applying a binomial σ to `EdownSfc`, a
+  per-photon event rate that legitimately exceeds 1). Instead it generates extra realizations
+  and uses seed-to-seed scatter as the null. Gate thresholds were calibrated by brute force
+  (56 pure-reseed draws of the statistic; the null itself reaches 5.8), and its sensitivity
+  was measured: it catches a coherent 0.3 % shift and misses 0.1 %.
+- All three goldens regenerated and **D1 PASS**: spread ratios 0.45–1.41 against 1.0 for an
+  ordinary reseed; path-histogram χ² = 1.014 / 0.968 / 0.998.
+- **Golden `.md` tables are now generated** from the `.json` by `refresh_snapshot_md.py`, with
+  a `--check` drift gate wired into `run_all.mjs` (11 suites, was 10). This closes a
+  pre-existing defect: the `.json` files were regenerated on 2026-07-27 for the state-mask fix
+  while the hand-maintained tables were last edited 2026-07-21, so for two days the snapshots
+  displayed pre-fix numbers beside post-fix data.
+- `gen_golden{,_ud,_periodic}.mjs` accept `VISTAC_GOLDEN_SEED` (default 42, committed goldens
+  unaffected) purely so the D1 null can be measured.
+
+### Test artifacts regenerated
+
+- **All 26 `tests/Illumination comparisons/` exports** at schema 1.6, and all 18 figures. Both
+  are now driven by committed manifests (`regen_exports.py`, `regen_figures.py`) instead of
+  unrecorded one-off commands: the exports are reconstructed from each file's own `inputs`
+  block, and figure captions are generated from the data they label. Cross-check: the
+  documented `open ≡ geomB` export identity still holds bit-for-bit under the new RNG.
+- **C5 DISORT validation re-run** (`tests/DISORT comparisons/mie_b2_b6_b7/`). Agreement is
+  marginally better than before: R and T to **0.006–0.05 %**, pooled n_σ² **1.06 / 1.02 /
+  0.83** (was 1.07 / 1.05 / 1.15), ΔR within ±1.5 σ_MC. The photon-count ceiling caveat is
+  marked obsolete rather than deleted. Two defects that made this pipeline unrunnable on a
+  clean checkout were fixed: `legendre_moments.py` only ever handled band 1 (bands 2/6/7 had
+  come from an uncommitted ad-hoc variant), and it and `vistac_run.mjs` both used absolute
+  paths to one particular machine.
 
 ### Performance (2026-07-27 — Mie sampling 3.5×; BDF rasterizer buffers)
 

@@ -81,13 +81,30 @@ gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");
 gate("verify_p5 (streaming path hist)",   "tests/review-harness/verify_p5.mjs");
 gate("verify_mie_sampling (⟨µ⟩=g)",       "tests/review-harness/verify_mie_sampling.mjs");
 gate("verify_mie_transport (dispatch)",   "tests/review-harness/verify_mie_transport.mjs");
-// RNG integrity (2026-07-27). Guards the unmasked-state bug class: the shipped
-// generator must stay bit-identical to a correctly-masked reference far past the
-// 4,917,758-draw float64 divergence point, and BDF mirror symmetry must stay Poisson
-// at high N. Verified to FAIL (both gates) when the original bug is reintroduced.
-gate("verify_rng (state mask / variance)", "tests/review-harness/verify_rng.mjs");
+// RNG integrity (2026-07-27, extended 2026-07-29 for the xoshiro128** swap). Guards
+// the whole 32-bit-state bug class, which is invisible to every other suite here
+// because it corrupts VARIANCE while leaving MEANS unbiased. Ten gates: fixed seed-42
+// output/state vector, state-stays-uint32 past 100M draws, deep-stream uniformity and
+// determinism, SEED INDEPENDENCE (two-seed differenced chi2 -> 1; mulberry32 scored
+// 0.362), BDF mirror symmetry staying Poisson at high N, and jump() sub-streams.
+gate("verify_rng (generator integrity)",  "tests/review-harness/verify_rng.mjs");
 gate("check_golden_ud (uniform domain)",  "tests/golden-snapshots/check_golden_ud.mjs");
 gate("check_golden_periodic",             "tests/golden-snapshots/check_golden_periodic.mjs");
+
+// Golden .md tables must agree with the .json goldens they document. Added 2026-07-29
+// after finding they had silently drifted for two days: the .json files were regenerated
+// for the Mulberry32 state-mask fix (2026-07-27) while the hand-maintained .md tables were
+// last edited 2026-07-21, so the snapshots displayed pre-fix numbers beside post-fix data.
+// The tables are now generated from the .json; this gate is the drift alarm.
+if (wanted("golden .md tables (drift check)")) {
+  const t0 = performance.now();
+  const r = spawnSync("python3",
+                      [join(ROOT, "tests/golden-snapshots/refresh_snapshot_md.py"), "--check"],
+                      { encoding: "utf8", maxBuffer: 1 << 24 });
+  record("golden .md tables (drift check)",
+         { code: r.status ?? 1, ms: performance.now() - t0,
+           stdout: (r.stdout || "") + (r.stderr || "") });
+}
 
 // --- Legacy golden: generate then strip-diff against the committed snapshot ---
 if (wanted("golden_v5.4.0 (legacy, strip-diff)")) {

@@ -22,6 +22,7 @@ def get(band,NQ=128):
                         np.linspace(mu_lo[i],mu_hi[i],65))/(mu0*mu_c[i]*(mu_hi[i]-mu_lo[i])) for i in range(nMU)])
     return V,BV,SV,binned,R
 bands=[2,6,7]
+RESULTS={}
 fig,axs=plt.subplots(2,3,figsize=(16,8.4),sharex=True)
 print(f"  {'band':>5}{'wl':>6}{'ssa':>10}{'R_VC':>10}{'R_DIS':>10}{'dR/sig':>8}   phi=0 nsig2  phi=180 nsig2  pooled")
 for j,band in enumerate(bands):
@@ -32,6 +33,10 @@ for j,band in enumerate(bands):
         ipb=int(round(ph/3.0))%nPHI; d=BV[:,ipb]-binned(float(ph)); pool.append(d/SV[:,ipb])
     n0=np.mean((( BV[:,0]-binned(0.0))/SV[:,0])**2)
     n180=np.mean((( BV[:,60]-binned(180.0))/SV[:,60])**2)
+    RESULTS[str(band)]={"wavelength_um":WL[band],"ssa":V["ssa"],"N":N,
+        "R_vistac":V["refl"]/N,"R_disort":R,"A_vistac":1-(V["refl"]+V["trans"])/N,
+        "T_vistac":V["trans"]/N,"nsig2_phi0":float(n0),"nsig2_phi180":float(n180),
+        "nsig2_pooled":float(np.mean(np.concatenate(pool)**2))}
     print(f"  {band:5d}{WL[band]:6.2f}{V['ssa']:10.5f}{V['refl']/N:10.5f}{R:10.5f}{(V['refl']/N-R)/sR:8.1f}   {n0:11.2f}  {n180:13.2f}  {np.mean(np.concatenate(pool)**2):6.2f}")
     for i,(ph,ipb,lab) in enumerate(((0.0,0,"φ = 0°  (forward side)"),(180.0,60,"φ = 180°  (antisolar)"))):
         ax=axs[i,j]; Dv=binned(ph)
@@ -44,8 +49,10 @@ for j,band in enumerate(bands):
         if i==0: ax.set_title(f'MODIS band {band}  ({WL[band]:.2f} µm)   ω₀ = {V["ssa"]:.5f}',fontsize=11,pad=8)
         else: ax.set_title(lab,fontsize=9,pad=6)
 fig.suptitle('C5 validation — VISTA-C Monte Carlo vs PythonicDISORT, principal plane, absorbing MODIS bands\n'
-             'τ=10, Θ₀=30°, A$_s$=0, r$_{eff}$=10 µm;  plane-parallel proxy W=500, centered beam, 20M photons',
+             'τ=10, Θ₀=30°, A$_s$=0, r$_{eff}$=10 µm;  plane-parallel proxy W=500, centered beam, 20M photons (xoshiro128** seed 42)',
              fontsize=12.5, y=1.02)
 fig.tight_layout()
-fig.savefig("C5_bands_2_6_7_principal_plane.png",dpi=125,bbox_inches='tight')
-print("\nwrote C5_bands_2_6_7_principal_plane.png")
+fig.savefig("C5_mie_principal_plane_b2_b6_b7.png",dpi=125,bbox_inches='tight')
+json.dump({"rng":{"name":"xoshiro128**","seed":42},"bands":RESULTS},open("C5_results.json","w"),indent=2)
+print("wrote C5_results.json")
+print("\nwrote C5_mie_principal_plane_b2_b6_b7.png")

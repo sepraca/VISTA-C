@@ -49,7 +49,14 @@ const OBS_GEOMS = [
   ["all_faces",      "Cloud top/base/side faces"]
 ];
 const N_PHOTONS = 500000;
-const SEED = 42;
+// Seed 42 always, unless VISTAC_GOLDEN_SEED overrides it. The override exists for D1
+// NULL CALIBRATION (d1_noise_check.py) and nothing else: when a change alters the random
+// stream by design, a golden's shift is only interpretable against how far it moves when
+// ONLY the seed changes. Every configuration below re-seeds to the SAME value, so the runs
+// are correlated replays of one stream, NOT independent samples -- which is exactly why the
+// null has to be measured rather than assumed. The committed golden is unaffected: the
+// default is unchanged and the value is recorded in the output.
+const SEED = Number(process.env.VISTAC_GOLDEN_SEED ?? 42);
 
 const FIXED = { tauCloud: 10, slabW: 40, slabD: 40, g: 0.85, omega0: 1.0,
                 betaExt: 10.0, surfaceDistanceKm: 0.5, entryMode: "uniform_domain" };

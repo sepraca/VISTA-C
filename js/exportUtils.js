@@ -279,7 +279,11 @@ export const Export = {
         `Surface Albedo A_s: ${UI.getSurfaceAlbedo().toFixed(2)}`,
         `β_ext: ${UI.getCloudBetaExt().toFixed(2)} km⁻¹`,
         `d_sfc: ${UI.getSurfaceDistanceKm().toFixed(2)} km`,
-        `RNG seed: ${RNG.currentSeed()}`,
+        // Generator name, not just the seed (schema 1.6): seed 42 denotes a
+        // different photon stream before and after the mulberry32 → xoshiro128**
+        // swap, so a figure showing only the seed is not reproducible from itself.
+        // Kept on ONE line -- the header is fixed at 12 rows (see note below).
+        `RNG: ${RNG.name()} (seed ${RNG.currentSeed()})`,
         `Photon illumination: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`,
         // f_pix appended to this line (not its own row) so the header stays at
         // 12 lines -- downloadBottomPanel slices rows in fixed groups of 3.
@@ -828,7 +832,16 @@ export const Export = {
     // state was not masked (see TODO D.0). Means were unbiased, but per-bin noise
     // was inflated for runs above ~175k photons; 1.5 exports are the first with
     // trustworthy uncertainties. Pre-1.5 files are NOT statistically comparable.
-    SCHEMA_VERSION: "1.5",
+    // 1.6 (2026-07-29): added inputs.rng = {name, seed}. The generator was replaced
+    //     (mulberry32 → xoshiro128**, TODO §R), so a SEED NO LONGER IDENTIFIES A
+    //     STREAM on its own -- seed 42 means a different photon sequence before and
+    //     after. Recording the generator name makes a run reproducible from the file
+    //     alone. Purely additive: inputs.rng_seed is retained unchanged, and a
+    //     pre-1.6 file is by definition mulberry32 (readers should report that as an
+    //     assumption, not a recorded fact). Results do not change systematically
+    //     across the 1.5→1.6 boundary -- means agree within Monte Carlo noise -- but
+    //     they are not bit-identical, so goldens were regenerated deliberately.
+    SCHEMA_VERSION: "1.6",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -849,6 +862,15 @@ export const Export = {
         surface_distance_km: UI.getSurfaceDistanceKm(),
         photon_illumination: UI.getPhotonEntryMode(),   // "center" | "top" | "top_side" | "uniform_domain"
         rng_seed: RNG.currentSeed(),
+        // --- RNG identity (schema 1.6) ---
+        // rng_seed above is kept for backward compatibility, but a seed alone no
+        // longer identifies the stream: the generator changed (mulberry32 →
+        // xoshiro128**), so the same seed produces a different photon sequence
+        // depending on the code version. Record which generator ran.
+        rng: {
+          name: RNG.name(),
+          seed: RNG.currentSeed()
+        },
         // --- Phase function (schema 1.5, C6-C) ---
         // Before 1.5 a Mie run was indistinguishable from an HG run in the export:
         // hg_g / ssa_omega0 carried the DERIVED band-averaged values with nothing

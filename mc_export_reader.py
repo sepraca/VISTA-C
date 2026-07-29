@@ -176,6 +176,30 @@ class MCExport:
     def is_mie(self) -> bool:
         return self.phase_function.get("type") == "mie"
 
+    # ---- RNG identity (schema >= 1.6) -------------------------------------
+    @property
+    def rng(self) -> dict:
+        """Which generator produced this run, as {'name', 'seed'}.
+
+        A SEED DOES NOT IDENTIFY A STREAM ACROSS VERSIONS. VISTA-C replaced
+        mulberry32 with xoshiro128** on 2026-07-29 (TODO section R), so seed 42
+        denotes a completely different photon sequence before and after. Schema
+        >= 1.6 records the name; older files only ever ran mulberry32, so we
+        report that with assumed=True to keep the inference visible rather than
+        silently asserting it.
+
+        Practical consequence: two files agreeing on rng_seed are bit-identical
+        replicates only if they also agree on rng['name']. Pre-1.6 files carry
+        the additional caveat that mulberry32's 2^32 period is exhausted after
+        ~52M photons at tau=10 (~83 draws/photon), so high-N pre-1.6 runs may
+        have fewer effective samples than their photon count suggests.
+        """
+        r = self.raw.get("inputs", {}).get("rng")
+        if r is not None:
+            return dict(r)
+        return {"name": "mulberry32", "assumed": True,
+                "seed": self.raw.get("inputs", {}).get("rng_seed")}
+
     # ---- BDF --------------------------------------------------------------
     @property
     def bdf_binning(self) -> str:
@@ -353,6 +377,10 @@ class MCExport:
                 # Flatten run inputs and scalar fluxes into global attributes.
                 **{f"input_{k}": v for k, v in self.inputs.items() if not isinstance(v, dict)},
                 **{f"flux_{k}": v for k, v in self.fluxes.items()},
+                # inputs.rng is a dict, so the comprehension above skips it. Promote
+                # the generator name explicitly: it is what makes rng_seed meaningful
+                # (see the .rng docstring), and it must survive into the netCDF.
+                "input_rng_name": self.rng.get("name", "unknown"),
             },
         )
         ds["reflected_bdf"].attrs["long_name"] = "reflected BDF = (W/N) pi / (mu dmu dphi)"
@@ -456,7 +484,9 @@ def print_summary(exp: MCExport) -> None:
         print(f"  domain boundary    : {exp.domain_boundary}")
         if exp.launch_window_shift is not None:   # schema >= 1.4, open boundary
             print(f"  launch window shift: {exp.launch_window_shift:.4g} τ-units upwind (N2 ground-domain design)")
-    print(f"  RNG seed           : {inp['rng_seed']}")
+    rng = exp.rng
+    rng_note = "  [assumed: pre-1.6 file predates the generator swap]" if rng.get("assumed") else ""
+    print(f"  RNG                : {rng.get('name')} (seed {rng.get('seed')}){rng_note}")
     print("-" * 64)
     print(f"ENERGY BUDGET (per launched photon; observation geometry: {exp.outputs.get('observation_geometry', 'n/a')})")
     print(f"  R  reflected flux (albedo) : {flux['R_reflected']:.5f}  ({cnt['reflected']:,})")

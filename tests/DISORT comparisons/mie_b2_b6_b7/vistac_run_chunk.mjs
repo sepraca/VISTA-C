@@ -1,0 +1,79 @@
+// vistac_run_chunk.mjs -- one jump()-derived chunk of a large C5 run.
+//
+//   node vistac_run_chunk.mjs <band> <chunkIndex> <photonsPerChunk> [seed]
+//       -> writes vista_b<band>_c<chunkIndex>.json
+//
+// WHY CHUNKED -- AND WHAT THIS DOES *NOT* MEAN. Chunking here is purely an execution
+// workaround: the automation used to produce the C5 comparison caps a single command at
+// ~45 s, while a contiguous 100 M-photon band takes ~165 s in Node. It is NOT a limit of
+// VISTA-C or of the generator, and nothing here implies 20 M is a practical ceiling.
+// xoshiro128**'s period is 2^128 ~ 3.4e38 draws; at ~83 draws/photon (tau=10) that is
+// ~4e36 photons, roughly 1e28 times the app's own 100 M cap. The only real constraint is
+// wall-clock: ~0.88 M photons/s, so 100 M is about two minutes. Use vistac_run.mjs for a
+// single contiguous run whenever you can.
+//
+// Chunking does earn a second keep: it is the exact accumulation pattern that FAILED under
+// mulberry32 and produced the spurious ~2 % "residual" against DISORT (TODO section R), and
+// jump() is the primitive a future Web Worker implementation would use -- so running the
+// high-N confirmation this way also tests the fix in the place it actually broke.
+//
+// HOW THE SUB-STREAMS ARE DERIVED -- this is the whole point. Chunk k is
+// RNG.reset(seed) followed by k calls to RNG.jump(), each advancing 2^64 draws. The chunks
+// are therefore disjoint by construction. This is NOT the same as seeding chunk k with
+// seed+k*offset: mulberry32's seeds are phases of ONE cycle, so arithmetic offsets overlap
+// whenever the offset is smaller than the draws consumed (measured rho ~ 0.32 for 600 M
+// offsets against 1.65e9 draws), which inflates the variance of the sum as 1+(k-1)rho.
+// Never reintroduce that shortcut.
+//
+// SELF-CHECK BUILT IN: chunk 0 performs no jumps, so its stream is identical to a plain
+// contiguous run at the same seed. merge_chunks.mjs asserts chunk 0's grid equals the
+// committed vista_b<band>.json grid bin-for-bin -- if the chunking machinery were wrong,
+// that equality would break.
+import { readFileSync, writeFileSync } from "node:fs";
+const B = new URL("../../../js/", import.meta.url);
+const { RNG } = await import(new URL("rng.js", B));
+const { Physics } = await import(new URL("physics.js", B));
+const D = new URL("../../../data/mie/", import.meta.url);
+
+const band = Number(process.argv[2]);
+const chunk = Number(process.argv[3]);
+const N = Number(process.argv[4]);
+const seed = Number(process.argv[5] || 42);
+
+const grid = JSON.parse(readFileSync(new URL("mie_grid.json", D)));
+const bb = JSON.parse(readFileSync(new URL(`mie_band_${band}.json`, D)));
+const WT = Float64Array.from(grid.wt), XMU = Float64Array.from(grid.xmu), k = 8;
+const cdf = Physics.buildMieCdf(Float64Array.from(bb.pf[k]), WT);
+
+// Identical to vistac_run.mjs -- the plane-parallel proxy case.
+const p = { tauCloud: 10, slabW: 500, slabD: 500, theta0: 30 * Math.PI / 180,
+            g: bb.g[k], omega0: bb.ssa[k], surfaceAlbedo: 0.0, betaExt: 10.0,
+            surfaceDistanceKm: 0.5, entryMode: "center", mieCdf: cdf, mieXmu: XMU };
+
+const nMU = 45, nPHI = 120, w = new Float64Array(nMU * nPHI);
+RNG.reset(seed);
+for (let j = 0; j < chunk; j++) RNG.jump();
+const stateAtStart = RNG.state();
+
+let refl = 0, abs_ = 0, trans = 0;
+for (let i = 0; i < N; i++) {
+  const r = Physics.simulatePhoton(p, false);
+  if (r.status === "absorbed") abs_++;
+  else if (r.status === "transmitted" || r.status === "surface_absorbed") trans++;
+  if (r.status !== "reflected") continue;
+  refl++;
+  const mu = Math.abs(r.dirZ);
+  let phi = Math.atan2(r.dirY, r.dirX); if (phi < 0) phi += 2 * Math.PI;
+  const ir = Math.min(nMU - 1, Math.max(0, Math.floor((1 - mu) * nMU)));
+  const dP = 2 * Math.PI / nPHI;
+  const ip = Math.min(nPHI - 1, Math.floor(((phi + dP / 2) % (2 * Math.PI)) / dP));
+  w[ir * nPHI + ip]++;
+}
+
+writeFileSync(new URL(`vista_b${band}_c${chunk}${seed===42?"":"_s"+seed}.json`, import.meta.url),
+  JSON.stringify({ band, chunk, seed, N, refl, abs: abs_, trans, nMU, nPHI,
+                   w: Array.from(w), ssa: bb.ssa[k], g: bb.g[k],
+                   stateAtStart, stateAtEnd: RNG.state() }));
+console.log(`b${band} c${chunk}: N=${N / 1e6}M R=${(refl / N).toFixed(6)} `
+          + `A=${(abs_ / N).toFixed(6)} T=${(trans / N).toFixed(6)} `
+          + `sum=${((refl + abs_ + trans) / N).toFixed(6)}`);

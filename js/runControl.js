@@ -710,6 +710,15 @@ export const RunControl = {
       Scene.updateWorld();
 
       SimStats.reset();
+      // Clear the run timer with the stats it describes. StatsPanel.runTimingLine()
+      // computes elapsed from state.runTiming but the RATE from
+      // SimStats.stats.launched, so resetting only one of the two left the panel
+      // reporting the PREVIOUS run's duration at a 0.00 M photons/s rate
+      // ("Run time: 8.18 s @ 0.00M photons/s") -- a stale number that looks like a
+      // measurement. Zeroing endMs is what makes runTimingLine() return "" again
+      // (its no-batch-yet guard is `!running && !endMs`).
+      state.runTiming = { startMs: 0, endMs: 0, pausedMs: 0, photons: 0,
+                          fastMode: false, running: false };
       state.nextPhotonId = 1;
       state.activePhotonID = null;
       state.activePhotonStep = 0;

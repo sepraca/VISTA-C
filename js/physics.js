@@ -993,7 +993,17 @@ export const Physics = {
         totalPath += s;
         if (storePath && path.length < MAX_PATH_POINTS) path.push({x, y, tau});
 
-        if (RNG.rand() > omega0) {
+        // Absorption / survival test. This is the fourth of the four draws every
+        // scattering event costs (step length, scattering angle, azimuth, this one) --
+        // the one most easily forgotten when estimating RNG consumption.
+        //
+        // GUARD (2026-07-28): at omega0 >= 1 the test can never succeed (rand() < 1
+        // always), so the draw was pure waste -- measured 20.35 draws/photon spent on a
+        // dead branch for conservative bands. Skipping it is ~25% fewer draws and ~25%
+        // faster for conservative scattering, and lengthens the usable run
+        // proportionally. Deliberately bundled into the same commit as the xoshiro
+        // switch so the RNG stream (and therefore the goldens) moves exactly once.
+        if (omega0 < 1 && RNG.rand() > omega0) {
           return {status: Status.ABSORBED, xExit: x, yExit: y, tauExit: tau, dirX: dir.x, dirY: dir.y, dirZ: dir.z, path, totalPath, scatterings, surfaceBounceCount, cloudBaseTransmissions, surfaceEvents: localSurfaceEvents, surfaceReflectionDirs, touchedCloud, launchRegion, launchFace};
         }
 

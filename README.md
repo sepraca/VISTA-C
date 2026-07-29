@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.0.7** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.1.0** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -514,7 +514,20 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.0.7** (2026-07-20, performance and hygiene patch completing
+Latest tagged release: **v6.1.0** (2026-07-29, random-number generator replacement —
+**every stochastic result changed**, though no physics did). Mulberry32 was retired for
+xoshiro128\*\*: its 32-bit state exhausted its 2³² period after only ~52 M photons at τ=10
+(a photon consumes ~83 draws), below the app's own 100 M cap, and because its state is a
+counter its "different seeds" are phases of one cycle that overlap silently — measured
+ρ ≈ 0.32 between chunks that were supposed to be independent. xoshiro128\*\* has a 2¹²⁸
+period (~4×10³⁶ photons at τ=10), genuinely independent sub-streams via `RNG.jump()`, and is
+~20 % faster. Export schema 1.6 records `inputs.rng = {name, seed}`, since a seed alone no
+longer identifies a stream. Skipping the absorption draw at ω₀ = 1 cut draws/photon 25 %.
+All goldens, all 26 illumination-comparison exports, all 18 figures and the C5 DISORT
+validation were regenerated; C5 agreement is marginally better than before (R and T to
+0.006–0.05 %, pooled n_σ² 1.06 / 1.02 / 0.83). See CHANGELOG.md's `[v6.1.0]` section.
+
+Previous release: **v6.0.7** (2026-07-20, performance and hygiene patch completing
 the 2026-07-19 code review — no physics or statistics changes; every count, mean, and
 exported histogram bin is bit-identical to v6.0.6). The per-photon path-length arrays
 (1.27 entries/photon, 200+ MB at 20M photons) are replaced by **fixed 4.2 MB streaming
@@ -558,7 +571,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.0.7 is the version currently on `main` and in the hosted demo.
+v6.1.0 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -570,7 +583,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis. **v6.1.0** (random-number generator replacement) followed the same pattern: Claude Fable 5 diagnosed the period-exhaustion and seed-correlation defects, implemented the xoshiro128** swap and the verification gates, and regenerated every stochastic artifact; the decision to pin down the underlying micro-mechanism rather than assume it, the choice of diagnostic tests, and all acceptance judgments were the project author's.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -581,4 +594,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.0.7). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.1.0). GitHub. https://github.com/sepraca/VISTA-C
