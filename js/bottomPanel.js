@@ -680,8 +680,8 @@ export const BottomPanel = {
       BottomPanel._activeScaleMax =
         BottomPanel.resolveBdfScaleMax([reflectedGrid, transmittedGrid]);
 
-      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflTitleUsed);
-      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, transmittedTitle);
+      BottomPanel.drawBdfPolarPlot(ctx2, reflectedGrid, BDF_LAYOUT.reflectedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, reflTitleUsed, "refl");
+      BottomPanel.drawBdfPolarPlot(ctx2, transmittedGrid, BDF_LAYOUT.transmittedX, BDF_LAYOUT.y, BDF_LAYOUT.radius, transmittedTitle, "trans");
       BottomPanel.drawColorBar(ctx2, BDF_LAYOUT.colorbarX, BDF_LAYOUT.colorbarY, BDF_LAYOUT.colorbarW, BDF_LAYOUT.colorbarH, qtyLabel);
 
       ctx2.fillStyle = "#e2e8f0";
@@ -832,7 +832,7 @@ export const BottomPanel = {
       };
     },
 
-    drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title) {
+    drawBdfPolarPlot: function(ctx2, grid, cx, cy, radius, title, slot = "refl") {
       const thetaBins = grid.thetaBins;
       const phiBins = grid.phiBins;
 
@@ -926,25 +926,30 @@ export const BottomPanel = {
         for (let ip = 0; ip < phiBins; ip++) flat[base + ip] = row[ip];
       }
 
-      // A FRESH offscreen canvas + ImageData per call -- deliberately NOT cached.
+      // PER-SLOT offscreen canvas + ImageData, cached across redraws.
       //
-      // Caching one shared buffer across both polar plots was tried on 2026-07-27 and
-      // REVERTED the same day: the panel draws Reflected and Net-Transmitted in the
-      // same task, so a single shared source canvas gets its second putImageData
-      // before the first drawImage has necessarily sampled it, and BOTH plots ended
-      // up showing the second (transmitted) grid. The reflected plot silently
-      // rendered the wrong data -- author-reported, and it reached a pushed commit.
-      // The two grids are genuinely distinct (verified: 5215/5400 bins differ), so
-      // this was purely a rendering-aliasing bug.
+      // History, because the obvious "optimization" here is a correctness trap:
+      // a FIRST attempt (2026-07-27) cached ONE shared buffer for both polar plots.
+      // The panel draws Reflected and Net-Transmitted in the same task, so the second
+      // putImageData landed on the same source canvas before the first drawImage had
+      // necessarily sampled it, and BOTH plots rendered the transmitted grid -- the
+      // reflected plot silently showed the wrong data (author-reported, and it reached
+      // a pushed commit). Reverting to per-call allocation fixed it but cost ~9%
+      // (measured in-browser: HG 0.76 -> 0.69, Mie 0.72 -> 0.66 M photons/s), so the
+      // allocation really is worth avoiding.
       //
-      // Do not "optimize" this back into a shared buffer. If it ever needs to be
-      // cached, it must be TWO buffers (one per plot slot) so no source canvas is
-      // mutated between its own putImageData and drawImage. The measured 10× win
-      // came from the index table above, not from this allocation.
-      const off = document.createElement("canvas");
-      off.width = size; off.height = size;
-      const octx = off.getContext("2d");
-      const img = octx.createImageData(size, size);
+      // The safe form is one buffer PER PLOT SLOT: each plot owns its source canvas,
+      // so no canvas is ever mutated between its own putImageData and drawImage.
+      // Never collapse these back into a single shared buffer.
+      if (!BottomPanel._offBufs) BottomPanel._offBufs = {};
+      let ob = BottomPanel._offBufs[slot];
+      if (!ob || ob.size !== size) {
+        const c = document.createElement("canvas");
+        c.width = size; c.height = size;
+        const cx2 = c.getContext("2d");
+        ob = BottomPanel._offBufs[slot] = { size, canvas: c, ctx: cx2, img: cx2.createImageData(size, size) };
+      }
+      const off = ob.canvas, octx = ob.ctx, img = ob.img;
       const px = img.data;
 
       const SS2 = SS * SS;
