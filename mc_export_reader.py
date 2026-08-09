@@ -154,7 +154,7 @@ class MCExport:
     def clear_direct_mu_bin_index(self) -> int | None:
         return self.raw["mu_histograms"].get("clear_direct_mu_bin_index")
 
-    # ---- Phase function (schema >= 1.5, C6-C) -----------------------------
+    # ---- Phase function (schema >= 1.5; renamed 1.7) -----------------------
     @property
     def phase_function(self) -> dict:
         """Scattering choice for this run.
@@ -164,17 +164,58 @@ class MCExport:
         PRE-1.5 MIE RUN IS INDISTINGUISHABLE FROM AN HG RUN in the file (that
         ambiguity is exactly why 1.5 added this block), so such files are
         reported as {'type': 'hg', 'assumed': True}.
+
+        SCHEMA 1.7 RENAME, normalized here so callers see one vocabulary:
+
+            type "mie"  ->  "liquid"        (flagged type_assumed=True)
+            modis_band  ->  band
+            (new)       ->  instrument
+
+        "Mie" is the scattering formulation for SPHERES: right for liquid water
+        droplets, wrong for the non-spherical ice tables added in v6.2, which is
+        why the field now names the particle family. Mapping pre-1.7 "mie" to
+        "liquid" is SAFE, not a guess about the data: ice did not exist before
+        v6.2, so every tabulated pre-1.7 run was liquid. The instrument was
+        likewise MODIS-only before VIIRS M11 was added.
+
+        WARNING for cross-version comparisons: the liquid TABLES themselves also
+        changed in v6.2 (300 K -> 265 K refractive index; 18-value r_eff grid in
+        place of 24). A pre-1.7 and a 1.7 liquid run at the same nominal band and
+        r_eff are therefore NOT numerically comparable. That is a data change,
+        not a schema one, but it lands in the same release.
         """
-        pf = self.raw.get("inputs", {}).get("phase_function")
-        if pf is not None:
-            return pf
         inp = self.raw.get("inputs", {})
-        return {"type": "hg", "assumed": True,
-                "g": inp.get("hg_g"), "omega0": inp.get("ssa_omega0")}
+        pf = inp.get("phase_function")
+        if pf is None:
+            return {"type": "hg", "assumed": True,
+                    "g": inp.get("hg_g"), "omega0": inp.get("ssa_omega0")}
+
+        pf = dict(pf)
+        if pf.get("type") == "mie":
+            pf["type"] = "liquid"
+            pf["type_assumed"] = True          # inferred from the pre-1.7 vocabulary
+            pf.setdefault("instrument", "modis")
+            pf["instrument_assumed"] = True
+        if "band" not in pf and "modis_band" in pf:
+            # Pre-1.7 stored a bare integer (e.g. 6); post-1.7 stores a label ("b6").
+            pf["band"] = f"b{pf['modis_band']}"
+        return pf
+
+    @property
+    def particle_family(self) -> str:
+        """'hg' | 'liquid' | 'ice' — normalized across the 1.7 rename."""
+        return self.phase_function.get("type", "hg")
+
+    @property
+    def is_tabulated(self) -> bool:
+        """True for any tabulated (non-analytic) phase function, liquid or ice."""
+        return self.particle_family in ("liquid", "ice")
 
     @property
     def is_mie(self) -> bool:
-        return self.phase_function.get("type") == "mie"
+        """DEPRECATED alias kept for existing scripts. 'Mie' means spheres, so it is
+        true only for the LIQUID family; an ice run is tabulated but not Mie."""
+        return self.particle_family == "liquid"
 
     # ---- RNG identity (schema >= 1.6) -------------------------------------
     @property
@@ -457,14 +498,22 @@ def print_summary(exp: MCExport) -> None:
     print(f"  horizontal extent  : {inp['horizontal_extent']:.4g} (tau-units)")
     print(f"  solar zenith Theta0: {inp['theta0_deg']:.3f} deg  (mu0 = {inp['mu0']:.4f})")
     pf = exp.phase_function
-    if pf.get("type") == "mie":
-        print(f"  phase function     : Mie -- MODIS band {pf['modis_band']} "
-              f"({pf['wavelength_um']:.2f} um), r_eff = {pf['r_eff_um']:.1f} um")
+    if exp.is_tabulated:
+        inst = {"modis": "MODIS", "viirs": "VIIRS"}.get(pf.get("instrument", ""), "?")
+        band = str(pf.get("band", "?"))
+        band = f"band {band[1:]}" if band.startswith("b") else band
+        kind = "ice particle" if pf["type"] == "ice" else "liquid droplet (Mie)"
+        # Flag the pre-1.7 inference rather than presenting it as recorded fact.
+        note = "  [assumed: pre-1.7 file, 'mie' == liquid]" if pf.get("type_assumed") else ""
+        print(f"  phase function     : {kind} -- {inst} {band} "
+              f"({pf['wavelength_um']:.2f} um), r_eff = {pf['r_eff_um']:.1f} um{note}")
         print(f"  g (band-averaged)  : {pf['g_band_averaged']:.4f}   [diagnostic; "
               f"transport samples the tabulated phase function]")
         print(f"  omega0 (band-avg)  : {pf['omega0_band_averaged']:.5f}")
+        if pf.get("refractive_index_basis"):
+            print(f"  refractive index   : {pf['refractive_index_basis']}")
     else:
-        note = "  [assumed: pre-1.5 file cannot distinguish Mie]" if pf.get("assumed") else ""
+        note = "  [assumed: pre-1.5 file cannot distinguish a tabulated run]" if pf.get("assumed") else ""
         print(f"  phase function     : Henyey-Greenstein{note}")
         print(f"  HG asymmetry g     : {inp['hg_g']:.4g}")
         print(f"  single-scat albedo : {inp['ssa_omega0']:.4g}")

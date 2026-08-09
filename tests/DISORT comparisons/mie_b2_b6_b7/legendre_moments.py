@@ -39,21 +39,24 @@ import json, os, sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-D = os.path.join(HERE, "..", "..", "..", "data", "mie")
-K = 8  # r_eff index -> 10 um (asserted below, not assumed)
+D = os.path.join(HERE, "..", "..", "..", "data", "phase")
+R_EFF_UM = 10.0   # selected BY VALUE below; index 8 was 10 um in the old 24-radius
+                  # grid but is 12 um in the 18-radius operational grid.
 
 args = [int(a) for a in sys.argv[1:]]
 bands = args or [2, 6, 7]
 verbose = bool(args)
 
-grid = json.load(open(os.path.join(D, "mie_grid.json")))
+grid = json.load(open(os.path.join(D, "grid_liquid.json")))
 mu = np.array(grid["xmu"])
 wt = np.array(grid["wt"])
 
 for band in bands:
-    b = json.load(open(os.path.join(D, f"mie_band_{band}.json")))
-    assert abs(b["cer_um"][K] - 10.0) < 1e-9, \
-        f"index K={K} is r_eff={b['cer_um'][K]} um, expected 10"
+    b = json.load(open(os.path.join(D, f"liquid_modis_b{band}.json")))
+    try:
+        K = b["cer_um"].index(R_EFF_UM)
+    except ValueError:
+        sys.exit(f"r_eff {R_EFF_UM} um not in band {band} grid: {b['cer_um']}")
     pf = np.array(b["pf"][K])
     g = b["g"][K]
 

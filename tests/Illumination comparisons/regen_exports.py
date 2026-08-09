@@ -31,7 +31,11 @@ if "--only" in sys.argv:
 
 # Fields that must survive regeneration unchanged. Deliberately excludes anything that is
 # expected to move (the numbers) or that is inherently per-run (timestamps).
-IDENTITY = ["photons", "tau_cloud", "theta0_deg", "surface_albedo", "hg_g", "ssa_omega0",
+# NOTE hg_g / ssa_omega0 are deliberately ABSENT. Under a tabulated phase function they are
+# DERIVED from the table (band-averaged), not run configuration, so they legitimately move
+# when the tables change -- as they did in v6.2 (300 K -> 265 K). Including them would make
+# this guard fire on every intended table migration, training the reader to ignore it.
+IDENTITY = ["photons", "tau_cloud", "theta0_deg", "surface_albedo",
             "photon_illumination", "domain_factor", "domain_boundary", "pixel_fraction"]
 
 
@@ -65,11 +69,14 @@ def command_for(path):
         # earlier version of this script guessed the shorter names and crashed, which is
         # the good outcome; silently defaulting would have regenerated every Mie export
         # as band 1 / r_eff index 0).
-        if "modis_band" not in pf or "r_eff_index" not in pf:
-            sys.exit(f"{os.path.basename(path)}: mie export missing modis_band/r_eff_index; "
+        if not (pf.get("modis_band") or pf.get("band")) or "r_eff_um" not in pf:
+            sys.exit(f"{os.path.basename(path)}: mie export missing band/r_eff_um; "
                      "cannot reconstruct without guessing")
-        env["MIE_BAND"] = str(pf["modis_band"])
-        env["MIE_REFF_INDEX"] = str(pf["r_eff_index"])
+        env["MIE_BAND"] = str(pf.get("modis_band") or str(pf["band"]).lstrip("b"))
+        # BY VALUE, never by index: r_eff_index 8 was 10 um in the retired 24-radius
+        # assets but is 12 um in the v6.2 18-radius grid. Reconstructing from the index
+        # would silently regenerate these exports at a different droplet size.
+        env["MIE_REFF_UM"] = repr(pf["r_eff_um"])
     else:
         # Non-default HG g must be passed explicitly or the run silently reverts to 0.85.
         if abs(inp["hg_g"] - 0.85) > 1e-12:
@@ -91,9 +98,13 @@ def verify_inputs_match(before, after, name):
             bad.append(f"{k}: {vb!r} -> {va!r}")
     pfb = (before.get("phase_function") or {})
     pfa = (after.get("phase_function") or {})
-    for k in ("type", "band", "reff_index"):
-        if pfb.get(k) != pfa.get(k):
-            bad.append(f"phase_function.{k}: {pfb.get(k)!r} -> {pfa.get(k)!r}")
+    # Band identity across the 1.7 rename: pre-1.7 stored modis_band=6, post stores band="b6".
+    bnum = lambda pf: str(pf.get("modis_band") or str(pf.get("band", "")).lstrip("b"))
+    if bnum(pfb) != bnum(pfa):
+        bad.append(f"phase_function band: {bnum(pfb)!r} -> {bnum(pfa)!r}")
+    # r_eff by VALUE -- the index is grid-dependent and meaningless across the asset swap.
+    if pfb.get("r_eff_um") != pfa.get("r_eff_um"):
+        bad.append(f"phase_function.r_eff_um: {pfb.get('r_eff_um')!r} -> {pfa.get('r_eff_um')!r}")
     if bad:
         print(f"    CONFIG DRIFT in {name}:")
         for b in bad:

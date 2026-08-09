@@ -14,7 +14,7 @@ import { Photons } from './photons.js';
 import { BottomPanel } from './bottomPanel.js';
 import { Export } from './exportUtils.js';
 import { Status } from './constants.js';
-import { Mie } from './mie.js';
+import { Phase } from './phase.js';
 
 // Instant-mode batching (review P4, 2026-07-20 — replaces the fixed
 // CHUNK_SIZE = 1000 photons / DISPLAY_EVERY_CHUNKS = 10 pair).
@@ -221,7 +221,7 @@ export const RunControl = {
     },
 
     getSimParams: function() {
-      return RunControl._applyMiePhaseParams({
+      return RunControl._applyTabulatedPhaseParams({
         tauCloud:          world.tauCloud,
         slabW:             world.slabW,
         slabD:             world.slabD,
@@ -240,31 +240,42 @@ export const RunControl = {
       });
     },
 
-    // Overlay the Mie phase-function selection onto a base sim-params object
-    // (v6.1, C6). When a Mie band+r_eff is active and loaded, the scatter is
+    // Overlay the tabulated phase-function selection onto a base sim-params object
+    // (v6.2). When a family/instrument/band + r_eff is active and loaded, the scatter is
     // drawn from its tabulated CDF (mieCdf/mieXmu) and ω₀/g are the derived
-    // per-(band,r_eff) values, NOT the UI inputs (those are shown disabled).
+    // per-selection values, NOT the UI inputs (those are hidden and replaced by readouts).
     // No-op under HG, so the returned object is unchanged for every legacy run.
-    _applyMiePhaseParams: function(p) {
-      const m = state.mie;
+    _applyTabulatedPhaseParams: function(p) {
+      const m = state.phase;
       if (m.active && m.ready && m.sel) {
-        p.mieCdf = m.sel.cdf;
+        p.mieCdf = m.sel.cdf;   // param name kept: means "a tabulated µ-CDF", not "Mie"
         p.mieXmu = m.sel.xmu;
         p.omega0 = m.sel.ssa;   // derived single-scattering albedo
-        p.g      = m.sel.g;     // derived asymmetry (kernel ignores it under Mie)
+        p.g      = m.sel.g;     // derived asymmetry (kernel ignores it when a CDF is set)
       }
       return p;
     },
 
-    // ---- Mie phase-function UI (v6.1, C6-B) ------------------------------
-    _savedG: null,          // user's HG g / ω₀ inputs, stashed across a Mie round-trip
+    // ---- Tabulated phase-function UI (v6.2) ------------------------------
+    // Replaces the v6.1 "Mie" UI. Three coupled selectors now: FAMILY
+    // (liquid droplets / ice particles), then BAND (which carries its instrument,
+    // so VIIRS M11 sits in the same list as the MODIS bands, ordered by
+    // wavelength), then EFFECTIVE RADIUS.
+    //
+    // WHY r_eff MUST REPOPULATE ON A FAMILY CHANGE. The two families have
+    // different r_eff grids -- liquid 2-30 um (18 values), ice 5-60 um (12) --
+    // because ice crystals are physically larger. Carrying an index across a
+    // family switch would silently select a different particle size (index 8 is
+    // 12 um in liquid but 45 um in ice). Selection is therefore re-resolved by
+    // VALUE where possible, and clamped otherwise.
+    _savedG: null,          // user's HG g / omega0 inputs, stashed across a round-trip
     _savedOmega0: null,
 
-    // Phase-function selector changed: "hg" (Henyey-Greenstein) or "mie".
-    // Async because switching to Mie loads its assets. onchange in index.html.
+    // Phase-function selector changed: "hg" or "tabulated". Async because
+    // switching to a tabulated table loads its assets. onchange in index.html.
     onPhaseModeChange: async function() {
       const mode = document.getElementById("phaseMode")?.value ?? "hg";
-      const group = document.getElementById("mieControls");
+      const group = document.getElementById("phaseControls");
       const gEl = document.getElementById("gValue");
       const oEl = document.getElementById("omega0");
 
@@ -273,47 +284,47 @@ export const RunControl = {
       const gOut = document.getElementById("gMieReadout");
       const oOut = document.getElementById("omega0MieReadout");
 
-      if (mode !== "mie") {
-        // Back to HG: restore the user's own g / ω₀, re-show the editable inputs.
+      if (mode !== "tabulated") {
+        // Back to HG: restore the user's own g / omega0, re-show the editable inputs.
         if (group) group.style.display = "none";
         if (gEl) { gEl.disabled = false; gEl.style.display = ""; if (RunControl._savedG != null) gEl.value = RunControl._savedG; }
         if (oEl) { oEl.disabled = false; oEl.style.display = ""; if (RunControl._savedOmega0 != null) oEl.value = RunControl._savedOmega0; }
         if (gOut) gOut.style.display = "none";
         if (oOut) oOut.style.display = "none";
         if (gLab) gLab.textContent = "HG asymmetry parameter (g)";
-        if (oLab) oLab.textContent = "Single-scattering albedo (ω₀)";
+        if (oLab) oLab.textContent = "Single-scattering albedo (omega0)";
         RunControl._savedG = RunControl._savedOmega0 = null;
-        state.mie.active = false; state.mie.ready = false; state.mie.sel = null;
+        state.phase.active = false; state.phase.ready = false; state.phase.sel = null;
         RunControl.resetScene();
         return;
       }
 
-      // Switching to Mie: stash the user's g / ω₀ (restored on the way back), then
-      // REPLACE the now-inert inputs with read-only band-averaged readouts rather
-      // than leaving greyed-out boxes occupying the space.
+      // Switching to a tabulated phase function: stash the user's g / omega0
+      // (restored on the way back), then REPLACE the now-inert inputs with
+      // read-only band-averaged readouts rather than leaving greyed-out boxes.
       if (gEl) RunControl._savedG = gEl.value;
       if (oEl) RunControl._savedOmega0 = oEl.value;
       if (group) group.style.display = "contents";
       if (gEl) { gEl.disabled = true; gEl.style.display = "none"; }
       if (oEl) { oEl.disabled = true; oEl.style.display = "none"; }
-      if (gOut) { gOut.style.display = ""; gOut.textContent = "—"; }
-      if (oOut) { oOut.style.display = ""; oOut.textContent = "—"; }
-      if (gLab) gLab.textContent = "Mie g (band-averaged)";
-      if (oLab) oLab.textContent = "Mie ω₀ (band-averaged)";
-      state.mie.active = true; state.mie.ready = false;
+      if (gOut) { gOut.style.display = ""; gOut.textContent = "\u2014"; }
+      if (oOut) { oOut.style.display = ""; oOut.textContent = "\u2014"; }
+      if (gLab) gLab.textContent = "g (band-averaged)";
+      if (oLab) oLab.textContent = "omega0 (band-averaged)";
+      state.phase.active = true; state.phase.ready = false;
 
-      // Revert to HG ONLY if the Mie ASSETS fail to load. This guard used to also
-      // wrap onMieSelectionChange(), which ends in resetScene() -> a panel redraw:
+      // Revert to HG ONLY if the ASSETS fail to load. This guard used to also
+      // wrap the selection call, which ends in resetScene() -> a panel redraw:
       // any unrelated rendering exception was therefore caught here and silently
-      // reverted phaseMode to "hg", which hid #mieControls and looked to the user
-      // like the band / r_eff dropdowns had disappeared. Keep the guard tight, and
-      // never swallow the error object.
+      // reverted phaseMode to "hg", which hid the controls and looked to the user
+      // like the dropdowns had disappeared. Keep the guard tight, and never
+      // swallow the error object.
       try {
-        await Mie.ensureCore();
-        RunControl._populateMieDropdowns();
+        await Phase.ensureCore();
+        RunControl._populatePhaseDropdowns();
       } catch (err) {
-        console.error("VISTA-C: Mie asset load failed —", err);
-        showLimitWarning("Could not load Mie phase-function data — reverting to Henyey-Greenstein.");
+        console.error("VISTA-C: phase-function asset load failed \u2014", err);
+        showLimitWarning("Could not load phase-function data \u2014 reverting to Henyey-Greenstein.");
         const sel = document.getElementById("phaseMode");
         if (sel) sel.value = "hg";
         await RunControl.onPhaseModeChange();
@@ -323,22 +334,42 @@ export const RunControl = {
       // Selection + redraw run OUTSIDE the revert guard: if this throws it is a
       // display bug, not a missing-asset problem, and must surface rather than
       // tear down the user's phase-function choice.
-      await RunControl.onMieSelectionChange();   // loads current band + r_eff
+      await RunControl.onPhaseSelectionChange();
     },
 
-    // Band or r_eff dropdown changed: load/select and refresh derived ω₀ / g.
-    onMieSelectionChange: async function() {
-      if (!state.mie.active) return;
-      const band = parseInt(document.getElementById("mieBand")?.value ?? "1", 10);
-      const k    = parseInt(document.getElementById("mieReff")?.value ?? "0", 10);
-      state.mie.ready = false;
-      const sel = await Mie.select(band, k);
-      state.mie.sel = sel;
-      state.mie.ready = true;
-      // Surface the BAND-AVERAGED g / ω₀ for this (band, r_eff). The readouts are
+    // Family changed (liquid <-> ice): rebuild the band and r_eff lists, then reselect.
+    onPhaseFamilyChange: async function() {
+      if (!state.phase.active) return;
+      const fam = document.getElementById("phaseFamily")?.value ?? "liquid";
+      state.phase.family = fam;
+      RunControl._populateBandList(fam);
+      RunControl._populateReffList(fam);
+      await RunControl.onPhaseSelectionChange();
+    },
+
+    // Band or r_eff dropdown changed: load/select and refresh derived omega0 / g.
+    onPhaseSelectionChange: async function() {
+      if (!state.phase.active) return;
+      const fam = document.getElementById("phaseFamily")?.value ?? "liquid";
+      const bandVal = document.getElementById("phaseBand")?.value ?? "";
+      const k = parseInt(document.getElementById("phaseReff")?.value ?? "0", 10);
+      // The band <option> value encodes instrument and band as "instrument/band"
+      // so one flat, wavelength-ordered list can span both instruments.
+      const [instrument, band] = bandVal.split("/");
+      if (!instrument || !band) return;
+
+      state.phase.family = fam;
+      state.phase.instrument = instrument;
+      state.phase.band = band;
+      state.phase.ready = false;
+      const sel = await Phase.select(fam, instrument, band, k);
+      state.phase.sel = sel;
+      state.phase.ready = true;
+
+      // Surface the BAND-AVERAGED g / omega0 for this selection. The readouts are
       // what the user sees; the hidden inputs are kept in sync so any consumer
       // still reading UI.getG()/getOmega0() sees the same numbers (the authoritative
-      // path is _applyMiePhaseParams, which overlays from state.mie.sel).
+      // path is _applyTabulatedPhaseParams, which overlays from state.phase.sel).
       const gEl = document.getElementById("gValue");
       const oEl = document.getElementById("omega0");
       if (gEl) gEl.value = sel.g.toFixed(4);
@@ -349,39 +380,78 @@ export const RunControl = {
       // export keeps full precision, and the PNG header keeps 4 dp.
       if (gOut) gOut.textContent = sel.g.toFixed(3);
       if (oOut) oOut.textContent = sel.ssa.toFixed(5);
-      RunControl.resetScene();   // new scattering ⇒ clear accumulated stats
+      RunControl.resetScene();   // new scattering => clear accumulated stats
     },
 
-    // Populate the band + r_eff dropdowns once, from the loaded manifest/grid.
-    _populateMieDropdowns: function() {
-      const bandSel = document.getElementById("mieBand");
-      const reffSel = document.getElementById("mieReff");
-      if (!bandSel || !reffSel || bandSel.options.length > 0) return;   // once
-      for (const b of Mie.bands()) {
-        const o = document.createElement("option");
-        o.value = String(b.band);
-        o.textContent = b.label;                       // "MODIS band 6 — 1.64 µm"
-        bandSel.appendChild(o);
+    // Populate family + band + r_eff once the manifest is loaded.
+    _populatePhaseDropdowns: function() {
+      const famSel = document.getElementById("phaseFamily");
+      if (famSel && famSel.options.length === 0) {
+        for (const f of Phase.families()) {
+          const o = document.createElement("option");
+          o.value = f;
+          o.textContent = f === "ice" ? "Ice particles" : "Liquid water droplets";
+          famSel.appendChild(o);
+        }
+        famSel.value = state.phase.family;
       }
-      const cer = Mie.cerGrid();
+      const fam = famSel?.value ?? "liquid";
+      RunControl._populateBandList(fam);
+      RunControl._populateReffList(fam);
+    },
+
+    // One flat band list per family, spanning both instruments and ordered by
+    // wavelength, so VIIRS M11 (2.25 um) appears between MODIS b7 (2.13) and
+    // b20 (3.75) -- where it belongs physically, and where its distinct
+    // absorption is easiest to notice against its neighbours.
+    _populateBandList: function(family) {
+      const sel = document.getElementById("phaseBand");
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = "";
+      for (const b of Phase.bandChoices(family)) {
+        const o = document.createElement("option");
+        o.value = `${b.instrument}/${b.band}`;
+        const inst = b.instrument === "viirs" ? "VIIRS" : "MODIS";
+        const name = b.band.startsWith("b") ? `band ${b.band.slice(1)}` : b.band;
+        const um = b.nominal_um ?? b.wavelength_um;
+        o.textContent = `${inst} ${name} \u2014 ${Number(um).toFixed(2)} \u00b5m`;
+        sel.appendChild(o);
+      }
+      // Keep the current band across a family switch when it exists in both.
+      if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+    },
+
+    // r_eff list for THIS family. Liquid and ice grids differ (2-30 um vs
+    // 5-60 um), so the previous selection is re-resolved BY VALUE and only
+    // falls back to a default when that value is absent from the new grid.
+    _populateReffList: function(family) {
+      const sel = document.getElementById("phaseReff");
+      if (!sel) return;
+      const prevUm = sel.options.length ? Number(sel.options[sel.selectedIndex]?.dataset.um) : NaN;
+      const cer = Phase.cerGrid(family);
+      sel.innerHTML = "";
       cer.forEach((c, i) => {
         const o = document.createElement("option");
-        o.value = String(i);                           // index into the r_eff grid
-        o.textContent = `${c} µm`;
-        reffSel.appendChild(o);
+        o.value = String(i);
+        o.dataset.um = String(c);
+        o.textContent = `${c} \u00b5m`;
+        sel.appendChild(o);
       });
-      const dflt = cer.indexOf(10);                    // default ≈ 10 µm if present
-      reffSel.value = String(dflt >= 0 ? dflt : Math.floor(cer.length / 2));
+      let idx = Number.isFinite(prevUm) ? cer.indexOf(prevUm) : -1;
+      if (idx < 0) idx = cer.indexOf(10);                 // 10 um if the grid has it
+      if (idx < 0) idx = Math.floor(cer.length / 2);
+      sel.value = String(idx);
     },
 
-    // True when a Mie run is requested but its assets have not finished loading.
-    _mieNotReady: function() {
-      return state.mie.active && !state.mie.ready;
+    // True when a tabulated run is requested but its assets have not finished loading.
+    _phaseNotReady: function() {
+      return state.phase.active && !state.phase.ready;
     },
 
     runOne: async function() {
       if (state.isAnimating) return;
-      if (RunControl._mieNotReady()) { showLimitWarning("Mie phase function still loading — try again in a moment."); return; }
+      if (RunControl._phaseNotReady()) { showLimitWarning("Phase-function data still loading — try again in a moment."); return; }
 
       // Successive Launch One clicks draw new, distinct photons from the
       // advancing RNG stream and accumulate into the statistics.
@@ -411,7 +481,7 @@ export const RunControl = {
 
     runEnsemble: async function() {
       if (state.isAnimating) return;
-      if (RunControl._mieNotReady()) { showLimitWarning("Mie phase function still loading — try again in a moment."); return; }
+      if (RunControl._phaseNotReady()) { showLimitWarning("Phase-function data still loading — try again in a moment."); return; }
 
       // Reproducible ensemble mode:
       // each Launch Ensemble starts from the same seed and a clean state.

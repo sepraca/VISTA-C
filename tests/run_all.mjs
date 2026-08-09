@@ -79,7 +79,6 @@ gate("verify_phase3 (periodic boundary)", "tests/review-harness/verify_phase3.mj
 gate("verify_phase4 (rigorous BRF/BTF)",  "tests/review-harness/verify_phase4.mjs");
 gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");
 gate("verify_p5 (streaming path hist)",   "tests/review-harness/verify_p5.mjs");
-gate("verify_mie_sampling (⟨µ⟩=g)",       "tests/review-harness/verify_mie_sampling.mjs");
 gate("verify_mie_transport (dispatch)",   "tests/review-harness/verify_mie_transport.mjs");
 // Phase-function assets (2026-08-08). data/phase/ is produced offline by
 // tools/phase_convert.py from HDF4 tables that cannot be read in CI, so the JSON is the only

@@ -601,28 +601,39 @@
          The blur handler only clamps and refreshes the display. -->
     <input id="pixelFraction" type="number" value="1.00" min="0.05" max="1" step="0.05" onblur="UI.getPixelFraction(); StatsPanel.updateDisplay()">
 
-    <!-- Scattering phase function (v6.1): Henyey-Greenstein (analytic, g input)
-         or a tabulated Mie phase function for a MODIS cloud-retrieval band at a
-         chosen effective radius. Under Mie, ω₀ and g become read-only values
-         derived from (band, r_eff) -- see RunControl.onPhaseModeChange. -->
+    <!-- Scattering phase function (v6.2): Henyey-Greenstein (analytic, g input) or a
+         TABULATED phase function for a real cloud particle. Choosing "tabulated"
+         reveals three coupled selectors: particle family (liquid water droplets /
+         ice particles), then band, then effective radius.
+
+         The band list is flat and spans BOTH instruments, ordered by wavelength, so
+         VIIRS M11 (2.25 µm) sits between MODIS band 7 (2.13) and band 20 (3.75) --
+         where it belongs physically, and where its distinctly lower absorption is
+         easiest to notice against its neighbours.
+
+         Family is a separate control rather than two menu branches because it also
+         swaps the r_eff GRID (liquid 2-30 µm, ice 5-60 µm), which the band choice
+         does not -- see RunControl._populateReffList. -->
     <label>Scattering phase function</label>
     <select id="phaseMode" onchange="RunControl.onPhaseModeChange()">
       <option value="hg" selected>Henyey-Greenstein</option>
-      <option value="mie">Mie (MODIS band)</option>
+      <option value="tabulated">MODIS / VIIRS (tabulated)</option>
     </select>
 
-    <div id="mieControls" style="display:none">
-      <label style="padding-left:10px; color:#f7f44a">MODIS band</label>
-      <select id="mieBand" onchange="RunControl.onMieSelectionChange()"></select>
+    <div id="phaseControls" style="display:none">
+      <label style="padding-left:10px; color:#f7f44a">Particle type</label>
+      <select id="phaseFamily" onchange="RunControl.onPhaseFamilyChange()"></select>
+      <label style="padding-left:10px; color:#f7f44a">Band</label>
+      <select id="phaseBand" onchange="RunControl.onPhaseSelectionChange()"></select>
       <label style="padding-left:10px; color:#f7f44a">Effective radius r<sub>eff</sub></label>
-      <select id="mieReff" onchange="RunControl.onMieSelectionChange()"></select>
+      <select id="phaseReff" onchange="RunControl.onPhaseSelectionChange()"></select>
     </div>
 
-    <!-- Under Mie these two rows swap the editable inputs for read-only readouts of
-         the BAND-AVERAGED g and ω₀ of the selected (band, r_eff) -- see
-         RunControl.onPhaseModeChange / onMieSelectionChange. Showing the values
-         (rather than greying out dead inputs) makes the band/r_eff → (g, ω₀)
-         coupling explicit, which is the pedagogical point of the Mie option. -->
+    <!-- Under a tabulated phase function these two rows swap the editable inputs for
+         read-only readouts of the BAND-AVERAGED g and ω₀ of the current selection --
+         see RunControl.onPhaseModeChange / onPhaseSelectionChange. Showing the values
+         (rather than greying out dead inputs) makes the (family, band, r_eff) → (g, ω₀)
+         coupling explicit, which is the pedagogical point of the option. -->
     <label id="gLabel">HG asymmetry parameter (g)</label>
     <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
     <span id="gMieReadout" class="mie-readout" style="display:none"></span>

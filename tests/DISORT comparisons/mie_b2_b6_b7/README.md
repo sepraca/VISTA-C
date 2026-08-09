@@ -1,20 +1,31 @@
 # C5 — VISTA-C Mie transport validated against PythonicDISORT
 
-**Status: PASS.** Fluxes agree to 0.006–0.05 % in R and T; directional BDF agrees at Monte
-Carlo noise.
+**Status: PASS.** Fluxes agree to 0.000–0.06 %; directional BDF agrees at Monte Carlo noise.
 
-> **Refreshed 2026-07-29 for the xoshiro128\*\* RNG (TODO §R).** The generator swap changed
-> the random stream by design, so every number below was re-measured. The method and the
-> conclusions stand, and agreement is marginally *better* than the mulberry32 run
-> (pooled n_σ² was 1.07 / 1.05 / 1.15, now 1.06 / 1.02 / 0.83). The photon-count ceiling
-> caveat is now **obsolete** — see "Known limits".
+> **Refreshed 2026-08-09 for v6.2 (265 K phase-function tables).** The liquid droplet tables
+> were replaced: the source moved from the author's 300 K calculation to the operational
+> 265 K HDF4 used by the MODIS/VIIRS continuity product (CLDPROP), read directly rather than
+> via a NetCDF4 intermediate. **Both sides of this comparison use the same table**, so the
+> agreement is the quantity to watch, not the absolute fluxes — those shift for the absorbing
+> bands because 265 K is genuinely more absorbing there (band 7: 1−ω₀ 0.02366 → 0.02783).
+> Pooled n_σ² was 1.06 / 1.02 / 0.83 under the 300 K tables, now 0.98 / 1.15 / 1.05.
+>
+> One numerical improvement worth noting: the Legendre projection now reproduces the
+> tabulated g to **1–4 × 10⁻⁸** (was 1.9 × 10⁻⁵). The old assets stored g rounded to four
+> decimals; the v6.2 converter renormalizes `pf` and derives g from it, so the two are
+> consistent by construction.
+>
+> An earlier refresh (2026-07-29) covered the xoshiro128\*\* RNG swap. The photon-count
+> ceiling caveat is **obsolete** — see "Known limits".
 
 ---
 
 ## What is being tested
 
-Two completely independent solution methods, given the **same tabulated Mie phase
-function**, must agree:
+Two completely independent solution methods, given the **same tabulated liquid-droplet
+(Mie) phase function**, must agree. (The v6.2 ice tables are not covered here — DISORT is
+given Legendre moments and would validate them the same way, but that comparison has not
+been set up.)
 
 | | VISTA-C | PythonicDISORT |
 |---|---|---|
@@ -25,7 +36,7 @@ function**, must agree:
 Agreement therefore exercises the µ-space CDF construction, the sampling kernel, the
 transport, and the flux/BDF bookkeeping simultaneously.
 
-**Case:** τ = 10, Θ₀ = 30°, Aₛ = 0, r_eff = 10 µm, MODIS bands 2 / 6 / 7,
+**Case:** τ = 10, Θ₀ = 30°, Aₛ = 0, r_eff = 10 µm (selected by VALUE, not index), MODIS bands 2 / 6 / 7,
 20 M photons per band (single contiguous run, xoshiro128** seed 42).
 
 ## Results
@@ -34,18 +45,18 @@ transport, and the flux/BDF bookkeeping simultaneously.
 
 | band | λ (µm) | ω₀ | | VISTA-C | DISORT | rel. diff |
 |---|---|---|---|---|---|---|
-| 2 | 0.86 | 0.99995 | R | 0.454131 | 0.454162 | 0.007 % |
-| | | | T | 0.544859 | 0.544819 | 0.007 % |
-| | | | A | 0.001010 | 0.001019 | 0.86 % |
-| 6 | 1.64 | 0.99393 | R | 0.426634 | 0.426660 | 0.006 % |
-| | | | T | 0.459866 | 0.459810 | 0.012 % |
-| | | | A | 0.113500 | 0.113530 | 0.027 % |
-| 7 | 2.13 | 0.97634 | R | 0.321538 | 0.321385 | 0.048 % |
-| | | | T | 0.328942 | 0.328864 | 0.023 % |
-| | | | A | 0.349520 | 0.349750 | 0.066 % |
+| 2 | 0.86 | 0.99996 | R | 0.454183 | 0.454183 | 0.000 % |
+| | | | T | 0.545003 | 0.545002 | 0.000 % |
+| | | | A | 0.000814 | 0.000815 | 0.20 % |
+| 6 | 1.64 | 0.99239 | R | 0.414215 | 0.414266 | 0.012 % |
+| | | | T | 0.446686 | 0.446617 | 0.015 % |
+| | | | A | 0.139099 | 0.139117 | 0.012 % |
+| 7 | 2.13 | 0.97217 | R | 0.301287 | 0.301114 | 0.057 % |
+| | | | T | 0.307216 | 0.307202 | 0.005 % |
+| | | | A | 0.391497 | 0.391684 | 0.048 % |
 
 R + T + A = 1.000000 exactly on both sides, all three bands. Absorption spans a factor of
-~340 across the three bands (0.001 → 0.350) and both codes track it.
+~480 across the three bands (0.0008 → 0.391) and both codes track it.
 
 ### Directional BDF, principal plane
 
@@ -53,9 +64,9 @@ Pooled over 7 azimuths × 45 µ bins, reduced χ² of (VISTA-C − DISORT)/σ_MC
 
 | band | φ=0° | φ=180° | pooled n_σ² | ΔR/σ_MC | interpretation |
 |---|---|---|---|---|---|
-| 2 | 1.31 | 0.62 | **1.06** | −0.3 | agreement at Monte Carlo noise |
-| 6 | 0.96 | 0.76 | **1.02** | −0.2 | agreement at Monte Carlo noise |
-| 7 | 0.98 | 0.85 | **0.83** | +1.5 | agreement at Monte Carlo noise |
+| 2 | 0.99 | 0.77 | **0.98** | 0.0 | agreement at Monte Carlo noise |
+| 6 | 1.78 | 1.04 | **1.15** | −0.5 | agreement at Monte Carlo noise |
+| 7 | 0.95 | 1.02 | **1.05** | +1.7 | agreement at Monte Carlo noise |
 
 `C5_mie_principal_plane_b2_b6_b7.png` shows φ = 0° and φ = 180° cuts. Both Mie features
 appear in the antisolar row and are tracked by both codes:
@@ -63,6 +74,13 @@ appear in the antisolar row and are tracked by both codes:
 Neither is expressible by Henyey-Greenstein at any g.
 
 ### High-N confirmation (100 M photons) — the bias test
+
+> ⚠ **THIS SECTION HAS NOT BEEN RE-RUN FOR v6.2.** Every number below was measured against
+> the 300 K liquid tables that v6.2 retired. The *method* and the *conclusions* about the RNG
+> (noise falling exactly as 1/√N, `jump()` sub-stream independence, the bound on ΔR) are
+> properties of the generator and the estimator, not of the phase-function table, so they
+> carry over. The specific n_σ² and ΔR/σ values do not. Re-run with
+> `vistac_run_chunk.mjs` + `c5_highN_check.py` when a high-N confirmation is next needed.
 
 20 M agreement is weak evidence on its own: a systematic smaller than σ_MC is invisible.
 Raising N to 100 M shrinks σ_MC by √5, making any **fixed** bias 5× more significant in n_σ².
@@ -128,8 +146,14 @@ machine-readable numbers.
     β_l = Σ_i wt_i · pf_i · P_l(µ_i)
 
 evaluated on the table's own 1000-point Gauss–Legendre µ grid — i.e. the projection uses
-exactly the quadrature the table was built on. **Verified**: β₀ = 1.00000002 and
-β₁ = 0.86180134 against the tabulated g = 0.861800 (1.3 × 10⁻⁶).
+exactly the quadrature the table was built on. **Verified (v6.2 tables)**: β₀ = 1.00000000 and
+β₁ agrees with the tabulated g to **1–4 × 10⁻⁸** across bands 2/6/7.
+
+That is ~1000× tighter than the pre-v6.2 assets managed (1.9 × 10⁻⁵), and the reason is worth
+recording: the old files stored `g` rounded to four decimal places, so β₁ could not agree with
+it more closely than that rounding. The v6.2 converter renormalizes `pf` to Σ wt·pf = 1 and
+then *derives* g from that same array, so the table's `g` and its `pf` are consistent by
+construction rather than by coincidence.
 
 **delta-M is inert at the NLeg these tables need.** The truncation fraction is f = β_NLeg,
 and the moments decay β₃₂ = 0.386 → β₁₂₈ = 0.111 → β₂₅₆ = 0.006 → β₅₁₂ ≈ −1 × 10⁻⁵. At

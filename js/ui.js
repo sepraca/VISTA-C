@@ -51,8 +51,8 @@ export const UI = {
     getTheta0Rad:         function() { return UI._getClampedInput("theta0", 0, 89, 0, "Incident zenith Θ₀") * Math.PI / 180; },
     getG:                 function() { return UI._getClampedInput("gValue", -0.99, 0.99, 0.85, "HG asymmetry g"); },
     // "hg" (Henyey-Greenstein) or "mie" (tabulated MODIS-band phase function). The
-    // Mie selection itself (band, r_eff, derived ω₀/g, CDF) lives in state.mie,
-    // managed by RunControl.onPhaseModeChange/onMieSelectionChange (v6.1, C6).
+    // Tabulated selection (family, band, r_eff, derived ω₀/g, CDF) lives in state.phase,
+    // managed by RunControl.onPhaseModeChange/onPhaseSelectionChange (v6.2).
     getPhaseMode:         function() { return document.getElementById("phaseMode")?.value ?? "hg"; },
     getOmega0:            function() { return UI._getClampedInput("omega0", 0, 1, 1, "Single-scattering albedo ω₀"); },
     getSurfaceAlbedo:     function() { return UI._getClampedInput("surfaceAlbedo", 0, 1, 0, "Surface albedo A_s"); },

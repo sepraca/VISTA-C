@@ -73,13 +73,22 @@ export const state = {
   // performance.now() calls per run.
   runTiming: { startMs: 0, endMs: 0, pausedMs: 0, photons: 0, fastMode: false, running: false },
 
-  // Mie phase function selection (v6.1, C6). active=false → Henyey-Greenstein
-  // (default; every legacy run). When the user picks a MODIS band + r_eff and
-  // its assets finish loading, `ready` becomes true and `sel` holds the
-  // Mie.select() result { cdf, xmu, ssa, g, band, reffIndex, cer,
-  // wavelength_um, pf, angDeg }. RunControl.getSimParams reads this to set
-  // mieCdf/mieXmu/omega0 for the kernel; a run is gated until ready.
-  mie: { active: false, ready: false, sel: null },
+  // Tabulated phase-function selection (v6.2). active=false → Henyey-Greenstein
+  // (the default, and every pre-v6.1 run). When the user picks a family +
+  // instrument + band + r_eff and the assets finish loading, `ready` becomes
+  // true and `sel` holds the Phase.select() result { family, instrument, band,
+  // reffIndex, cer, ssa, g, qext, wavelength_um, cdf, xmu, pf, angDeg }.
+  // RunControl.getSimParams reads this to set mieCdf/mieXmu/omega0 for the
+  // kernel; a run is gated until ready.
+  //
+  // RENAMED FROM `state.mie` IN v6.2. "Mie" describes scattering by SPHERES, so
+  // it was right for liquid droplets and simply wrong for the ice tables (Yang
+  // et al. 2013, non-spherical roughened aggregates). `family` now carries that
+  // distinction: "liquid" | "ice". The kernel-facing param names (mieCdf,
+  // mieXmu) are deliberately NOT renamed -- they denote "a tabulated CDF" and
+  // renaming them would touch the hot transport path for no functional gain.
+  phase: { active: false, ready: false, sel: null,
+           family: "liquid", instrument: "modis", band: "b1" },
   stepRequested:         false,
   activePhotonID:        null,
   activePhotonStep:      0,

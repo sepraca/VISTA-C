@@ -343,7 +343,7 @@ export const BottomPanel = {
       ctx2.fillStyle = "#000000";
       ctx2.fillRect(0, 0, w, h);
 
-      const sel = (state.mie && state.mie.active && state.mie.ready) ? state.mie.sel : null;
+      const sel = (state.phase && state.phase.active && state.phase.ready) ? state.phase.sel : null;
       const gHG = sel ? sel.g : UI.getG();
 
       const cx = w / 2, cy = h / 2 + 6, R = 96;

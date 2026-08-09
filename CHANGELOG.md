@@ -4,6 +4,100 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.2.0] — 2026-08-09
+
+### Added: ice particle phase functions, VIIRS M11, and a new asset pipeline
+
+**New physics capability.** VISTA-C previously offered Henyey-Greenstein plus tabulated
+liquid water droplet (Mie) phase functions for five MODIS bands. v6.2 adds **non-spherical
+ice particle** phase functions and the **VIIRS M11** band, for both particle families.
+
+| Instrument / band | λ (µm) | Liquid | Ice |
+|---|---|---|---|
+| MODIS 1 / 2 / 6 / 7 / 20 | 0.65–3.75 | ✓ | **new** |
+| **VIIRS M11** | **2.25** | **new** | **new** |
+
+- **Ice** comes from Yang et al. (2013) — severely roughened aggregate columns, gamma size
+  distribution var 0.10 — tabulated on **498 scattering angles spanning 0°–180° exactly**,
+  r_eff 5–60 µm. These are explicitly NOT Mie calculations.
+- **VIIRS M11 is not a near-duplicate of MODIS band 7** despite being 0.12 µm away. Band 7
+  sits on the long-wavelength wing of the ~1.9 µm liquid-water absorption band while M11
+  falls in the window before absorption rises toward ~3 µm, so Im(n) is materially larger at
+  2.13 µm. At r_eff = 10 µm, 1−ω₀ is 0.02783 (b7) against 0.01843 (M11) — M11 absorbs about a
+  third less, and is the only non-monotonic step in the band sequence. Since absorption at
+  these wavelengths drives the r_eff retrieval, it is a genuinely distinct band.
+
+### Changed: phase-function tables now 265 K (CLDPROP basis) — liquid results move
+
+The liquid tables were replaced. Source moved from the author's 300 K calculation to the
+**operational 265 K HDF4** used by the MODIS/VIIRS continuity product (CLDPROP; Platnick et
+al. 2021), read **directly from HDF4** rather than via a NetCDF4 intermediate. One
+refractive-index basis now spans both instruments, which is the whole point of using CLDPROP.
+
+Consequences, measured rather than assumed:
+
+- **Henyey-Greenstein is bit-identical.** The analytic sampler is untouched.
+- **Non-absorbing bands are statistically identical.** MODIS b1 at 1M photons agrees with
+  v6.1.0 to **≤0.27 σ** on every reported quantity (bulk R and T to 0.04 σ) — closer than two
+  runs of the *same* table at different seeds.
+- **Absorbing bands move, correctly.** MODIS b7 at r_eff = 10 µm: 1−ω₀ rises 0.02366 → 0.02783
+  (1.176×), so absorption **+12.5 %**, R **−6.3 %**, T **−5.7 %**, and mean scatterings fall
+  13.70 → 13.03 as shorter chains partially offset the higher per-scattering absorption.
+- **Byte-identical output was never achievable** for a tabulated run: the CDF is a
+  discrete-node inversion, so any table change — however small — reroutes some draws and
+  decorrelates the photon stream entirely. Only HG reproduces v6.1.0 exactly.
+- The r_eff grid changed with the source: **18 values (2–30 µm) for liquid** where the retired
+  assets had 24, and **12 (5–60 µm) for ice**. Index 8 was 10 µm before and is 12 µm now, so
+  **all r_eff selection was converted to by-value** across the C5 runners, `gen_export.mjs`
+  (new `MIE_REFF_UM`) and `regen_exports.py`.
+
+### Changed: export schema 1.7 (BREAKING) — "mie" → liquid / ice
+
+`inputs.phase_function.type` `"mie"` → `"liquid"` | `"ice"`; `modis_band` → `band`; new
+`instrument`, `qext_band_averaged`, `refractive_index_basis`. "Mie" is the scattering
+formulation for *spheres* — correct for droplets, wrong for the ice tables — so the field now
+names the particle family. `mc_export_reader.py` maps pre-1.7 `"mie"` → `"liquid"` flagged
+`type_assumed` (safe: ice did not exist before v6.2), and gains `particle_family` /
+`is_tabulated`; `is_mie` remains as a deprecated liquid-only alias.
+
+### Changed: UI
+
+Phase-function selector is now **Henyey-Greenstein / MODIS-VIIRS (tabulated)**, revealing
+particle type → band → r_eff. The band list spans both instruments ordered by wavelength, so
+M11 sits between b7 and b20 where its lower absorption is easiest to notice. Switching family
+**repopulates r_eff by value**, since the two grids differ.
+
+### Added: tooling and gates
+
+- `tools/phase_convert.py` — HDF4 → JSON. Generates its own Gauss-Legendre weights
+  (`leggauss(1000)`, verified against the committed grid to 7.5e-8) so it depends on no prior
+  asset; builds **trapezoidal µ-weights for ice**, whose grid is not Gaussian and ships no
+  weights anywhere in the source; **measures** each family's normalization convention
+  (liquid ∫p dµ ≈ 1, ice ≈ 2) rather than assuming, then renormalizes to Σ w·pf = 1.
+- `tools/inspect_hdf4.py` — structure dump for the source files.
+- `tests/review-harness/verify_phase_assets.mjs` — gates Σ w·pf = 1, g = Σ w·pf·µ, and
+  **⟨µ⟩ from the sampling CDF = g** for all 12 assets (≤1.1e-7, ice included), plus a check
+  that VIIRS M11 is not a mislabelled copy of b7. Replaces `verify_mie_sampling.mjs`.
+
+### Removed
+
+`data/mie/` (300 K assets), `js/mie.js`, `tests/review-harness/verify_mie_sampling.mjs`,
+`tools/mie_convert.py`, `tools/mie_validate.py`.
+
+### Validation
+
+C5 (VISTA-C vs PythonicDISORT, 20 M photons/band) re-run against the 265 K tables and still
+**PASS**: fluxes agree to **0.000–0.06 %**, pooled n_σ² **0.98 / 1.15 / 1.05**. Band 2's R
+agrees to six decimals. The Legendre projection now reproduces the tabulated g to
+**1–4 × 10⁻⁸** (was 1.9 × 10⁻⁵) — the old assets stored g rounded to four decimals, so β₁
+could not agree more closely; the new converter derives g from the same renormalized `pf`.
+Glory (~31°) and cloudbow (~67°) appear at unchanged angles in both versions.
+
+*(The 100 M high-N bias test has NOT been re-run for v6.2; its RNG conclusions carry over but
+its specific n_σ² values are 300 K numbers — flagged in the C5 README.)*
+
+---
+
 ## [v6.1.0] — 2026-07-29
 
 ### Random number generator replaced: Mulberry32 → xoshiro128\*\* (breaking for reproducibility)

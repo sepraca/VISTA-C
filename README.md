@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.1.0** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.2.0** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -20,7 +20,7 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 
 ## Features
 
-- **Reproducible MC statistics**: deterministic Mulberry32 RNG with fixed seed (42)
+- **Reproducible MC statistics**: deterministic xoshiro128** RNG with fixed seed (42)
 - **3D photon path visualization**: animated and static path rendering with colored crossing and endpoint markers by outcome
 - **Three phase-function families**: analytic **Henyey-Greenstein**; tabulated **liquid water
   droplet** (Mie) and **ice particle** (Yang et al. 2013, non-spherical) phase functions for
@@ -437,7 +437,7 @@ VISTA-C/
 ├── js/
 │   ├── main.js         # Entry point: imports, window globals, startup
 │   ├── state.js        # Shared mutable state and scene constants
-│   ├── rng.js          # Mulberry32 deterministic RNG (seed = 42)
+│   ├── rng.js          # xoshiro128** deterministic RNG (seed = 42)
 │   ├── coords.js       # Simulation ↔ Three.js world coordinate transforms
 │   ├── physics.js      # Pure MC photon transport kernel (no DOM/stats deps)
 │   ├── simstats.js     # Photon outcome statistics accumulation
@@ -546,7 +546,7 @@ ds  = exp.to_xarray()          # labeled (theta, phi, mu, path) coordinates
 print(exp.fluxes["R_reflected"])
 ```
 
-Because the Mulberry32 RNG is deterministic, two runs at the same seed, photon
+Because the xoshiro128** RNG is deterministic, two runs at the same seed, photon
 count, and horizontal extent reproduce these exports exactly — all photon
 tallies are bit-identical across browsers and platforms (only the derived BDF
 floats may differ at the ~10⁻¹⁵ machine-epsilon level from cross-engine
@@ -594,7 +594,20 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.1.0** (2026-07-29, random-number generator replacement —
+Latest tagged release: **v6.2.0** (2026-08-09, ice particle phase functions and VIIRS M11).
+VISTA-C now offers three phase-function families: analytic Henyey-Greenstein, tabulated
+**liquid water droplet** (Mie) and tabulated **non-spherical ice particle** (Yang et al. 2013,
+severely roughened aggregate columns) — the latter two for MODIS bands 1/2/6/7/20 and
+**VIIRS M11**, selectable by band and effective radius. All tables now share one refractive
+index basis (265 K, the CLDPROP MODIS/VIIRS continuity basis) so the two instruments are
+directly comparable; the liquid tables consequently changed from the previous 300 K set, which
+moves results for the absorbing bands (MODIS b7 absorption +12.5 %) while leaving the
+non-absorbing bands statistically identical and Henyey-Greenstein bit-identical. Export schema
+1.7 renames `phase_function.type` "mie" → "liquid"/"ice" (breaking). C5 DISORT validation
+re-run and passing: fluxes to 0.000–0.06 %, pooled n_σ² 0.98 / 1.15 / 1.05. See CHANGELOG.md's
+`[v6.2.0]` section.
+
+Previous release: **v6.1.0** (2026-07-29, random-number generator replacement —
 **every stochastic result changed**, though no physics did). Mulberry32 was retired for
 xoshiro128\*\*: its 32-bit state exhausted its 2³² period after only ~52 M photons at τ=10
 (a photon consumes ~83 draws), below the app's own 100 M cap, and because its state is a
@@ -651,7 +664,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.1.0 is the version currently on `main` and in the hosted demo.
+v6.2.0 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -663,7 +676,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis. **v6.1.0** (random-number generator replacement) followed the same pattern: Claude Fable 5 diagnosed the period-exhaustion and seed-correlation defects, implemented the xoshiro128** swap and the verification gates, and regenerated every stochastic artifact; the decision to pin down the underlying micro-mechanism rather than assume it, the choice of diagnostic tests, and all acceptance judgments were the project author's.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis. **v6.1.0** (random-number generator replacement) followed the same pattern: Claude Fable 5 diagnosed the period-exhaustion and seed-correlation defects, implemented the xoshiro128** swap and the verification gates, and regenerated every stochastic artifact; the decision to pin down the underlying micro-mechanism rather than assume it, the choice of diagnostic tests, and all acceptance judgments were the project author's. **v6.2.0** (ice phase functions, VIIRS M11) continued in the same way: Claude Fable 5 wrote the HDF4→JSON converter, the two-family kernel/UI wiring, the schema-1.7 migration and the asset gates, and re-ran the DISORT validation. The scientific decisions were the project author's throughout — identifying that "Mie" was the wrong term once non-spherical ice was in scope, choosing the 265 K CLDPROP basis for MODIS/VIIRS consistency, supplying the spectral-absorption rationale for M11, and catching an incorrect g calculation by checking it independently.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
@@ -674,4 +687,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.1.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.2.0). GitHub. https://github.com/sepraca/VISTA-C

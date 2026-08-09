@@ -3,7 +3,7 @@
 // isolation (⟨µ⟩ = g); THIS suite drives full photons through
 // Physics.simulatePhoton with a Mie CDF in params and checks the dispatch +
 // transport behave physically. Mie params are built from the committed
-// data/mie/ assets exactly as js/mie.js does (buildMieCdf(pf[k], grid.wt)),
+// data/phase/ assets exactly as js/phase.js does (buildMieCdf(pf[k], grid.wt)),
 // but without fetch, so this runs in Node/run_all.
 //
 // Gates:
@@ -32,19 +32,23 @@ globalThis.document = {
 };
 
 const BASE = new URL("../../js/", import.meta.url).href;
-const DATA = new URL("../../data/mie/", import.meta.url);
+const DATA = new URL("../../data/phase/", import.meta.url);
 const { RNG } = await import(`${BASE}rng.js`);
 const { Physics } = await import(`${BASE}physics.js`);
 const { SimStats } = await import(`${BASE}simstats.js`);
 
 const load = f => JSON.parse(readFileSync(new URL(f, DATA)));
-const grid = load("mie_grid.json");
+const grid = load("grid_liquid.json");   // v6.2: per-family grid
 const XMU = Float64Array.from(grid.xmu);
 const WT  = Float64Array.from(grid.wt);
 
-// Build the same {cdf, xmu, ssa, g} a Mie selection yields (mirrors Mie.select).
-function mieSel(band, k) {
-  const b = load(`mie_band_${band}.json`);
+// Build the same {cdf, xmu, ssa, g} a selection yields (mirrors Phase.select).
+// r_eff is chosen BY VALUE: the liquid grid has 18 radii (2-30 um) where the older
+// assets had 24, so a fixed index means a different droplet size between asset sets.
+function mieSel(band, reffUm) {
+  const b = load(`liquid_modis_b${band}.json`);
+  const k = b.cer_um.findIndex(v => Math.abs(v - reffUm) < 1e-9);
+  if (k < 0) throw new Error(`r_eff ${reffUm} um not in band ${band}: ${b.cer_um}`);
   return { cdf: Physics.buildMieCdf(Float64Array.from(b.pf[k]), WT),
            xmu: XMU, ssa: b.ssa[k], g: b.g[k], cer: b.cer_um[k] };
 }
@@ -100,8 +104,8 @@ console.log("\n=== Gate 2: determinism (same seed ⇒ identical) ===");
 
 console.log("\n=== Gate 3: dispatch live — larger r_eff (higher g) transmits more ===");
 {
-  const small = mieSel(1, 0);   // r_eff=2 µm, g≈0.80
-  const large = mieSel(1, 23);  // r_eff=30 µm, g≈0.88
+  const small = mieSel(1, 2);    // r_eff=2 µm, g≈0.80
+  const large = mieSel(1, 30);   // r_eff=30 µm, g≈0.88
   const pS = { ...GEO, g: small.g, omega0: 1.0, mieCdf: small.cdf, mieXmu: small.xmu };
   const pL = { ...GEO, g: large.g, omega0: 1.0, mieCdf: large.cdf, mieXmu: large.xmu };
   const mS = run(N, pS), mL = run(N, pL);

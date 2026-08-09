@@ -262,11 +262,17 @@ export const Export = {
       // The header must stay exactly 12 lines -- downloadBottomPanel slices it in
       // fixed groups of 3. Before this, a Mie run rendered as "HG g: 0.86", which is
       // indistinguishable from a genuine HG run at the same asymmetry parameter.
-      const mieSel = (state.mie && state.mie.active) ? state.mie.sel : null;
-      const scatterLines = mieSel
-        ? [`Mie: MODIS band ${mieSel.band} (${mieSel.wavelength_um.toFixed(2)} µm),` +
-             ` r_eff: ${mieSel.cer.toFixed(1)} µm`,
-           `g (band-avg): ${mieSel.g.toFixed(4)} ,   ω₀ (band-avg): ${mieSel.ssa.toFixed(5)}`]
+      // v6.2: the header names the PARTICLE TYPE and the instrument, not "Mie".
+      // "Mie" is the right word only for the liquid-droplet tables (scattering by
+      // spheres); the ice tables are Yang et al. (2013) non-spherical aggregates,
+      // and labelling those "Mie" would be a physics error on the face of the plot.
+      const pSel = (state.phase && state.phase.active) ? state.phase.sel : null;
+      const scatterLines = pSel
+        ? [`${pSel.instrument === "viirs" ? "VIIRS" : "MODIS"} ` +
+             `${pSel.band.startsWith("b") ? "band " + pSel.band.slice(1) : pSel.band} ` +
+             `${pSel.family === "ice" ? "ice" : "liquid"} ` +
+             `(${pSel.wavelength_um.toFixed(2)} µm), r_eff: ${pSel.cer.toFixed(1)} µm`,
+           `g (band-avg): ${pSel.g.toFixed(4)} ,   ω₀ (band-avg): ${pSel.ssa.toFixed(5)}`]
         : [`HG g: ${UI.getG().toFixed(2)}`,
            `SSA (ω₀): ${UI.getOmega0().toFixed(2)}`];
       return [
@@ -841,7 +847,23 @@ export const Export = {
     //     assumption, not a recorded fact). Results do not change systematically
     //     across the 1.5→1.6 boundary -- means agree within Monte Carlo noise -- but
     //     they are not bit-identical, so goldens were regenerated deliberately.
-    SCHEMA_VERSION: "1.6",
+    // 1.7 (2026-08-09) — BREAKING RENAME in inputs.phase_function:
+    //       type "mie"  ->  "liquid" | "ice"
+    //       modis_band  ->  band, plus a new `instrument` ("modis" | "viirs")
+    //     Reason: "Mie" is the scattering formulation for SPHERES. It was the right
+    //     word for the liquid droplet tables and simply WRONG for the ice tables
+    //     added in v6.2 (Yang et al. 2013 non-spherical roughened aggregates), so
+    //     the field had to name the particle family instead. `instrument` became
+    //     necessary because VIIRS M11 joined a band list that had been MODIS-only.
+    //     Also added: qext_band_averaged, refractive_index_basis.
+    //     A pre-1.7 reader sees an unknown type and should map "mie" -> "liquid"
+    //     (mc_export_reader.py does this, flagged assumed:true) — every pre-1.7
+    //     tabulated run was liquid, since ice did not exist before v6.2.
+    //     NOTE the underlying liquid TABLES also changed in v6.2 (300 K -> 265 K
+    //     refractive index, and an 18-value r_eff grid in place of 24), so pre-1.7
+    //     and 1.7 liquid runs are not numerically comparable even at the same band
+    //     and r_eff. That is a data change, not a schema one, but it lands together.
+    SCHEMA_VERSION: "1.7",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -879,7 +901,7 @@ export const Export = {
         // self-identifying. Note hg_g / ssa_omega0 above are retained unchanged for
         // backward compatibility and, under Mie, equal the band-averaged values here.
         phase_function: (function () {
-          const sel = state.mie && state.mie.active ? state.mie.sel : null;
+          const sel = state.phase && state.phase.active ? state.phase.sel : null;
           if (!sel) {
             return {
               type: "hg",
@@ -888,21 +910,44 @@ export const Export = {
               omega0: UI.getOmega0()
             };
           }
+          const isIce = sel.family === "ice";
           return {
-            type: "mie",
-            description: "Tabulated Mie phase function for a MODIS cloud-retrieval " +
-                         "band at the selected liquid-water effective radius. g and " +
-                         "omega0 are BAND-AVERAGED values supplied with the table " +
-                         "(not fitted): g = Σ wt·pf·µ over the table's Gauss-Legendre " +
-                         "µ grid. The transport samples the tabulated phase function " +
-                         "directly, so g is diagnostic only — it does not drive the " +
-                         "scattering the way the HG g does.",
-            modis_band: sel.band,
+            // SCHEMA 1.7 BREAKING RENAME. Was type:"mie" with a modis_band field.
+            // "Mie" is the formulation for SPHERES: correct for liquid droplets,
+            // wrong for the ice tables. type is now the particle family, and the
+            // instrument is explicit because VIIRS M11 joined the band list.
+            type: isIce ? "ice" : "liquid",
+            instrument: sel.instrument,          // "modis" | "viirs"
+            band: sel.band,                      // "b1".."b20" | "M11"
+            description: isIce
+              ? "Tabulated NON-SPHERICAL ice particle phase function (severely " +
+                "roughened aggregate columns, gamma size distribution var 0.10) from " +
+                "Yang et al. (2013), band-integrated over the instrument's spectral " +
+                "response. NOT a Mie calculation. Tabulated on 498 scattering angles " +
+                "spanning 0-180 degrees; quadrature weights are trapezoidal in mu, " +
+                "constructed at conversion time because the source grid is not " +
+                "Gaussian and ships no weights. g and omega0 are BAND-AVERAGED values " +
+                "(not fitted). The transport samples the tabulated phase function " +
+                "directly, so g is diagnostic only - it does not drive the scattering " +
+                "the way the HG g does."
+              : "Tabulated liquid water droplet phase function from Mie theory " +
+                "(scattering by spheres), band-integrated over the instrument's " +
+                "spectral response; see Platnick et al. (2017). Tabulated on 1000 " +
+                "Gauss-Legendre scattering angles. g and omega0 are BAND-AVERAGED " +
+                "values (not fitted): g = sum(wt*pf*mu) over the table's own " +
+                "Gauss-Legendre mu grid. The transport samples the tabulated phase " +
+                "function directly, so g is diagnostic only - it does not drive the " +
+                "scattering the way the HG g does.",
             wavelength_um: sel.wavelength_um,
             r_eff_um: sel.cer,
+            // r_eff_index is retained for continuity but is grid-dependent: liquid
+            // has 18 radii (2-30 um), ice 12 (5-60 um). PREFER r_eff_um when
+            // reconstructing a run - an index alone does not identify a size.
             r_eff_index: sel.reffIndex,
             g_band_averaged: sel.g,
             omega0_band_averaged: sel.ssa,
+            qext_band_averaged: sel.qext,
+            refractive_index_basis: "265 K (MODIS/VIIRS continuity, CLDPROP)",
             units: { wavelength_um: "micrometers", r_eff_um: "micrometers" }
           };
         })(),

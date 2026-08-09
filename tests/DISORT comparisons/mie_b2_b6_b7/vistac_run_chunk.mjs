@@ -33,15 +33,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 const B = new URL("../../../js/", import.meta.url);
 const { RNG } = await import(new URL("rng.js", B));
 const { Physics } = await import(new URL("physics.js", B));
-const D = new URL("../../../data/mie/", import.meta.url);
+const D = new URL("../../../data/phase/", import.meta.url);
 
 const band = Number(process.argv[2]);
 const chunk = Number(process.argv[3]);
 const N = Number(process.argv[4]);
 const seed = Number(process.argv[5] || 42);
 
-const grid = JSON.parse(readFileSync(new URL("mie_grid.json", D)));
-const bb = JSON.parse(readFileSync(new URL(`mie_band_${band}.json`, D)));
+const grid = JSON.parse(readFileSync(new URL("grid_liquid.json", D)));
+const bb = JSON.parse(readFileSync(new URL(`liquid_modis_b${band}.json`, D)));
 const WT = Float64Array.from(grid.wt), XMU = Float64Array.from(grid.xmu);
 // SELECT r_eff BY VALUE, NEVER BY A HARDCODED INDEX (2026-08-08).
 // This was `k = 8`, which is 10 um in the 24-radius grid of the older per-band assets but

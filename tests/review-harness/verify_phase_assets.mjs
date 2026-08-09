@@ -9,8 +9,8 @@
 // decisive test is that the sampling distribution reproduces the tabulated asymmetry
 // parameter, which is what this file checks.
 //
-// It is the generalization of verify_mie_sampling.mjs (which covers the legacy data/mie/
-// Henyey-Greenstein-era assets) to the two-family, two-instrument layout.
+// It supersedes verify_mie_sampling.mjs (deleted in v6.2), which covered the retired data/mie/
+// single-family assets, and extends it to the two-family, two-instrument layout.
 //
 // THE BUG CLASS THIS CATCHES. On 2026-07-22 the sampling CDF was briefly built from a plain
 // cumulative of pf, with no quadrature weighting. That over-weights the forward peak and

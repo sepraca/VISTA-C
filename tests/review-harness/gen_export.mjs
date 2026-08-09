@@ -55,9 +55,9 @@ const { state } = await import(`${BASE}state.js`);
 // omit r_eff = 3, 11, 13, 15, 17, 19 µm. Selecting by value is grid-independent; selecting by
 // index silently changes the droplet size when the asset set changes.
 // Unset => Henyey-Greenstein with g below, exactly as before. Sets state.mie so
-// Export.getExportDataObject() emits inputs.phase_function.type = "mie" with the
+// Export.getExportDataObject() emits inputs.phase_function.type = "liquid"/"ice" with the
 // band-averaged g / ω₀, and overlays the sampling CDF into the kernel params the
-// same way runControl._applyMiePhaseParams does in the browser.
+// same way runControl._applyTabulatedPhaseParams does in the browser.
 const mieBand = process.env.MIE_BAND ? parseInt(process.env.MIE_BAND, 10) : null;
 // MIE_REFF_UM wins if both are set; resolved against the band's own cer_um grid below.
 const mieReffUm = process.env.MIE_REFF_UM ? Number(process.env.MIE_REFF_UM) : null;
@@ -65,10 +65,10 @@ let mieK = process.env.MIE_REFF_INDEX ? parseInt(process.env.MIE_REFF_INDEX, 10)
 let mieSel = null;
 if (mieBand !== null) {
   const { readFileSync } = await import("node:fs");
-  const DATA = new URL("../../data/mie/", import.meta.url);
+  const DATA = new URL("../../data/phase/", import.meta.url);
   const load = (f) => JSON.parse(readFileSync(new URL(f, DATA)));
-  const grid = load("mie_grid.json");
-  const band = load(`mie_band_${mieBand}.json`);
+  const grid = load("grid_liquid.json");   // v6.2: per-family grid
+  const band = load(`liquid_modis_b${mieBand}.json`);
   if (mieReffUm !== null) {
     const found = band.cer_um.findIndex(v => Math.abs(v - mieReffUm) < 1e-9);
     if (found < 0) {
@@ -78,15 +78,24 @@ if (mieBand !== null) {
   }
   const WT = Float64Array.from(grid.wt);
   const XMU = Float64Array.from(grid.xmu);
+  // v6.2: the selection object must match Phase.select()'s shape, because
+  // Export.getExportDataObject() reads family/instrument/band off it to emit
+  // schema-1.7 inputs.phase_function. MIE_FAMILY defaults to liquid, which keeps
+  // every existing caller's behaviour unchanged.
+  const mieFamily = process.env.MIE_FAMILY ?? "liquid";
   mieSel = {
-    band: mieBand, reffIndex: mieK,
+    family: mieFamily, instrument: "modis", band: `b${mieBand}`,
+    reffIndex: mieK,
     cer: band.cer_um[mieK], ssa: band.ssa[mieK], g: band.g[mieK],
+    qext: band.qext ? band.qext[mieK] : undefined,
     // (mieK resolved from MIE_REFF_UM just above if that was supplied)
     wavelength_um: band.wavelength_um,
     cdf: Physics.buildMieCdf(Float64Array.from(band.pf[mieK]), WT),
     xmu: XMU
   };
-  state.mie.active = true; state.mie.ready = true; state.mie.sel = mieSel;
+  state.phase.active = true; state.phase.ready = true; state.phase.sel = mieSel;
+  state.phase.family = mieFamily; state.phase.instrument = "modis";
+  state.phase.band = `b${mieBand}`;
 }
 
 // HG_G lets an HG control be run at a MATCHED asymmetry parameter (e.g. the
