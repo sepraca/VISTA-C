@@ -42,7 +42,7 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 - **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BRF/BTF polar plots (linear/log scale), optical path-length distributions
 - **PNG plot export**: 3D view and bottom panel with diagnostic parameter headers
 - **Quantitative data export (JSON)**: full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts the JSON file to NetCDF
-- **Fully modular ES module architecture**: 12 focused JavaScript files, no bundler required
+- **Fully modular ES module architecture**: 15 focused JavaScript files, no bundler required
 
 ---
 
@@ -437,20 +437,45 @@ VISTA-C/
 ├── js/
 │   ├── main.js         # Entry point: imports, window globals, startup
 │   ├── state.js        # Shared mutable state and scene constants
+│   ├── constants.js    # Frozen string-literal enums shared across modules
 │   ├── rng.js          # xoshiro128** deterministic RNG (seed = 42)
 │   ├── coords.js       # Simulation ↔ Three.js world coordinate transforms
 │   ├── physics.js      # Pure MC photon transport kernel (no DOM/stats deps)
-│   ├── simstats.js     # Photon outcome statistics accumulation
+│   ├── simstats.js     # Photon outcome statistics accumulation (+ combiners)
+│   ├── statsPanel.js   # Left-panel stats text presentation (DOM/HTML only)
 │   ├── ui.js           # DOM input readers and limit-warning utility
 │   ├── scene.js        # Three.js geometry builders and camera helpers
 │   ├── photons.js      # Per-photon 3D rendering: paths, endpoints, animation
 │   ├── bottomPanel.js  # Canvas plot drawing: μ histograms, BDF, path-length
 │   ├── exportUtils.js  # PNG download and diagnostic header generation
+│   ├── phase.js        # Tabulated phase-function loader: per-family grids, CDF cache
 │   └── runControl.js   # Simulation loop, init, run/ensemble/batch, scene reset
+├── data/
+│   └── phase/          # Tabulated phase-function assets (v6.2, 265 K CLDPROP basis)
+│       ├── grid_liquid.json      # 1000-node Gauss-Legendre µ grid + quadrature weights
+│       ├── grid_ice.json         # 498-node trapezoidal µ grid + weights
+│       ├── liquid_modis_b{1,2,6,7,20}.json,  liquid_viirs_M11.json
+│       ├── ice_modis_b{1,2,6,7,20}.json,     ice_viirs_M11.json
+│       └── manifest.json         # per-instrument provenance of the source HDF4 files
+├── tools/
+│   ├── phase_convert.py   # HDF4 → JSON converter for the phase-function assets
+│   └── inspect_hdf4.py    # Structure dump (SDs, Vgroups, attributes) for the sources
+├── docs/
+│   └── illumination-observation-geometry.pdf
 ├── README.md
+├── CHANGELOG.md
+├── CITATION.cff
 ├── mc_export_reader.py    # Reads JSON exports → NumPy/xarray, optional NetCDF
 └── tests/
-    ├── DISORT comparisons/        # PythonicDISORT reference cases + MC-vs-DISORT scripts
+    ├── run_all.mjs                # one-command runner for the full suite (11 gates)
+    ├── review-harness/            # correctness gates (physics, RNG, assets, BRF/BTF)
+    │   ├── verify_rng.mjs           # xoshiro128** integrity + sub-stream independence
+    │   ├── verify_phase_assets.mjs  # Σw·pf = 1, g = Σw·pf·µ, ⟨µ⟩ from CDF = g
+    │   ├── verify_phase3/4.mjs      # periodic boundary; rigorous BRF/BTF normalization
+    │   └── ...
+    ├── golden-snapshots/          # locked regression baselines + drift gates
+    ├── DISORT comparisons/
+    │   └── modis-viirs/           # C5: VISTA-C vs PythonicDISORT, liquid + ice
     └── Illumination comparisons/  # pencil-vs-uniform illumination study
         ├── illumination_comparison.py            # 4×2 comparison figure (µ / path / BDF / BDF-polar)
         ├── *_illumination_test_theta0=*.json     # example MC exports (centered & uniform, Θ₀ = 0°/60°)
@@ -462,7 +487,8 @@ VISTA-C/
 state ← rng
 state ← ui ← coords ← physics
 state, ui ← simstats ← bottomPanel ← exportUtils
-state, ui, coords, physics, simstats, scene, photons, bottomPanel, exportUtils ← runControl ← main
+state ← phase
+state, ui, coords, physics, simstats, scene, photons, bottomPanel, exportUtils, phase ← runControl ← main
 ```
 
 ---
@@ -584,7 +610,14 @@ Two reference test cases confirm reproducibility. With RNG seed = 42:
 ¹ Conservative (ω₀=1), black surface: T = direct cloud transmittance  
 ² Absorbing cloud, reflecting surface: T = net downward energy at surface
 
-A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, JOSS) are detailed in the `tests/DISORT comparisons/` folder.
+A full set of tests v. DISORT (PythonicDISORT, D. Ho 2024, JOSS) are detailed in
+`tests/DISORT comparisons/modis-viirs/`, covering both tabulated particle families.
+
+That folder's README also records a methodological trap worth reading before re-tuning any
+reference-solution parameters: the DISORT stream/moment settings were once chosen by
+minimizing χ² against VISTA-C, which silently selected a **ringing** solution. Agreement with
+the code under test has no resolving power below its own noise floor, so the reference must be
+converged against *itself* first, and only then compared.
 
 ---
 
@@ -603,9 +636,10 @@ index basis (265 K, the CLDPROP MODIS/VIIRS continuity basis) so the two instrum
 directly comparable; the liquid tables consequently changed from the previous 300 K set, which
 moves results for the absorbing bands (MODIS b7 absorption +12.5 %) while leaving the
 non-absorbing bands statistically identical and Henyey-Greenstein bit-identical. Export schema
-1.7 renames `phase_function.type` "mie" → "liquid"/"ice" (breaking). C5 DISORT validation
-re-run and passing: fluxes to 0.000–0.06 %, pooled n_σ² 0.98 / 1.15 / 1.05. See CHANGELOG.md's
-`[v6.2.0]` section.
+1.7 renames `phase_function.type` "mie" → "liquid"/"ice" (breaking). C5 DISORT validation now
+covers **both particle families** and passes: fluxes to 0.000–0.06 %, pooled n_σ²
+1.00 / 1.14 / 1.05 (liquid, bands 2/6/7) and 1.47 / 1.20 / 1.21 / 1.27 / 1.48 (ice, bands
+1/2/6/7/20, including both exactly-conservative bands). See CHANGELOG.md's `[v6.2.0]` section.
 
 Previous release: **v6.1.0** (2026-07-29, random-number generator replacement —
 **every stochastic result changed**, though no physics did). Mulberry32 was retired for
@@ -676,7 +710,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Development Notes
 
-VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis. **v6.1.0** (random-number generator replacement) followed the same pattern: Claude Fable 5 diagnosed the period-exhaustion and seed-correlation defects, implemented the xoshiro128** swap and the verification gates, and regenerated every stochastic artifact; the decision to pin down the underlying micro-mechanism rather than assume it, the choice of diagnostic tests, and all acceptance judgments were the project author's. **v6.2.0** (ice phase functions, VIIRS M11) continued in the same way: Claude Fable 5 wrote the HDF4→JSON converter, the two-family kernel/UI wiring, the schema-1.7 migration and the asset gates, and re-ran the DISORT validation. The scientific decisions were the project author's throughout — identifying that "Mie" was the wrong term once non-spherical ice was in scope, choosing the 265 K CLDPROP basis for MODIS/VIIRS consistency, supplying the spectral-absorption rationale for M11, and catching an incorrect g calculation by checking it independently.
+VISTA-C was developed using a combination of human-authored scientific design and AI-assisted software development tools (principally ChatGPT 5.4, Claude Opus 4.8). AI assistance was used for the JavaScript implementation, overall code refactoring, PythonicDISORT validation testing, and draft documentation. Development through **v6.0.2** (Phase 3: periodic domain boundary; Phase 4: rigorous BRF/BTF normalization) additionally used Claude Sonnet 5 for implementation and testing, with an independent code-review pass by Claude Fable 5. **v6.0.3** (bug-fix/refactor patch release, no new capabilities) continued this pattern: Claude Sonnet 5 for implementation, diagnosis, and testing, driven throughout by the project author's physical reasoning and verification. **v6.0.5** originated from a second independent code/physics review pass by Claude Fable 5, which also implemented the resulting fixes and the ground-domain redesign; the redesign itself, and all physical-consistency judgments, were decided by the project author. **v6.0.6** (performance patch) followed the same pattern: Claude Fable 5 for the run-loop profiling, implementation, and regression gates, with the fast-mode concept, the design decisions, and all browser timing measurements provided by the project author. **v6.0.7** completed that review's remaining performance and hygiene items on the same basis. **v6.1.0** (random-number generator replacement) followed the same pattern: Claude Fable 5 diagnosed the period-exhaustion and seed-correlation defects, implemented the xoshiro128** swap and the verification gates, and regenerated every stochastic artifact; the decision to pin down the underlying micro-mechanism rather than assume it, the choice of diagnostic tests, and all acceptance judgments were the project author's. **v6.2.0** (ice phase functions, VIIRS M11) continued in the same way: Claude Fable 5 wrote the HDF4→JSON converter, the two-family kernel/UI wiring, the schema-1.7 migration and the asset gates, and re-ran the DISORT validation. The scientific decisions were the project author's throughout — identifying that "Mie" was the wrong term once non-spherical ice was in scope, choosing the 265 K CLDPROP basis for MODIS/VIIRS consistency, supplying the spectral-absorption rationale for M11, catching an incorrect g calculation by checking it independently, and rejecting a DISORT stream/moment configuration that had been selected by a chi-squared criterion but produced visibly ringing radiance profiles — a correction that identified Legendre aliasing off the finite ice angular grid and established that a reference solution must be converged against itself rather than tuned to agree with the code under test.
 
 The assessment of radiative transfer algorithms, physical assumptions and their implementation, scientific confidence checks/validation, and final review were performed
 by the project author.
