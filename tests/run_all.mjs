@@ -81,6 +81,15 @@ gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");
 gate("verify_p5 (streaming path hist)",   "tests/review-harness/verify_p5.mjs");
 gate("verify_mie_sampling (⟨µ⟩=g)",       "tests/review-harness/verify_mie_sampling.mjs");
 gate("verify_mie_transport (dispatch)",   "tests/review-harness/verify_mie_transport.mjs");
+// Phase-function assets (2026-08-08). data/phase/ is produced offline by
+// tools/phase_convert.py from HDF4 tables that cannot be read in CI, so the JSON is the only
+// thing the app ever sees and nothing else validates it. The decisive check is that the
+// sampling CDF's mean mu reproduces the tabulated g -- a mis-weighted table samples a wrong
+// distribution while every conservation gate still passes (measured 2026-07-22: <mu> 0.96
+// against g 0.80). Covers ice separately because its 498-node grid uses trapezoidal weights
+// built here, a completely different path from the liquid Gauss-Legendre weights.
+// Skips cleanly (exit 0) if data/phase/ has not been generated yet.
+gate("verify_phase_assets (<µ>=g)",       "tests/review-harness/verify_phase_assets.mjs");
 // RNG integrity (2026-07-27, extended 2026-07-29 for the xoshiro128** swap). Guards
 // the whole 32-bit-state bug class, which is invisible to every other suite here
 // because it corrupts VARIANCE while leaving MEANS unbiased. Ten gates: fixed seed-42

@@ -47,13 +47,21 @@ const { state } = await import(`${BASE}state.js`);
 
 // Optional Mie phase function (2026-07-27, C6-C). Env-driven so the positional
 // CLI contract above is unchanged for every existing caller:
-//   MIE_BAND=<1|2|6|7|20> MIE_REFF_INDEX=<0..23> node gen_export.mjs ...
+//   MIE_BAND=<1|2|6|7|20> MIE_REFF_UM=<micrometres> node gen_export.mjs ...
+//   MIE_BAND=<1|2|6|7|20> MIE_REFF_INDEX=<index> node gen_export.mjs ...   (legacy)
+//
+// PREFER MIE_REFF_UM. An index is only meaningful against a particular r_eff grid: index 8
+// is 10 µm in the 24-radius assets but 12 µm in the 18-radius operational HDF4 tables, which
+// omit r_eff = 3, 11, 13, 15, 17, 19 µm. Selecting by value is grid-independent; selecting by
+// index silently changes the droplet size when the asset set changes.
 // Unset => Henyey-Greenstein with g below, exactly as before. Sets state.mie so
 // Export.getExportDataObject() emits inputs.phase_function.type = "mie" with the
 // band-averaged g / ω₀, and overlays the sampling CDF into the kernel params the
 // same way runControl._applyMiePhaseParams does in the browser.
 const mieBand = process.env.MIE_BAND ? parseInt(process.env.MIE_BAND, 10) : null;
-const mieK = process.env.MIE_REFF_INDEX ? parseInt(process.env.MIE_REFF_INDEX, 10) : 0;
+// MIE_REFF_UM wins if both are set; resolved against the band's own cer_um grid below.
+const mieReffUm = process.env.MIE_REFF_UM ? Number(process.env.MIE_REFF_UM) : null;
+let mieK = process.env.MIE_REFF_INDEX ? parseInt(process.env.MIE_REFF_INDEX, 10) : 0;
 let mieSel = null;
 if (mieBand !== null) {
   const { readFileSync } = await import("node:fs");
@@ -61,11 +69,19 @@ if (mieBand !== null) {
   const load = (f) => JSON.parse(readFileSync(new URL(f, DATA)));
   const grid = load("mie_grid.json");
   const band = load(`mie_band_${mieBand}.json`);
+  if (mieReffUm !== null) {
+    const found = band.cer_um.findIndex(v => Math.abs(v - mieReffUm) < 1e-9);
+    if (found < 0) {
+      throw new Error(`MIE_REFF_UM=${mieReffUm} not in band ${mieBand} grid: ${band.cer_um}`);
+    }
+    mieK = found;
+  }
   const WT = Float64Array.from(grid.wt);
   const XMU = Float64Array.from(grid.xmu);
   mieSel = {
     band: mieBand, reffIndex: mieK,
     cer: band.cer_um[mieK], ssa: band.ssa[mieK], g: band.g[mieK],
+    // (mieK resolved from MIE_REFF_UM just above if that was supplied)
     wavelength_um: band.wavelength_um,
     cdf: Physics.buildMieCdf(Float64Array.from(band.pf[mieK]), WT),
     xmu: XMU

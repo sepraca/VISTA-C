@@ -2,7 +2,7 @@
 
 VISTA-C (Visualization of Interactive Stochastic Transport in Atmospheres–Clouds) is an interactive 3D Monte Carlo (MC) simulator of solar photon transport through a finite plane-parallel cloud layer.
 
-The simulator combines physically based radiative transfer with real-time 3D visualization of individual photon trajectories. Current capabilities include Henyey-Greenstein scattering, Lambertian surface reflection, and user-selectable illumination and viewing geometries, allowing users to explore the influence of cloud optical properties and scene geometry on photon transport and radiative outcomes.
+The simulator combines physically based radiative transfer with real-time 3D visualization of individual photon trajectories. Current capabilities include Henyey-Greenstein scattering plus tabulated liquid-droplet (Mie) and non-spherical ice-particle phase functions for MODIS and VIIRS cloud-retrieval bands, Lambertian surface reflection, and user-selectable illumination and viewing geometries, allowing users to explore the influence of cloud optical properties and scene geometry on photon transport and radiative outcomes.
 
 Originally developed as an intuitive educational tool for students, scientists, and engineers working in cloud remote sensing and atmospheric radiative transfer, VISTA-C has evolved to represent increasingly realistic three-dimensional radiative transfer scenarios. Nevertheless, the code remains primarily a visualization and educational platform and has only been numerically validated against PythonicDISORT for a limited set of plane-parallel benchmark cases (see the tests/ directory). 
 
@@ -22,7 +22,10 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 
 - **Reproducible MC statistics**: deterministic Mulberry32 RNG with fixed seed (42)
 - **3D photon path visualization**: animated and static path rendering with colored crossing and endpoint markers by outcome
-- **Henyey-Greenstein phase function**: exact inverse-CDF sampling for the scattering angle
+- **Three phase-function families**: analytic **Henyey-Greenstein**; tabulated **liquid water
+  droplet** (Mie) and **ice particle** (Yang et al. 2013, non-spherical) phase functions for
+  MODIS bands 1/2/6/7/20 and VIIRS M11, selectable by band and effective radius — all sampled
+  by exact inverse-CDF inversion
 - **Lambertian surface reflection**: configurable surface albedo Aₛ with geometric sub-cloud gap propagation
 - **Finite-cloud illumination modes**: pencil-beam (centered) entry, uniform illumination of the cloud top (optionally including the sunward side wall), or a **uniform domain** launch that also illuminates the clear sky around the cloud, to study 3D edge effects and direct clear-sky surface illumination — with a selectable **open/isolated** or **periodic** (tiled cloud field) domain boundary *(v6.0.2 — see [CHANGELOG](CHANGELOG.md))*
 - **Observation-geometry controls**: post-processing selection to aggregate statistics for photons exiting the cloud top/base faces only or also include cloud side photon exits
@@ -48,6 +51,83 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 Each photon is launched into the cloud at a user-specified solar zenith angle Θ₀. Free paths are sampled from an exponential distribution with extinction coefficient β_ext. Scattering directions are drawn from the analytic Henyey-Greenstein phase function via exact inverse-CDF sampling:
 
 $$\cos\theta = \frac{1}{2g}\left[1 + g^2 - \left(\frac{1-g^2}{1-g+2g\xi}\right)^2\right]$$
+
+### Phase functions: Henyey-Greenstein, liquid droplets, and ice particles
+
+Henyey-Greenstein is the analytic default and remains available unchanged. VISTA-C also
+ships **tabulated phase functions for real cloud particles**, selectable per spectral band
+and effective radius, sampled directly from the table by discrete-node inverse-CDF
+inversion (one random draw per scattering, exactly as for HG).
+
+**Liquid water droplets.** Computed from Mie theory — the scattering formulation for
+*spherical* particles — band-integrated over each instrument's spectral response function.
+These are the phase functions used by the MODIS cloud optical and microphysical property
+retrievals; see Platnick et al. (2017) below. Tabulated on 1000 Gauss-Legendre scattering
+angles for effective radii 2–30 µm.
+
+**Ice particles.** Necessarily *not* Mie calculations: ice crystals are non-spherical. These
+come from the Yang et al. (2013) database (severely roughened aggregate columns, gamma size
+distribution with variance 0.10), tabulated on 498 scattering angles spanning 0°–180°
+exactly, for effective radii 5–60 µm. Because that grid is not a Gaussian quadrature and no
+weights are distributed with it, VISTA-C constructs trapezoidal weights in µ; the resulting
+sampling distribution reproduces the tabulated asymmetry parameter to ~1e-7, which is
+gate-checked on every run of the test battery.
+
+Selecting a tabulated phase function replaces the editable HG *g* and ω₀ inputs with the
+read-only band-averaged values for that (band, r_eff), so the coupling is visible rather
+than hidden. Reverting to HG restores the user's own inputs untouched.
+
+#### Available bands
+
+| Instrument / band | λ (µm) | Liquid droplets | Ice particles |
+|---|---|---|---|
+| MODIS 1 | 0.65 | ✓ | ✓ |
+| MODIS 2 | 0.86 | ✓ | ✓ |
+| MODIS 6 | 1.64 | ✓ | ✓ |
+| MODIS 7 | 2.13 | ✓ | ✓ |
+| **VIIRS M11** | **2.25** | ✓ | ✓ |
+| MODIS 20 | 3.75 | ✓ | ✓ |
+
+**Why VIIRS M11 is included even though MODIS band 7 is only 0.12 µm away.** The two are not
+near-duplicates: band 7 lies on the long-wavelength wing of the ~1.9 µm liquid-water
+absorption band, while M11 falls further into the relatively transparent window before
+absorption climbs again toward ~3 µm. The imaginary part of the refractive index — and hence
+the single-scattering co-albedo — is therefore materially larger at 2.13 µm than at 2.25 µm.
+At r_eff = 10 µm the tabulated values are
+
+| band | λ (µm) | 1 − ω₀ |
+|---|---|---|
+| MODIS 6 | 1.64 | 0.00761 |
+| MODIS 7 | 2.13 | **0.02783** |
+| VIIRS M11 | 2.25 | 0.01843 |
+| MODIS 20 | 3.75 | 0.08796 |
+
+M11 absorbs about a third less than band 7 at every radius, and it is the only
+non-monotonic step in the sequence. Since absorption at these wavelengths is what drives the
+effective-radius retrieval, M11 is a genuinely distinct band for both liquid and ice — which
+is the reason it is offered separately rather than treated as a stand-in for band 7.
+
+All tabulated phase functions use a consistent refractive-index dataset (265 K), matching the
+MODIS/VIIRS continuity product (CLDPROP; Platnick et al. 2020) so that the MODIS and VIIRS
+bands can be compared against one another on equal footing.
+
+#### References for the tabulated phase functions
+
+> Yang, P., et al. (2013). Spectrally consistent scattering, absorption, and polarization
+> properties of atmospheric ice crystals at wavelengths from 0.2 to 100 µm. *Journal of the
+> Atmospheric Sciences*, **70**(1), 330–347. — *ice particle phase functions*
+
+> Platnick, S., Meyer, K. G., King, M. D., Wind, G., Amarasinghe, N., Marchant, B., Arnold,
+> G. T., Zhang, Z., Hubanks, P. A., Holz, R. E., Yang, P., Ridgway, W. L., & Riedi, J.
+> (2017). The MODIS cloud optical and microphysical products: Collection 6 updates and
+> examples from Terra and Aqua. *IEEE Transactions on Geoscience and Remote Sensing*,
+> **55**(1), 502–525. [doi:10.1109/TGRS.2016.2610522](https://doi.org/10.1109/TGRS.2016.2610522)
+> — *liquid droplet phase functions*
+
+> Platnick, S., et al. (2021). The NASA MODIS-VIIRS continuity cloud optical properties
+> products. *Remote Sensing*, **13**(1), 2.
+> [doi:10.3390/rs13010002](https://doi.org/10.3390/rs13010002) — *CLDPROP; the 265 K
+> refractive-index basis used here*
 
 At the cloud base, photons are propagated geometrically through a clear sub-cloud gap to a Lambertian surface with albedo Aₛ. The net (physical) surface absorption is F↓ − F↑, where F↓ and F↑ are the total downward and upward crossings of the **surface plane** — counting every photon that reaches the surface, whether it arrived through the cloud base *or* by exiting a cloud side and descending through the clear gap. This surface balance is **independent of the Observation-geometry setting**.
 

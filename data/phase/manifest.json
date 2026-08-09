@@ -1,0 +1,346 @@
+{
+ "format": "vista-c-phase",
+ "version": 1,
+ "note": "Converted directly from the ORIGINAL HDF4. Derived arrays present in the 2026-08 NetCDF4 intermediates (pf_g, pf_norm, pf_cumul) are deliberately NOT used: they disagree with the pf stored beside them. Normalization, g and the sampling CDF are computed here / in the browser from pf alone.",
+ "instruments": {
+  "modis": {
+   "source_file": "IceAndWaterPhaseFunctionData_v6.MODIS.hdf",
+   "source_attrs": {
+    "Date of File Created": "SEP 06 2017",
+    "Time of File Created": "17:24:18",
+    "Fortran Program Name": "createPhaseFunctionDataHDF_C6_SBR.f90",
+    "Thermodynamic Phase": "Water and Ice - MODIS, IM(n) water @ 265K, updated 3.7um @265K",
+    "Data Description": "Phase Function Data for Ice and Water Clouds:",
+    "Habit Type": "Aggregate Columns - Gamma, var = 0.10"
+   },
+   "generated": "2026-08-09T03:25:14Z",
+   "families": {
+    "liquid": {
+     "b1": {
+      "wavelength_um": 0.6589999794960022,
+      "nominal_um": 0.65,
+      "source_integral": [
+       1.001036,
+       1.003471,
+       1.005293,
+       1.007523,
+       1.010159,
+       1.013209,
+       1.01667,
+       1.020552,
+       1.029663,
+       1.040586,
+       1.053421,
+       1.068275,
+       1.085254,
+       1.104498,
+       1.126136,
+       1.150332,
+       1.177215,
+       1.206949
+      ]
+     },
+     "b2": {
+      "wavelength_um": 0.8650000095367432,
+      "nominal_um": 0.86,
+      "source_integral": [
+       1.000616,
+       1.00201,
+       1.003056,
+       1.004326,
+       1.005826,
+       1.007554,
+       1.00951,
+       1.011698,
+       1.016803,
+       1.022879,
+       1.029954,
+       1.038073,
+       1.047252,
+       1.057571,
+       1.069038,
+       1.081726,
+       1.095691,
+       1.110989
+      ]
+     },
+     "b6": {
+      "wavelength_um": 1.6399999856948853,
+      "nominal_um": 1.64,
+      "source_integral": [
+       1.000196,
+       1.000602,
+       1.000902,
+       1.00126,
+       1.001683,
+       1.002169,
+       1.002718,
+       1.00333,
+       1.004749,
+       1.006428,
+       1.008365,
+       1.01057,
+       1.013049,
+       1.01579,
+       1.018813,
+       1.02213,
+       1.02573,
+       1.029619
+      ]
+     },
+     "b7": {
+      "wavelength_um": 2.130000114440918,
+      "nominal_um": 2.13,
+      "source_integral": [
+       1.000159,
+       1.000361,
+       1.000559,
+       1.000787,
+       1.001048,
+       1.001345,
+       1.001681,
+       1.002058,
+       1.002934,
+       1.003973,
+       1.005177,
+       1.00655,
+       1.008094,
+       1.009817,
+       1.011718,
+       1.013799,
+       1.016069,
+       1.018535
+      ]
+     },
+     "b20": {
+      "wavelength_um": 3.75,
+      "nominal_um": 3.75,
+      "source_integral": [
+       1.000068,
+       1.00014,
+       1.000189,
+       1.000264,
+       1.000362,
+       1.000472,
+       1.000592,
+       1.000723,
+       1.00103,
+       1.001397,
+       1.001828,
+       1.002323,
+       1.002884,
+       1.003514,
+       1.004214,
+       1.004986,
+       1.005834,
+       1.006756
+      ]
+     }
+    },
+    "ice": {
+     "b1": {
+      "wavelength_um": 0.6589999794960022,
+      "nominal_um": 0.65,
+      "source_integral": [
+       2.0,
+       2.0,
+       2.0,
+       2.0,
+       2.000001,
+       2.000001,
+       2.0,
+       1.999999,
+       2.0,
+       2.000001,
+       1.999999,
+       1.999999
+      ]
+     },
+     "b2": {
+      "wavelength_um": 0.8650000095367432,
+      "nominal_um": 0.86,
+      "source_integral": [
+       2.0,
+       2.000001,
+       2.0,
+       2.000001,
+       1.999999,
+       2.0,
+       2.000001,
+       2.000001,
+       2.0,
+       2.0,
+       2.0,
+       2.0
+      ]
+     },
+     "b6": {
+      "wavelength_um": 1.6399999856948853,
+      "nominal_um": 1.64,
+      "source_integral": [
+       2.0,
+       2.0,
+       2.0,
+       2.000001,
+       2.0,
+       2.000001,
+       2.000001,
+       2.000001,
+       2.0,
+       1.999999,
+       2.0,
+       1.999999
+      ]
+     },
+     "b7": {
+      "wavelength_um": 2.130000114440918,
+      "nominal_um": 2.13,
+      "source_integral": [
+       2.000001,
+       2.000001,
+       2.000001,
+       2.000001,
+       1.999999,
+       2.0,
+       1.999999,
+       2.0,
+       2.0,
+       1.999999,
+       2.0,
+       1.999998
+      ]
+     },
+     "b20": {
+      "wavelength_um": 3.75,
+      "nominal_um": 3.75,
+      "source_integral": [
+       2.0,
+       2.0,
+       2.000001,
+       2.0,
+       2.000001,
+       2.0,
+       2.0,
+       2.0,
+       2.000001,
+       2.000001,
+       2.0,
+       2.0
+      ]
+     }
+    }
+   }
+  },
+  "viirs": {
+   "source_file": "IceAndWaterPhaseFunctionData_v6.VIIRS.hdf",
+   "source_attrs": {
+    "Version:": "v6.VIIRS.1.1.265",
+    "Date of File Created": "SEP 12 2017",
+    "Time of File Created": "12:41:22",
+    "History-Ice": "Previous ICE PF was generated only with sensor weighting, this version (sol+sensor) weighting included, and CT= 230K",
+    "History-Water": "IM(n) for band 6,7 and ch20 at 265K,1,2,5 @295K,  C6 for ch31: In version 1.0.265 ch20 is C6",
+    "Data Description": "Phase Function Data for Ice and Water Clouds: Severely Roughned ICE",
+    "Ice Habit Type": "Aggregate Columns - Gamma, var = 0.10",
+    "Instrument": "VIIRS",
+    "RSR FILES DATE STAMP": "November, 2011"
+   },
+   "generated": "2026-08-09T03:25:19Z",
+   "families": {
+    "liquid": {
+     "M11": {
+      "wavelength_um": 2.25,
+      "nominal_um": 2.25,
+      "source_integral": [
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0,
+       1.0
+      ]
+     }
+    },
+    "ice": {
+     "M11": {
+      "wavelength_um": 2.25,
+      "nominal_um": 2.25,
+      "source_integral": [
+       2.000184,
+       2.00017,
+       2.000165,
+       2.000166,
+       2.000175,
+       2.000189,
+       2.000283,
+       2.000835,
+       2.002839,
+       2.007903,
+       2.017764,
+       2.033639
+      ]
+     }
+    }
+   }
+  }
+ },
+ "families": {
+  "liquid": {
+   "n_angles": 1000,
+   "n_radii": 18,
+   "cer_um": [
+    2.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    12.0,
+    14.0,
+    16.0,
+    18.0,
+    20.0,
+    22.0,
+    24.0,
+    26.0,
+    28.0,
+    30.0
+   ],
+   "grid_file": "grid_liquid.json",
+   "weights": "Gauss-Legendre, generated; max|cos(ang)-node| = 2.45e-07"
+  },
+  "ice": {
+   "n_angles": 498,
+   "n_radii": 12,
+   "cer_um": [
+    5.0,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+    35.0,
+    40.0,
+    45.0,
+    50.0,
+    55.0,
+    60.0
+   ],
+   "grid_file": "grid_ice.json",
+   "weights": "trapezoidal in mu; endpoints exact so no extrapolation"
+  }
+ }
+}

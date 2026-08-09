@@ -25,6 +25,14 @@ CODE-REVIEW-*.md
 # not tracked project docs
 RELEASE_NOTES*.md
 
+# Data-provenance investigation notes (2026-08-07) -- working analyses of the
+# MODIS/VIIRS phase-function source files, shared between the author and the
+# phase-function programmer. Kept in the working folder for easy access by both,
+# but deliberately NOT published to the public repo: they discuss unresolved
+# discrepancies in third-party source data, not VISTA-C behaviour.
+NOTE_pf_norm_forward_peak_resolution.md
+g_comparison_old_vs_new.md
+
 # MODIS phase functions in netCDF4 (source data; converted browser assets, when
 # they exist, will live elsewhere and be tracked separately)
 MODIS_Phase Functions_netCDF4/

@@ -12,7 +12,15 @@ const D=new URL("../../../data/mie/", import.meta.url);
 const grid=JSON.parse(readFileSync(new URL("mie_grid.json", D)));
 const band=Number(process.argv[2]), N=Number(process.argv[3]), seed=Number(process.argv[4]||42);
 const bb=JSON.parse(readFileSync(new URL(`mie_band_${band}.json`, D)));
-const WT=Float64Array.from(grid.wt), XMU=Float64Array.from(grid.xmu), k=8;
+const WT=Float64Array.from(grid.wt), XMU=Float64Array.from(grid.xmu);
+// SELECT r_eff BY VALUE, NEVER BY A HARDCODED INDEX (2026-08-08).
+// This was `k=8`, which is 10 um in the 24-radius grid of the older per-band assets but
+// **12 um** in the 18-radius grid of the operational HDF4 tables (which omit r_eff = 3, 11,
+// 13, 15, 17, 19 um). Swapping the asset set would therefore have silently validated a 12 um
+// droplet while every label still said 10 um. Look the value up and assert it.
+const R_EFF_UM = 10.0;
+const k = bb.cer_um.findIndex(v => Math.abs(v - R_EFF_UM) < 1e-9);
+if (k < 0) throw new Error(`r_eff ${R_EFF_UM} um not in band ${band}: ${bb.cer_um}`);
 const cdf=Physics.buildMieCdf(Float64Array.from(bb.pf[k]),WT);
 const p={tauCloud:10,slabW:500,slabD:500,theta0:30*Math.PI/180,g:bb.g[k],omega0:bb.ssa[k],
   surfaceAlbedo:0.0,betaExt:10.0,surfaceDistanceKm:0.5,entryMode:"center",mieCdf:cdf,mieXmu:XMU};
