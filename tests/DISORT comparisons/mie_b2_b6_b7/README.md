@@ -1,6 +1,8 @@
-# C5 — VISTA-C Mie transport validated against PythonicDISORT
+# C5 — VISTA-C tabulated-phase-function transport validated against PythonicDISORT
 
-**Status: PASS.** Fluxes agree to 0.000–0.06 %; directional BDF agrees at Monte Carlo noise.
+**Status: PASS, both particle families.** Fluxes agree to 0.000–0.06 %; directional BDF agrees
+at Monte Carlo noise. **Liquid droplet** (Mie): MODIS bands 2 / 6 / 7. **Ice particle**
+(Yang et al. 2013, non-spherical): MODIS bands 1 / 2 / 6 / 7 / 20 — added 2026-08-09.
 
 > **Refreshed 2026-08-09 for v6.2 (265 K phase-function tables).** The liquid droplet tables
 > were replaced: the source moved from the author's 300 K calculation to the operational
@@ -22,10 +24,9 @@
 
 ## What is being tested
 
-Two completely independent solution methods, given the **same tabulated liquid-droplet
-(Mie) phase function**, must agree. (The v6.2 ice tables are not covered here — DISORT is
-given Legendre moments and would validate them the same way, but that comparison has not
-been set up.)
+Two completely independent solution methods, given the **same tabulated phase function**,
+must agree. This is run for both v6.2 particle families — liquid droplet and ice — with
+per-family DISORT settings established by measurement (see "Ice particle validation").
 
 | | VISTA-C | PythonicDISORT |
 |---|---|---|
@@ -68,7 +69,7 @@ Pooled over 7 azimuths × 45 µ bins, reduced χ² of (VISTA-C − DISORT)/σ_MC
 | 6 | 1.78 | 1.04 | **1.15** | −0.5 | agreement at Monte Carlo noise |
 | 7 | 0.95 | 1.02 | **1.05** | +1.7 | agreement at Monte Carlo noise |
 
-`C5_mie_principal_plane_b2_b6_b7.png` shows φ = 0° and φ = 180° cuts. Both Mie features
+`C5_liquid_principal_plane.png` shows φ = 0° and φ = 180° cuts. Both Mie features
 appear in the antisolar row and are tracked by both codes:
 **glory at θ ≈ 30°** (Θs = 180°, since θ = Θ₀) and **cloudbow at θ ≈ 68°** (Θs ≈ 142°).
 Neither is expressible by Henyey-Greenstein at any g.
@@ -138,6 +139,96 @@ evidence of a defect. What the high-N run buys is a much tighter bound than 20 M
 `C5_mie_principal_plane_b2_b6_b7_100M.png` and `C5_results_100M.json` hold the figure and the
 machine-readable numbers.
 
+## Ice particle validation (v6.2, 2026-08-09)
+
+**Status: PASS, all five bands.** The ice tables are Yang et al. (2013) severely roughened
+aggregate columns on a 498-point trapezoidal-in-µ grid — **not** Mie, not a Gaussian
+quadrature, and normalized ∫p dµ = 2 in the source rather than 1. Everything downstream of
+that (weights, projection, sampling) is family-specific, so this is a genuinely separate
+validation rather than a re-run of the liquid case with different numbers.
+
+**Case:** identical to the liquid case — τ = 10, Θ₀ = 30°, Aₛ = 0, r_eff = 10 µm (by value),
+20 M photons/band, xoshiro128\*\* seed 42.
+
+### Fluxes (R / T / A)
+
+| band | λ (µm) | ω₀ | | VISTA-C | DISORT | rel. diff |
+|---|---|---|---|---|---|---|
+| 1 | 0.65 | 0.9999999 | R | 0.605007 | 0.605056 | 0.008 % |
+| | | | T | 0.394991 | 0.394942 | 0.012 % |
+| | | | A | 0.000002 | 0.000002 | — |
+| 2 | 0.86 | 0.9999999 | R | 0.603183 | 0.603006 | 0.029 % |
+| | | | T | 0.396815 | 0.396992 | 0.045 % |
+| | | | A | 0.000002 | 0.000002 | — |
+| 6 | 1.64 | 0.98100 | R | 0.431750 | 0.431752 | 0.001 % |
+| | | | T | 0.270760 | 0.270701 | 0.022 % |
+| | | | A | 0.297491 | 0.297547 | 0.019 % |
+| 7 | 2.13 | 0.96200 | R | 0.319466 | 0.319475 | 0.003 % |
+| | | | T | 0.204821 | 0.204761 | 0.030 % |
+| | | | A | 0.475712 | 0.475765 | 0.011 % |
+| 20 | 3.75 | 0.80400 | R | 0.093854 | 0.093910 | 0.060 % |
+| | | | T | 0.025563 | 0.025566 | 0.012 % |
+| | | | A | 0.880583 | 0.880524 | 0.007 % |
+
+Absorption spans **0.000002 → 0.881**, a factor of ~4 × 10⁵, and both codes track it.
+
+### Directional BDF, principal plane
+
+| band | λ (µm) | ω₀ | φ=0° | φ=180° | pooled n_σ² | ΔR/σ_MC |
+|---|---|---|---|---|---|---|
+| 1 | 0.65 | 1.0000000 | 1.88 | 2.23 | **1.35** | −0.4 |
+| 2 | 0.86 | 1.0000000 | 1.15 | 1.31 | **1.05** | +1.6 |
+| 6 | 1.64 | 0.98100 | 1.50 | 0.74 | **1.05** | −0.0 |
+| 7 | 2.13 | 0.96200 | 1.44 | 0.90 | **1.11** | −0.1 |
+| 20 | 3.75 | 0.80400 | 1.97 | 1.51 | **1.24** | −0.9 |
+
+`C5_ice_principal_plane.png` holds the ten cuts. The ice curves are visibly **smoother than
+the liquid ones — no glory, no cloudbow** — as expected for randomly oriented roughened
+non-spherical crystals, whose orientation and surface-roughness averaging washes out the
+resonance features that a sphere produces.
+
+### Why the ice settings differ: NQuad = 512, NLeg = 511, delta-M OFF
+
+This was measured, not assumed, and the reasoning matters because the naive expectation
+(smoother phase function ⇒ fewer moments) is **half right and misleading**.
+
+Ice has a forward peak ~5× stronger than liquid's *and* a smoother wide-angle shape. The peak
+alone sets the moment requirement: the ice moments stay non-negligible to l ≈ 383. Sweeping
+the coupled pair NSTR = NLeg + 1 with delta-M off, ice band 6 gives pooled n_σ²
+
+| NQuad | 128 | 256 | 384 | 512 |
+|---|---|---|---|---|
+| pooled n_σ² | 45.55 | 1.22 | 1.12 | **1.05** |
+
+**Streams and moments are not independently tunable.** The discrete-ordinate solution retains
+moments only up to NSTR − 1, and PythonicDISORT enforces this outright
+(`ValueError: There should be more streams than the number of phase function Legendre
+coefficients used`). Raising NLeg therefore *requires* raising NSTR. An earlier apparent
+"saturation at 256 streams" was an artifact of holding NLeg pinned at 255 while NSTR varied.
+
+**delta-M is off because at NLeg = 511 there is no peak left to truncate.** delta-M is exact
+for *fluxes* but leaves a radiance error, so once the peak is resolved it is pure loss. At low
+NLeg the sign reverses — ice at NQuad = 128 scores 2.42 *with* delta-M and 45.55 without it.
+NT/TMS stays off for the same reason it does on the liquid side: it rebuilds single scattering
+from the supplied moments, so at low NLeg it injects a wrong term.
+
+### Conservative bands (ice b1, b2): ω₀ = 1 − 10⁻⁷
+
+Ice bands 1 and 2 have ω₀ = 1.000000 exactly, which is **singular** in discrete ordinates.
+These were initially excluded — wrongly, as it turned out: the exclusion was an artifact of a
+hardcoded 1 − 10⁻⁹ clamp, which is past the point where the solve breaks down. Tested
+directly, DISORT converges cleanly at **1 − 10⁻⁷** (albedo spread ~10⁻⁸ across NQuad 64–384)
+and fails at 10⁻⁹.
+
+VISTA-C is therefore run at the same value via `SSA_OVERRIDE=0.9999999`, so both codes solve
+the *identical* problem rather than two nearby ones. The induced absorption over ~25
+scatterings is ~3 × 10⁻⁶ — two orders below the 20 M-photon noise floor (σ_R ≈ 10⁻⁴) — so
+this is a faithful conservative-scattering proxy. Both codes report A = 0.000002, agreeing on
+the size of the artifact itself.
+
+Band 1's pooled 1.35 is the largest of the five and is consistent with conservative scattering
+being the hardest case for both methods (longest photon chains, most nearly singular solve).
+
 ## Method notes (the parts that are easy to get wrong)
 
 **Legendre projection.** The tables satisfy Σ wt·pf = 1 with Σ wt = 2 (so ∫p dµ = 1) and
@@ -173,12 +264,14 @@ is backscatter (Θs = 179.3° at µ = µ₀) — matching VISTA-C's φ = 180° a
 
 ## Known limits and caveats
 
-**Band 1 (ω₀ = 1) is ill-conditioned in DISORT and is deliberately excluded.** With
-conservative scattering the albedo does not converge with stream count: R = 0.446569 /
-0.446566 / 0.445499 / 0.448112 / 0.449507 at NQuad = 64 / 128 / 256 / 384 / 512 — a 0.9 %
-spread with no convergence, and PythonicDISORT warns about it. Band 2 (ω₀ = 0.99995) is
-physically almost identical but ~36× better conditioned (spread 4.5 × 10⁻⁷), and is the
-recommended near-conservative reference case.
+**~~Band 1 (ω₀ = 1) is ill-conditioned and is deliberately excluded~~ — SUPERSEDED
+2026-08-09.** The original finding stands: at a 1 − 10⁻⁹ clamp the albedo does not converge
+with stream count (R = 0.446569 / 0.446566 / 0.445499 / 0.448112 / 0.449507 at NQuad =
+64 / 128 / 256 / 384 / 512 — 0.9 % spread, and PythonicDISORT warns). But the **clamp, not
+conservative scattering itself, was the problem**. At 1 − 10⁻⁷ the solve converges to ~10⁻⁸
+across the same stream range, and ice bands 1 and 2 are now included in the validation with
+VISTA-C matched via `SSA_OVERRIDE` (see "Conservative bands" above). The liquid table has no
+exactly-conservative band under the 265 K basis, so the liquid set remains 2 / 6 / 7.
 
 **`NT_cor` (Nakajima–Tanaka) must not be used at low NLeg with these tables.** At NLeg = 128
 it produced clearly wrong radiances (BRF 0.069 vs 0.479) because it reconstructs the
@@ -203,23 +296,38 @@ mulberry32 0.362, xoshiro128\*\* 1.008 against a Poisson expectation of 1).
 
 | file | purpose |
 |---|---|
-| `legendre_moments.py` | project the tabulated phase function onto Legendre moments; writes `beta_b<N>_r10.npy` for bands 2/6/7 (or one band, with diagnostics, if given an argument) |
-| `vistac_run.mjs` | run VISTA-C headlessly, accumulate the 45 µ × 120 φ reflected grid |
-| `disort_vs_vistac.py` | run PythonicDISORT, bin-match, compare, plot |
-| `C5_results.json` | the R/T/A + n_σ² table above, machine-readable |
-| `C5_mie_principal_plane_b2_b6_b7.png` | the figure |
+| `legendre_moments.py` | project a tabulated phase function onto Legendre moments; writes `beta_<family>_b<N>_r10.npy`. A trailing `ice`/`liquid` argument selects the family (default liquid) |
+| `vistac_run.mjs` | run VISTA-C headlessly, accumulate the 45 µ × 120 φ reflected grid. 5th arg = family; `SSA_OVERRIDE` env var forces ω₀ for conservative bands |
+| `disort_vs_vistac.py` | run PythonicDISORT, bin-match, compare, plot. `sys.argv[1]` = family; the per-family settings and the reasons for them live in `DISORT_CFG` at the top |
+| `C5_results_liquid.json`, `C5_results_ice.json` | the R/T/A + n_σ² tables above, machine-readable |
+| `C5_liquid_principal_plane.png`, `C5_ice_principal_plane.png` | the figures |
 
 Requires `PythonicDISORT`, `numpy`, `scipy`, `matplotlib`. Run from this directory:
 
 ```
-python3 legendre_moments.py                 # -> beta_b{2,6,7}_r10.npy
-node vistac_run.mjs 2 20000000 42           # -> vista_b2.json   (repeat for 6 and 7)
-node vistac_run.mjs 6 20000000 42
-node vistac_run.mjs 7 20000000 42
-python3 disort_vs_vistac.py                 # -> C5_results.json + the figure
+# liquid droplet (NQuad=128, delta-M on)
+python3 legendre_moments.py                        # -> beta_liquid_b{2,6,7}_r10.npy
+for b in 2 6 7; do node vistac_run.mjs $b 20000000 42 liquid; done
+python3 disort_vs_vistac.py                        # -> C5_results_liquid.json + figure
+
+# ice particle (NQuad=512, NLeg=511, delta-M off; b1/b2 conservative)
+python3 legendre_moments.py 1 2 6 7 20 ice         # -> beta_ice_b*_r10.npy
+SSA_OVERRIDE=0.9999999 node vistac_run.mjs 1 20000000 42 ice
+SSA_OVERRIDE=0.9999999 node vistac_run.mjs 2 20000000 42 ice
+for b in 6 7 20; do node vistac_run.mjs $b 20000000 42 ice; done
+python3 disort_vs_vistac.py ice                    # -> C5_results_ice.json + figure
 ```
 
-The `.npy` and `vista_b*.json` files are regenerable intermediates. Two defects that made
+**Renamed 2026-08-09.** The outputs are now `C5_results_<family>.json` and
+`C5_<family>_principal_plane.png` for both families. Previously the *figure* was family-suffixed
+but the JSON was not, so `disort_vs_vistac.py ice` silently overwrote the liquid
+`C5_results.json` — while printing that it had written `C5_results_ice.json`. The old
+`C5_results.json` / `C5_mie_principal_plane_b2_b6_b7.png` are superseded and were deleted;
+the 100 M files keep their original names.
+
+The ice run takes ~4 min/band at NQuad = 512 (the DO eigenproblem scales steeply in stream
+count); liquid at 128 is seconds. The `.npy` and `vista_*.json` files are regenerable
+intermediates. Two defects that made
 this pipeline unrunnable on a clean checkout were fixed on 2026-07-29: `legendre_moments.py`
 only ever handled band 1 (bands 2/6/7 had come from an uncommitted ad-hoc variant), and both
 it and `vistac_run.mjs` used absolute paths to one particular machine.

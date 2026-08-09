@@ -43,16 +43,21 @@ D = os.path.join(HERE, "..", "..", "..", "data", "phase")
 R_EFF_UM = 10.0   # selected BY VALUE below; index 8 was 10 um in the old 24-radius
                   # grid but is 12 um in the 18-radius operational grid.
 
-args = [int(a) for a in sys.argv[1:]]
+# FAMILY (v6.2): trailing "ice"/"liquid" argument; default liquid (unchanged for callers).
+argv = sys.argv[1:]
+FAMILY = "liquid"
+if argv and argv[-1] in ("ice", "liquid"):
+    FAMILY = argv.pop()
+args = [int(a) for a in argv]
 bands = args or [2, 6, 7]
 verbose = bool(args)
 
-grid = json.load(open(os.path.join(D, "grid_liquid.json")))
+grid = json.load(open(os.path.join(D, f"grid_{FAMILY}.json")))
 mu = np.array(grid["xmu"])
 wt = np.array(grid["wt"])
 
 for band in bands:
-    b = json.load(open(os.path.join(D, f"liquid_modis_b{band}.json")))
+    b = json.load(open(os.path.join(D, f"{FAMILY}_modis_b{band}.json")))
     try:
         K = b["cer_um"].index(R_EFF_UM)
     except ValueError:
@@ -117,6 +122,6 @@ for band in bands:
     if negs.size:
         print(f"  note: beta first goes negative at l={negs[0]} "
               f"-> delta-M f must be clamped >= 0")
-    out = os.path.join(HERE, f"beta_b{band}_r10.npy")
+    out = os.path.join(HERE, f"beta_{FAMILY}_b{band}_r10.npy")
     np.save(out, beta)
     print(f"  wrote {os.path.basename(out)}\n")

@@ -1,4 +1,5 @@
 {
+  "family": "liquid",
   "rng": {
     "name": "xoshiro128**",
     "seed": 42

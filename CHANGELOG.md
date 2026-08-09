@@ -86,9 +86,33 @@ M11 sits between b7 and b20 where its lower absorption is easiest to notice. Swi
 
 ### Validation
 
-C5 (VISTA-C vs PythonicDISORT, 20 M photons/band) re-run against the 265 K tables and still
-**PASS**: fluxes agree to **0.000–0.06 %**, pooled n_σ² **0.98 / 1.15 / 1.05**. Band 2's R
-agrees to six decimals. The Legendre projection now reproduces the tabulated g to
+**C5 now covers both particle families — both PASS.**
+
+*Liquid droplet* (bands 2 / 6 / 7, 20 M photons/band) re-run against the 265 K tables:
+fluxes agree to **0.000–0.06 %**, pooled n_σ² **0.98 / 1.15 / 1.05**. Band 2's R
+agrees to six decimals.
+
+*Ice particle* (bands 1 / 2 / 6 / 7 / 20, 20 M photons/band) — **new**. Fluxes agree to
+**0.001–0.06 %**, pooled n_σ² **1.35 / 1.05 / 1.05 / 1.11 / 1.24**, ΔR within ±1.6 σ
+everywhere. Absorption spans 2 × 10⁻⁶ → 0.881 across the five bands and both codes track it.
+
+Ice needs different DISORT settings, established by sweep rather than assumed: **NQuad = 512,
+NLeg = 511, delta-M off** (liquid uses 128 / 127 / on). Ice's forward peak is ~5× liquid's, so
+despite its *smoother* wide-angle shape (no glory, no cloudbow) it needs moments to l ≈ 383;
+and since the DO solution retains moments only to NSTR − 1, streams and moments are not
+independently tunable. Measured pooled n_σ² for ice b6 along NSTR = NLeg + 1: **45.55 → 1.22 →
+1.12 → 1.05** at NQuad 128 / 256 / 384 / 512. delta-M is off because at NLeg = 511 there is no
+peak left to truncate, leaving only its radiance error.
+
+Ice bands 1 and 2 are exactly conservative (ω₀ = 1), singular in discrete ordinates. An
+earlier conclusion that they *must* be excluded was **wrong** — an artifact of a hardcoded
+1 − 10⁻⁹ clamp. DISORT in fact converges at **1 − 10⁻⁷** (spread ~10⁻⁸ over NQuad 64–384), so
+both bands are now validated with VISTA-C matched to the same ω₀ via the new `SSA_OVERRIDE`
+env var. The induced absorption (~3 × 10⁻⁶) is two orders below the photon noise floor.
+
+Also fixed in the C5 harness: `disort_vs_vistac.py` wrote `C5_results.json` for *both*
+families while printing that it had written `C5_results_<family>.json`, so an ice run silently
+overwrote the liquid results. Outputs are now family-suffixed on both the JSON and the figure. The Legendre projection now reproduces the tabulated g to
 **1–4 × 10⁻⁸** (was 1.9 × 10⁻⁵) — the old assets stored g rounded to four decimals, so β₁
 could not agree more closely; the new converter derives g from the same renormalized `pf`.
 Glory (~31°) and cloudbow (~67°) appear at unchanged angles in both versions.
