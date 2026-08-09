@@ -184,8 +184,8 @@ fig.suptitle('C5 validation at 100M photons — VISTA-C Monte Carlo vs PythonicD
              '5×20M xoshiro128** jump() sub-streams, seed 42',
              fontsize=12.5, y=1.02)
 fig.tight_layout()
-fig.savefig("C5_mie_principal_plane_b2_b6_b7_100M.png", dpi=125, bbox_inches='tight')
+fig.savefig("C5_liquid_principal_plane_100M.png", dpi=125, bbox_inches='tight')
 json.dump({"rng": {"name": "xoshiro128**", "seed": 42,
                    "chunking": "5 x 20M via RNG.jump()"}, "bands": results},
-          open("C5_results_100M.json", "w"), indent=2)
-print("\nwrote C5_mie_principal_plane_b2_b6_b7_100M.png and C5_results_100M.json")
+          open("C5_results_liquid_100M.json", "w"), indent=2)
+print("\nwrote C5_liquid_principal_plane_100M.png and C5_results_liquid_100M.json")

@@ -88,21 +88,40 @@ M11 sits between b7 and b20 where its lower absorption is easiest to notice. Swi
 
 **C5 now covers both particle families — both PASS.**
 
+Both families run at **NQuad = 256, NLeg = 255, delta-M on**.
+
 *Liquid droplet* (bands 2 / 6 / 7, 20 M photons/band) re-run against the 265 K tables:
-fluxes agree to **0.000–0.06 %**, pooled n_σ² **0.98 / 1.15 / 1.05**. Band 2's R
+fluxes agree to **0.000–0.06 %**, pooled n_σ² **1.00 / 1.14 / 1.05**. Band 2's R
 agrees to six decimals.
 
 *Ice particle* (bands 1 / 2 / 6 / 7 / 20, 20 M photons/band) — **new**. Fluxes agree to
-**0.001–0.06 %**, pooled n_σ² **1.35 / 1.05 / 1.05 / 1.11 / 1.24**, ΔR within ±1.6 σ
+**0.001–0.06 %**, pooled n_σ² **1.47 / 1.20 / 1.21 / 1.27 / 1.48**, ΔR within ±1.6 σ
 everywhere. Absorption spans 2 × 10⁻⁶ → 0.881 across the five bands and both codes track it.
 
-Ice needs different DISORT settings, established by sweep rather than assumed: **NQuad = 512,
-NLeg = 511, delta-M off** (liquid uses 128 / 127 / on). Ice's forward peak is ~5× liquid's, so
-despite its *smoother* wide-angle shape (no glory, no cloudbow) it needs moments to l ≈ 383;
-and since the DO solution retains moments only to NSTR − 1, streams and moments are not
-independently tunable. Measured pooled n_σ² for ice b6 along NSTR = NLeg + 1: **45.55 → 1.22 →
-1.12 → 1.05** at NQuad 128 / 256 / 384 / 512. delta-M is off because at NLeg = 511 there is no
-peak left to truncate, leaving only its radiance error.
+**The ice DISORT settings were got wrong once, and the failure mode is worth recording.**
+They were first chosen as NQuad = 512 / NLeg = 511 / delta-M off by minimizing pooled n_σ²
+against VISTA-C (45.55 → 1.22 → 1.12 → 1.05 across NQuad 128/256/384/512). Those numbers are
+correct; the conclusion was not. The resulting DISORT curves visibly **ring**, which the
+figure showed at a glance.
+
+The true behaviour is a **cliff at NQuad 384**, not a gradient — max deviation from the
+converged plateau jumps to 9.4 % (b1), 10.8 % (b6), **19.7 %** (b20), while NQuad 192/256/320
+agree with one another to ~0.2 %. Liquid shows no cliff at any stream count. The cause is the
+**angular grid**, not the forward peak: liquid's tables sit on 1000 Gauss–Legendre nodes, ice
+on 498 trapezoidal ones, and past l ≈ 320 the ice Legendre projection aliases off that finite
+grid — the moments stop decaying monotonically (β₃₂₀ = 1.437e-3 then β₃₈₃ = 1.597e-3, rising),
+which a smooth peaked function cannot do. Fluxes are entirely blind to it: R_DIS = 0.43175 at
+every setting tested.
+
+**Why n_σ² could not catch it.** The 11 % ringing sits at θ = 89.4° where σ_MC is 16 %; across
+all 45 bins not one deviation exceeds 2 σ_MC. The metric asks whether DISORT lies inside the
+Monte Carlo noise — the right question for validating VISTA-C, and structurally incapable of
+selecting DISORT's own numerical parameters. Settings are now chosen by **DISORT
+self-convergence**, with VISTA-C out of the loop, and only then compared.
+
+delta-M is back **on**; it matters most for conservative scattering (ice b1 at NQuad 256:
+1.47 with, 18.22 without). The earlier finding that NSTR and NLeg are coupled stands — what
+was wrong was inferring that raising both further must be better.
 
 Ice bands 1 and 2 are exactly conservative (ω₀ = 1), singular in discrete ordinates. An
 earlier conclusion that they *must* be excluded was **wrong** — an artifact of a hardcoded
@@ -220,7 +239,7 @@ only as two seeds of the same code differ (see "D1 verification" below).
   unrecorded one-off commands: the exports are reconstructed from each file's own `inputs`
   block, and figure captions are generated from the data they label. Cross-check: the
   documented `open ≡ geomB` export identity still holds bit-for-bit under the new RNG.
-- **C5 DISORT validation re-run** (`tests/DISORT comparisons/mie_b2_b6_b7/`). Agreement is
+- **C5 DISORT validation re-run** (`tests/DISORT comparisons/modis-viirs/`). Agreement is
   marginally better than before: R and T to **0.006–0.05 %**, pooled n_σ² **1.06 / 1.02 /
   0.83** (was 1.07 / 1.05 / 1.15), ΔR within ±1.5 σ_MC. The photon-count ceiling caveat is
   marked obsolete rather than deleted. Two defects that made this pipeline unrunnable on a

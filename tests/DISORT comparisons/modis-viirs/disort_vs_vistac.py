@@ -1,8 +1,7 @@
 import json,sys,numpy as np,warnings; warnings.filterwarnings("ignore")
 # FAMILY (v6.2): "liquid" (default) or "ice". Selects the asset set, the beta files and the
-# band list. ICE EXCLUDES BANDS 1 AND 2: both are exactly conservative (ssa = 1.000000) and
-# DISORT does not converge there -- measured spread 1.1e-5 across NQuad 64..384, against
-# ~1e-7 for the absorbing bands. Same pathology that excluded liquid band 1.
+# band list. Ice covers bands 1/2/6/7/20; the two conservative ones (1, 2) are included via
+# the SSA_CONSERVATIVE clamp below, matched on the VISTA-C side by SSA_OVERRIDE.
 FAMILY = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("liquid","ice") else "liquid"
 from PythonicDISORT import pydisort
 from scipy.interpolate import PchipInterpolator
@@ -11,26 +10,52 @@ mu0=np.cos(np.radians(30.0)); nMU,nPHI=45,120; dmu=1.0/nMU; dphi=2*np.pi/nPHI
 mu_lo=np.array([max(0,1-(i+1)*dmu) for i in range(nMU)]); mu_hi=np.array([1-i*dmu for i in range(nMU)])
 mu_c=0.5*(mu_lo+mu_hi); theta=np.degrees(np.arccos(np.clip(mu_c,0,1)))
 WL={1:0.65,2:0.86,6:1.64,7:2.13,20:3.75}
-# PER-FAMILY DISORT SETTINGS (established 2026-08-09 by direct measurement, not assumption):
+# DISORT NUMERICAL SETTINGS: NQuad = 256, NLeg = 255, delta-M ON -- for BOTH families.
 #
-#   liquid: NQuad=128, NLeg=127, delta-M ON.  Converged; pooled n_sigma^2 ~1.0.
-#   ice:    NQuad=512, NLeg=511, delta-M OFF.
+# These are chosen by DISORT SELF-CONVERGENCE, not by agreement with VISTA-C. That distinction
+# is the whole point of this block and was got wrong once already (see below).
 #
-# WHY ICE DIFFERS. Ice has a ~5x stronger forward peak than liquid but is otherwise SMOOTHER
-# (no cloudbow or glory), so it needs high NLeg for the peak alone. Measured pooled n_sigma^2
-# for ice b6 with delta-M off, sweeping the coupled pair NSTR=NLeg+1:
-#     NQuad 128 -> 45.55 | 256 -> 1.22 | 384 -> 1.12 | 512 -> 1.05
-# The phase function needs ~383 moments; NSTR must then be >= NLeg+1, a constraint
-# PythonicDISORT enforces ("There should be more streams than the number of phase function
-# Legendre coefficients used"). Streams and moments are therefore NOT independently tunable.
+# Measured max deviation of the phi=0 BRF curve from the converged plateau:
 #
-# delta-M is OFF for ice because at NLeg=511 there is no peak left to truncate, and delta-M's
-# radiance error (it is exact for FLUX, not radiance) is then pure loss. At LOW NLeg the
-# opposite holds -- ice at NQuad=128 scores 2.42 with delta-M and 45.55 without it.
-# NT_cor stays off: it rebuilds single scattering from the supplied moments, so at low NLeg
-# it injects a wrong term (measured 42.57/158.80 for ice, BRF 0.069 vs 0.479 for liquid).
-DISORT_CFG = {"liquid": dict(NQ=128, deltaM=True),
-              "ice":    dict(NQ=512, deltaM=False)}
+#      NQuad      192    256    320  |   384    448    512
+#      ice b1    0.62%   ref   0.28% |  9.44% 9.72%  9.77%
+#      ice b6    0.22%   ref   0.17% | 10.80% 11.03% 11.03%
+#      ice b20   0.18%   ref   0.25% | 19.74% 20.17% 20.19%
+#      liquid b6 0.00%   ref   0.00% |  0.00%  0.00%  0.00%
+#
+# A CLIFF at NQuad 384 for ice, and none at all for liquid. The cause is the ANGULAR GRID the
+# tables live on, not the forward peak: liquid uses 1000 Gauss-Legendre nodes, ice only 498
+# trapezoidal ones. Past l ~ 320 the ice Legendre projection is aliasing off that finite grid
+# -- visible directly in the moments, which stop decaying monotonically (beta_320 = 1.437e-3
+# then beta_383 = 1.597e-3, RISING, which a smooth peaked function cannot do). DISORT then
+# faithfully propagates the aliasing noise into the radiance field as ringing.
+#
+# FLUXES ARE BLIND TO ALL OF THIS. R_DIS = 0.43175 for ice b6 at every setting from 128 to 512,
+# delta-M on or off. Only the radiance SHAPE moves.
+#
+# delta-M ON. It matters most where scattering is conservative: ice b1 at NQuad 256 scores
+# pooled n_sigma^2 1.47 with delta-M and 18.22 without.
+# NT_cor stays OFF: it rebuilds single scattering from the supplied moments, so it injects a
+# wrong term (measured BRF 0.069 against a true 0.479 for liquid).
+#
+# ---------------------------------------------------------------------------------------
+# HOW THIS WAS GOT WRONG THE FIRST TIME (2026-08-09), because the failure mode is subtle and
+# will recur if anyone re-tunes these by the same route:
+#
+# The settings were originally chosen as NQuad=512, NLeg=511, delta-M OFF by MINIMIZING pooled
+# n_sigma^2 against VISTA-C (45.55 -> 1.22 -> 1.12 -> 1.05 across NQuad 128/256/384/512). That
+# produced visibly ringing DISORT curves that a glance at the figure caught immediately.
+#
+# n_sigma^2 could not have caught it. The 11% ringing sits at theta = 89.4 deg where sigma_MC
+# is 16%; across all 45 bins NOT ONE deviation exceeds 2 sigma_MC (median 0.56 sigma). The
+# metric asks "is DISORT inside the Monte Carlo noise" -- the right question for VALIDATING
+# VISTA-C, but structurally incapable of choosing DISORT's own numerical parameters, since it
+# has zero power below the noise floor. Optimizing it drove NLeg up into the aliased moments.
+#
+# RULE: choose DISORT settings by DISORT self-convergence (no VISTA-C involved), THEN compare.
+# Never tune the reference solution to fit the thing being validated.
+# ---------------------------------------------------------------------------------------
+NQUAD, DELTA_M = 256, True
 
 # Conservative bands (omega0 = 1) are SINGULAR in discrete ordinates. Measured: DISORT
 # converges down to 1-1e-7 (spread ~1e-8 across NQuad 64..384) and fails at 1-1e-9.
@@ -40,15 +65,14 @@ DISORT_CFG = {"liquid": dict(NQ=128, deltaM=True),
 SSA_CONSERVATIVE = 1.0 - 1e-7
 
 def get(band,NQ=None):
-    cfg=DISORT_CFG[FAMILY]
-    if NQ is None: NQ=cfg["NQ"]
+    if NQ is None: NQ=NQUAD
     V=json.load(open(f"vista_{FAMILY}_b{band}.json")); N=V["N"]; w=np.array(V["w"],float).reshape(nMU,nPHI)
     BV=np.pi*(w/N)/(mu_c[:,None]*dmu*dphi); SV=np.pi*(np.sqrt(np.maximum(w,1))/N)/(mu_c[:,None]*dmu*dphi)
     beta=np.load(f"beta_{FAMILY}_b{band}_r10.npy"); NL=NQ-1
     ss=V["ssa"] if V["ssa"]<1 else SSA_CONSERVATIVE
     o=pydisort(np.array([10.0]),np.array([ss]),NQ,np.atleast_2d(beta[:NL+1]),mu0,1.0,0.0,
                NLeg=NL,NFourier=min(64,NL),
-               f_arr=np.array([max(0.0,float(beta[NL]))]) if cfg["deltaM"] else np.array([0.0]))
+               f_arr=np.array([max(0.0,float(beta[NL]))]) if DELTA_M else np.array([0.0]))
     mu_arr,u=o[0],o[4]; R=float(np.ravel(o[1](np.array([0.0])))[0])/mu0
     def binned(pd):
         phis=np.radians(pd+np.linspace(-1.5,1.5,9))
