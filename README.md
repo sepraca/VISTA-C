@@ -39,10 +39,38 @@ A hosted version is available at: https://sepraca.github.io/VISTA-C/
 - **Sub-cloud observation pixel** *(v6.0.2, Phase 4)*: restrict the Reflected μ/BRF
   statistics to a centered pixel of width f_pix × cloud width (fixed per run), with
   N_pixel = N_top·f_pix² normalization — an imager-style effective-pixel view
-- **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BRF/BTF polar plots (linear/log scale), optical path-length distributions
+- **Bottom panel plots**: μ = |cos Θ| exit-angle histograms, BRF/BTF polar plots (linear/log scale), optical path-length distributions — the polar plots are **bilinearly interpolated between bin centres** for display *(v6.3)*; see the note below
 - **PNG plot export**: 3D view and bottom panel with diagnostic parameter headers
 - **Quantitative data export (JSON)**: full-precision µ histograms, BDF arrays, path-length distributions, and run inputs/outputs for comparison against other codes (e.g. DISORT); a companion Python reader converts the JSON file to NetCDF
 - **Fully modular ES module architecture**: 15 focused JavaScript files, no bundler required
+
+---
+
+## A note on reading the BRF/BTF polar plots
+
+**The polar plots are smoothed for display; the exported JSON is not.** As of v6.3 the panel
+interpolates bilinearly between bin centres rather than flat-shading each bin. This is
+**cosmetic only** — it adds no information, and every number in the JSON export, in the PNG
+header, and in every test gate comes from the raw unsmoothed 45 µ × 120 φ grid.
+
+Two consequences worth knowing:
+
+- **A feature you see in the plot may be smoother than the underlying bins.** If you are
+  reading structure off the image quantitatively, use the exported `bdf` / `brf` arrays
+  instead. `mc_export_reader.py` gives them to you directly.
+- **Plots from v6.2 and earlier look different** for the same data — they were flat-shaded, so
+  sharp features appeared as hard-edged annuli and, where a feature crossed the grid
+  obliquely, as a beaded arc. Nothing about the physics changed between those images and
+  these.
+
+**Why interpolation was added.** The µ bins are uniform in µ, so Δθ = Δµ/sin θ **diverges at
+nadir**: bin 0 spans θ = 0–12.1° while bin 44 spans 1.3°, and the φ bins near nadir subtend
+only 0.45° of arc — a 27:1 anisotropy. A sharp scattering-angle feature (the liquid
+**cloudbow**, Θs ≈ 138°) crossing that grid obliquely was rendered as a beaded chain. That is
+display resolution, not a physics or sampling error — it is identical under both samplers,
+absent for smooth Henyey-Greenstein at the same *g*, and vanishes at Θ₀ = 0° where the
+feature's locus coincides with the bin rings. Interpolation makes the display stop advertising
+the grid; it does not add resolution the run does not have.
 
 ---
 
@@ -740,3 +768,4 @@ by the project author.
 If you use this simulator in teaching or research, please cite as:
 
 > Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.3.0). GitHub. https://github.com/sepraca/VISTA-C
+pl

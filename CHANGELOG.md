@@ -68,6 +68,25 @@ only reachable by running the script, so nothing caught it until these exports w
 regenerated — where `verify_inputs_match` refused the result. The identity guard is the reason
 this is a footnote rather than four corrupted reference artifacts.
 
+### Added: schema 1.8 — `phase_function.sampling`
+
+Tabulated exports now record **how** the table was sampled. This closes the same provenance
+gap schema 1.6 was created for: a v6.2 file and a v6.3 file at identical band, r_eff and seed
+were byte-comparable in every recorded field while describing measurably different scattering.
+Purely additive; `mc_export_reader.py` gains `phase_sampling` and reports pre-1.8 tabulated
+files as `discrete-node` flagged `sampling_assumed` — an inference, not a recorded fact. HG
+exports carry no `sampling` field and remain comparable across the boundary.
+
+### Changed: BRF/BTF polar plots are bilinearly interpolated for display
+
+`bottomPanel.js` now interpolates between bin centres instead of flat-shading each bin, which
+stops a sharp scattering-angle feature crossing the grid obliquely from rendering as a beaded
+arc. **Display only** — the accumulator, the JSON export, the PNG header numbers and every gate
+still use the raw 45 µ × 120 φ grid. It adds no information and does not fix the underlying
+nadir resolution limit described below; it stops the display advertising the grid. Plots from
+v6.2 and earlier therefore look different for identical data. Documented in the README under
+"A note on reading the BRF/BTF polar plots".
+
 ### Validation
 
 **C5 (VISTA-C vs PythonicDISORT, 20 M photons/band) — PASS, both families.** The ice

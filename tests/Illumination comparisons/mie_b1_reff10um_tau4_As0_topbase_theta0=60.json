@@ -1,7 +1,7 @@
 {
   "format": "mc_cloud_rt_export",
-  "schema_version": "1.7",
-  "generated": "2026-08-11T19:36:18.994Z",
+  "schema_version": "1.8",
+  "generated": "2026-08-11T20:01:23.403Z",
   "generator": "VISTA-C — browser Monte Carlo cloud radiative transfer",
   "inputs": {
     "photons": 2000000,
@@ -32,6 +32,7 @@
       "omega0_band_averaged": 1,
       "qext_band_averaged": 2.1,
       "refractive_index_basis": "265 K (MODIS/VIIRS continuity, CLDPROP)",
+      "sampling": "centred-cell-interpolated",
       "units": {
         "wavelength_um": "micrometers",
         "r_eff_um": "micrometers"

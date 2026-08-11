@@ -199,7 +199,27 @@ class MCExport:
         if "band" not in pf and "modis_band" in pf:
             # Pre-1.7 stored a bare integer (e.g. 6); post-1.7 stores a label ("b6").
             pf["band"] = f"b{pf['modis_band']}"
+        # SCHEMA 1.8 (v6.3): how the table was SAMPLED. v6.3 draws continuously from
+        # within each node's mu cell ("centred-cell-interpolated"); every earlier version
+        # returned the node value itself ("discrete-node"). Nothing else in the file
+        # differs between the two, so a pre-1.8 tabulated run is only identifiable as
+        # discrete-node by its schema version -- report that as an assumption, exactly as
+        # with the pre-1.6 mulberry32 inference.
+        if "sampling" not in pf:
+            pf["sampling"] = "discrete-node"
+            pf["sampling_assumed"] = True
         return pf
+
+    @property
+    def phase_sampling(self) -> str:
+        """'discrete-node' | 'centred-cell-interpolated' | None (HG).
+
+        Tabulated runs are NOT numerically comparable across this boundary: v6.3
+        changed the sampled scattering-angle distribution while leaving the table,
+        band, r_eff and seed identical. HG runs are unaffected (analytic sampler,
+        bit-identical), so this returns None for them.
+        """
+        return self.phase_function.get("sampling") if self.is_tabulated else None
 
     @property
     def particle_family(self) -> str:
@@ -512,6 +532,12 @@ def print_summary(exp: MCExport) -> None:
         print(f"  omega0 (band-avg)  : {pf['omega0_band_averaged']:.5f}")
         if pf.get("refractive_index_basis"):
             print(f"  refractive index   : {pf['refractive_index_basis']}")
+        snote = "  [assumed: pre-1.8 file]" if pf.get("sampling_assumed") else ""
+        print(f"  table sampling     : {pf['sampling']}{snote}")
+        if pf["sampling"] == "discrete-node":
+            print("      NOTE: pre-v6.3 sampler. The scattering cosine was snapped to table")
+            print("      nodes, which aliases against the BDF mu bins. Not numerically")
+            print("      comparable with a v6.3+ (centred-cell) run at the same settings.")
     else:
         note = "  [assumed: pre-1.5 file cannot distinguish a tabulated run]" if pf.get("assumed") else ""
         print(f"  phase function     : Henyey-Greenstein{note}")

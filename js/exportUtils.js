@@ -863,7 +863,21 @@ export const Export = {
     //     refractive index, and an 18-value r_eff grid in place of 24), so pre-1.7
     //     and 1.7 liquid runs are not numerically comparable even at the same band
     //     and r_eff. That is a data change, not a schema one, but it lands together.
-    SCHEMA_VERSION: "1.7",
+    // 1.8 (2026-08-11): added inputs.phase_function.sampling for TABULATED runs.
+    //     v6.3 changed HOW the table is sampled: the sampler used to return the node
+    //     value xmu[lo] (discrete-node), and now draws continuously from within that
+    //     node's µ cell (centred-cell). The table, the band, the r_eff and the seed are
+    //     all unchanged, so a v6.2 file and a v6.3 file are IDENTICAL in every recorded
+    //     field while describing measurably different scattering — exactly the situation
+    //     that forced inputs.rng in 1.6, where a seed alone stopped identifying a stream.
+    //     Without this field the two are indistinguishable after the fact.
+    //     Purely additive. A pre-1.8 tabulated file is by definition "discrete-node"
+    //     (that was the only sampler), which readers should report as an ASSUMPTION
+    //     rather than a recorded fact — mc_export_reader.py flags sampling_assumed.
+    //     HG runs are unaffected and carry no sampling field: the analytic sampler is
+    //     bit-identical across 1.7 -> 1.8, so HG files ARE comparable across the boundary.
+    //     Tabulated 1.7 and 1.8 files are NOT numerically comparable.
+    SCHEMA_VERSION: "1.8",
 
     getExportDataObject: function() {
       const s = SimStats.stats;
@@ -948,6 +962,11 @@ export const Export = {
             omega0_band_averaged: sel.ssa,
             qext_band_averaged: sel.qext,
             refractive_index_basis: "265 K (MODIS/VIIRS continuity, CLDPROP)",
+            // Schema 1.8: HOW the table was sampled. v6.3 draws continuously from within
+            // each node's µ cell; v6.2 and earlier returned the node value itself. Every
+            // other recorded field is identical between the two, so without this a run
+            // cannot be attributed to a sampler after the fact.
+            sampling: "centred-cell-interpolated",
             units: { wavelength_um: "micrometers", r_eff_um: "micrometers" }
           };
         })(),

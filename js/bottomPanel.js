@@ -886,11 +886,30 @@ export const BottomPanel = {
       // share of wall-clock during a live run. It is now precomputed ONCE into a
       // flat Int32Array of bin indices (−1 = outside the disc) and reused, so each
       // redraw is table lookups and adds with no transcendental calls.
+      // BILINEAR SAMPLING (v6.3, "Option D") — DISPLAY ONLY.
+      //
+      // This used to store one bin INDEX per subsample and flat-shade each bin. That
+      // draws the 45 µ-rings as hard-edged annuli, and where a sharp scattering-angle
+      // feature crosses the grid obliquely — the liquid cloudbow at Θs ≈ 138° — adjacent
+      // bins straddle the ridge by differing amounts and the arc renders as a BEADED
+      // chain rather than a smooth curve. Worst near nadir, where uniform-µ bins are
+      // 12° tall in θ but only 0.45° of arc wide (27:1 anisotropy), and absent at
+      // Θ₀ = 0° where the feature's locus coincides with the bin rings.
+      //
+      // The cache now stores FRACTIONAL bin coordinates so the inner loop can bilinearly
+      // interpolate between bin centres (φ wraps; θ clamps at the ends).
+      //
+      // THIS ADDS NO INFORMATION AND CHANGES NO DATA. The exported JSON, every statistic
+      // and every gate are untouched; only the picture changes. It is honest smoothing of
+      // an under-resolved display, not a fix for the underlying resolution — see the
+      // "Known limitation" note in CHANGELOG [v6.3.0].
       const cache = BottomPanel._rasterCache;
       if (!cache || cache.size !== size || cache.SS !== SS ||
           cache.nT !== thetaBins || cache.nP !== phiBins) {
         const TWO_PI2 = 2 * Math.PI;
-        const idx = new Int32Array(size * size * SS * SS);
+        const n = size * size * SS * SS;
+        const fr = new Float32Array(n);     // fractional θ-bin coord; −1 ⇒ outside disc
+        const fp = new Float32Array(n);     // fractional φ-bin coord
         let q = 0;
         for (let iy = 0; iy < size; iy++) {
           for (let ix = 0; ix < size; ix++) {
@@ -899,22 +918,29 @@ export const BottomPanel = {
               for (let sx = 0; sx < SS; sx++) {
                 const x = ix + (sx + 0.5) * inv - Rd;
                 const r = Math.sqrt(x * x + y * y);
-                if (r > Rd) { idx[q++] = -1; continue; }
+                if (r > Rd) { fr[q] = -1; fp[q] = 0; q++; continue; }
                 // radius is linear in θ; screen +y is down and φ=0 points "up"
                 const theta = (r / Rd) * (Math.PI / 2);
                 const mu = Math.cos(theta);
-                const ir = Math.min(thetaBins - 1, Math.max(0, Math.floor((1 - mu) * thetaBins)));
+                // Bin ir spans µ ∈ [1−(ir+1)/nT, 1−ir/nT], so its CENTRE sits at
+                // fractional coordinate ir. Subtracting 0.5 puts bin centres on integers,
+                // which is what bilinear interpolation between centres requires.
+                let rf = (1 - mu) * thetaBins - 0.5;
+                if (rf < 0) rf = 0;
+                if (rf > thetaBins - 1) rf = thetaBins - 1;
                 let phi = Math.atan2(x, -y);          // 0 at screen-up, increasing CW
                 if (phi < 0) phi += TWO_PI2;
-                const ip = Math.min(phiBins - 1, Math.floor(((phi + dPhi / 2) % TWO_PI2) / dPhi));
-                idx[q++] = ir * phiBins + ip;
+                fr[q] = rf;
+                fp[q] = phi / dPhi;                   // φ bin centres are at ip·dPhi
+                q++;
               }
             }
           }
         }
-        BottomPanel._rasterCache = { size, SS, nT: thetaBins, nP: phiBins, idx };
+        BottomPanel._rasterCache = { size, SS, nT: thetaBins, nP: phiBins, fr, fp };
       }
-      const idx = BottomPanel._rasterCache.idx;
+      const rasFr = BottomPanel._rasterCache.fr;
+      const rasFp = BottomPanel._rasterCache.fp;
 
       // Flatten the grid once per redraw (5400 reads) so the inner loop is a
       // single indexed lookup rather than a nested array deref.
@@ -953,11 +979,23 @@ export const BottomPanel = {
       const px = img.data;
 
       const SS2 = SS * SS;
+      const nTm1 = thetaBins - 1;
       for (let p = 0, q = 0; p < size * size; p++) {
         let acc = 0, hits = 0;
         for (let s = 0; s < SS2; s++, q++) {
-          const b = idx[q];
-          if (b >= 0) { acc += flat[b]; hits++; }
+          const rf = rasFr[q];
+          if (rf >= 0) {
+            // Bilinear between the four surrounding bin centres. φ wraps modulo
+            // phiBins; θ clamps, since there is no ring beyond nadir or the horizon.
+            const r0 = rf | 0, r1 = r0 < nTm1 ? r0 + 1 : nTm1, tr = rf - r0;
+            const pf2 = rasFp[q];
+            const p0 = pf2 | 0, tp = pf2 - p0;
+            const c0 = p0 % phiBins, c1 = (p0 + 1) % phiBins;
+            const a0 = flat[r0 * phiBins + c0], a1 = flat[r0 * phiBins + c1];
+            const b0 = flat[r1 * phiBins + c0], b1 = flat[r1 * phiBins + c1];
+            acc += (a0 + (a1 - a0) * tp) * (1 - tr) + (b0 + (b1 - b0) * tp) * tr;
+            hits++;
+          }
         }
         if (!hits) continue;                         // outside the disc: leave transparent
         const frac = BottomPanel.mapBdfToColorFraction(acc / hits);
