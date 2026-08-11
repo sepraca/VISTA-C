@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.2.0** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.3.0** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -56,8 +56,13 @@ $$\cos\theta = \frac{1}{2g}\left[1 + g^2 - \left(\frac{1-g^2}{1-g+2g\xi}\right)^
 
 Henyey-Greenstein is the analytic default and remains available unchanged. VISTA-C also
 ships **tabulated phase functions for real cloud particles**, selectable per spectral band
-and effective radius, sampled directly from the table by discrete-node inverse-CDF
-inversion (one random draw per scattering, exactly as for HG).
+and effective radius, sampled from the table by inverse-CDF inversion (one random draw per
+scattering, exactly as for HG). **As of v6.3 the draw is continuous within each table cell**:
+node *i* stands for an interval of µ of width `wt[i]` centred on `xmu[i]`, and the sampler
+returns a value from inside that interval rather than the node itself. Centring on the node
+keeps the sampled ⟨µ⟩ equal to the tabulated asymmetry parameter *g* exactly. Returning node
+values instead quantizes the scattering angle onto the table lattice, which aliased against the
+BDF's µ bins and produced spurious rings — see CHANGELOG `[v6.3.0]`.
 
 **Liquid water droplets.** Computed from Mie theory — the scattering formulation for
 *spherical* particles — band-integrated over each instrument's spectral response function.
@@ -627,7 +632,19 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.2.0** (2026-08-09, ice particle phase functions and VIIRS M11).
+Latest tagged release: **v6.3.0** (2026-08-11, continuous phase-function sampling).
+Tabulated (liquid and ice) phase functions are now sampled **continuously within each table
+cell** rather than snapped to node values. Node *i* represents a cell of µ of width `wt[i]`
+centred on `xmu[i]`; drawing from within that cell removes an angular-quantization artifact
+that produced **period-3 rings** in the ice BDF reaching **±37σ** at 50 M photons (radial ring
+residual 18.23 → 1.25). Centring the cell on its node keeps ⟨µ⟩ = g **exactly**, for any grid
+and any weights, so one code path serves the Gauss-Legendre liquid grid and the trapezoidal ice
+grid alike. Cost ≈ **+2.7 % run time**; pre-refining the table instead was measured and rejected
+(3.3× more expensive). **Henyey-Greenstein is bit-identical**; all tabulated results change.
+C5 ice pooled n_σ² improved 1.47/1.20/1.21/1.27/1.48 → **1.02/1.06/0.92/1.03/1.05**. See
+CHANGELOG.md's `[v6.3.0]` section.
+
+Previous release: **v6.2.0** (2026-08-09, ice particle phase functions and VIIRS M11).
 VISTA-C now offers three phase-function families: analytic Henyey-Greenstein, tabulated
 **liquid water droplet** (Mie) and tabulated **non-spherical ice particle** (Yang et al. 2013,
 severely roughened aggregate columns) — the latter two for MODIS bands 1/2/6/7/20 and
@@ -640,6 +657,7 @@ non-absorbing bands statistically identical and Henyey-Greenstein bit-identical.
 covers **both particle families** and passes: fluxes to 0.000–0.06 %, pooled n_σ²
 1.00 / 1.14 / 1.05 (liquid, bands 2/6/7) and 1.47 / 1.20 / 1.21 / 1.27 / 1.48 (ice, bands
 1/2/6/7/20, including both exactly-conservative bands). See CHANGELOG.md's `[v6.2.0]` section.
+*(These n_σ² values were superseded by v6.3.0 — see above.)*
 
 Previous release: **v6.1.0** (2026-07-29, random-number generator replacement —
 **every stochastic result changed**, though no physics did). Mulberry32 was retired for
@@ -698,7 +716,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.2.0 is the version currently on `main` and in the hosted demo.
+v6.3.0 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -721,4 +739,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.2.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.3.0). GitHub. https://github.com/sepraca/VISTA-C

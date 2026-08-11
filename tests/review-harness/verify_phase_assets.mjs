@@ -155,6 +155,58 @@ for (const [inst, block] of Object.entries(manifest.instruments ?? {})) {
   }
 }
 
+// ---- v6.3: EMPIRICAL sampler gate — draw from Physics.sampleMieCosTheta itself ------
+//
+// WHY THIS WAS ADDED (2026-08-11). Every <mu>=g check above computes the mean
+// ANALYTICALLY from the table: sum(w*pf/acc)*mu. That is the mean of the DISCRETE-node
+// distribution, so it passes no matter what the sampler actually does. When the sampler
+// changed to centred-cell interpolation in v6.3, this file still reported ALL GATES PASS
+// without exercising a single line of the new code. An asset gate that cannot fail when
+// the sampler is wrong is not a sampler gate.
+//
+// These draw from the real sampler, through the real RNG, and check:
+//   1. <mu> = g empirically, within Monte Carlo error. Centred-cell preserves this
+//      EXACTLY in expectation; the rejected node-to-node variant misses g by 2.5e-3
+//      (~23 sigma here), which this gate would catch and the analytic one would not.
+//   2. |mu| <= 1 always. End cells extend a hair past +-1 and applyScatter takes
+//      sqrt(1-mu^2), so an unclamped sampler yields NaN directions.
+//   3. The sampler is genuinely CONTINUOUS, not snapped to nodes. If a future edit
+//      reverts to returning xmu[lo], samples would land exactly on table nodes and the
+//      rings come back silently.
+{
+  const { RNG } = await import(new URL("../../js/rng.js", import.meta.url));
+  const { Physics } = await import(new URL("../../js/physics.js", import.meta.url));
+  const N = 2_000_000;
+  console.log("\n---- sampler gates (drawing from Physics.sampleMieCosTheta) ----");
+  for (const [family, band, rEffUm] of [["ice", "b1", 30], ["liquid", "b1", 30],
+                                        ["ice", "b20", 10], ["liquid", "b7", 10]]) {
+    const grid = JSON.parse(readFileSync(new URL(`../../data/phase/grid_${family}.json`, import.meta.url)));
+    const d = JSON.parse(readFileSync(new URL(`../../data/phase/${family}_modis_${band}.json`, import.meta.url)));
+    const k = d.cer_um.findIndex(v => Math.abs(v - rEffUm) < 1e-9);
+    const wt = Float64Array.from(grid.wt), xmu = Float64Array.from(grid.xmu);
+    const cdf = Physics.buildMieCdf(Float64Array.from(d.pf[k]), wt);
+    const nodes = new Set(Array.from(xmu));
+    RNG.reset(12345);
+    let s = 0, s2 = 0, onNode = 0, outOfRange = 0;
+    for (let i = 0; i < N; i++) {
+      const m = Physics.sampleMieCosTheta(cdf, xmu);
+      if (!(m >= -1 && m <= 1)) outOfRange++;
+      if (nodes.has(m)) onNode++;
+      s += m; s2 += m * m;
+    }
+    const mean = s / N, sd = Math.sqrt(Math.max(0, s2 / N - mean * mean));
+    const err = sd / Math.sqrt(N), gTab = d.g[k], nSig = Math.abs(mean - gTab) / err;
+    const tag = `${family} ${band} r_eff=${rEffUm}um`;
+    check(`${tag.padEnd(24)} <mu> = g empirically`, nSig < 4,
+          `<mu> ${mean.toFixed(7)} vs g ${gTab.toFixed(7)}  (${nSig.toFixed(1)} sigma of ${err.toExponential(1)})`);
+    check(`${tag.padEnd(24)} |mu| <= 1 always`, outOfRange === 0,
+          outOfRange ? `${outOfRange} samples outside [-1,1]` : "no NaN risk in applyScatter");
+    check(`${tag.padEnd(24)} continuous, not node-snapped`, onNode < N / 1000,
+          `${onNode} of ${N} landed exactly on a table node ` +
+          `(discrete sampling would give ${N})`);
+  }
+}
+
 console.log(`\n${nBands} band asset(s) checked`);
 console.log(fails === 0 ? "ALL PHASE-ASSET GATES PASS" : `${fails} FAILURE(S)`);
 process.exit(fails === 0 ? 0 : 1);

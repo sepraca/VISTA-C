@@ -64,7 +64,14 @@ def command_for(path):
 
     env = {}
     pf = inp.get("phase_function", {})
-    if pf.get("type") == "mie":
+    # SCHEMA 1.7 (v6.2) renamed type "mie" -> "liquid" | "ice". This test still read
+    # == "mie" until 2026-08-11, so for every v6.2 export the branch silently fell through
+    # to the HG path below and reconstructed a TABULATED run as a Henyey-Greenstein one.
+    # Nothing caught it until these exports were next regenerated, because the bug is only
+    # reachable by running this script. verify_inputs_match did its job and refused the
+    # result ("phase_function band: '1' -> ''"), which is exactly why that guard exists.
+    # Accept the legacy name too: pre-1.7 exports are still readable.
+    if pf.get("type") in ("mie", "liquid", "ice"):
         # Schema 1.5+ names these modis_band / r_eff_index (NOT band / reff_index -- an
         # earlier version of this script guessed the shorter names and crashed, which is
         # the good outcome; silently defaulting would have regenerated every Mie export
@@ -77,6 +84,9 @@ def command_for(path):
         # assets but is 12 um in the v6.2 18-radius grid. Reconstructing from the index
         # would silently regenerate these exports at a different droplet size.
         env["MIE_REFF_UM"] = repr(pf["r_eff_um"])
+        # Family (schema 1.7). Pre-1.7 exports have no family field and were liquid by
+        # definition — ice did not exist before v6.2 — so defaulting to liquid is safe.
+        env["MIE_FAMILY"] = "ice" if pf.get("type") == "ice" else "liquid"
     else:
         # Non-default HG g must be passed explicitly or the run silently reverts to 0.85.
         if abs(inp["hg_g"] - 0.85) > 1e-12:

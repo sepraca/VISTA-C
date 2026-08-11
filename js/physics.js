@@ -29,6 +29,12 @@ const MIE_GUIDE_M = 4096;
 // hands over a different CDF object and transparently rebuilds (~0.01 ms).
 let _mieGuideCdf = null;
 let _mieGuide = null;
+// v6.3: cell half-widths for the centred-cell sampler. `_mieCellHalf` maps a CDF object
+// to the half-widths registered by buildMieCdf (which is the only place `wt` is in
+// scope); `_mieHalf` is the identity-cached lookup for the CDF currently in use, so the
+// hot path costs one reference compare, exactly like the guide table above.
+const _mieCellHalf = new WeakMap();
+let _mieHalf = null;
 
 export const Physics = {
 
@@ -125,23 +131,57 @@ export const Physics = {
       for (let i = 0; i < n; i++) { cdf[i] = acc; acc += wt[i] * pfCol[i]; }
       const inv = acc > 0 ? 1 / acc : 0;      // acc = Σ wt·P ≈ 1; normalize exactly
       for (let i = 0; i < n; i++) cdf[i] *= inv;
+      // v6.3: register this CDF's CELL HALF-WIDTHS for the interpolating sampler.
+      // Node i does not represent a point -- it represents an interval of µ of width
+      // wt[i] (its quadrature weight), centred on xmu[i]. sampleMieCosTheta needs those
+      // half-widths and has no `wt` argument, so they are cached against the CDF object
+      // itself, by identity -- the same trick the guide table already uses. Doing it
+      // here means no call site has to thread `wt` through.
+      const half = new Float64Array(n);
+      for (let i = 0; i < n; i++) half[i] = 0.5 * wt[i];
+      _mieCellHalf.set(cdf, half);
       return cdf;
     },
 
-    // Sample cos(scattering angle) from a tabulated Mie phase function by
-    // inverting its µ-space CDF (build with buildMieCdf). DISCRETE-NODE
-    // sampling: return the node µ whose probability bin the draw falls in --
-    // no within-bin interpolation. This reproduces the tabulated asymmetry g
-    // EXACTLY in the Gauss-Legendre sense (Σ mass_i·µ_i = g to float
-    // precision; verify_mie_sampling.mjs confirms <µ> = g to ~5e-5, the float32
-    // floor), which is the strongest consistency claim available and simpler
-    // than interpolation. The 1000 GL nodes are dense (esp. near the forward
-    // peak), so the angular quantization is far finer than any downstream bin
-    // (BRF 19×72, path histograms) and invisible in practice. One RNG draw,
-    // matching HG's single muS draw (photon-for-photon RNG structure identical
-    // between models). `xmu` runs forward (+1) to back (−1), index-aligned to
-    // cdf.
-    // Draw a scattering cosine by inverting the tabulated µ-space CDF.
+    // Sample cos(scattering angle) from a tabulated phase function by inverting its
+    // µ-space CDF (build with buildMieCdf).
+    //
+    // v6.3 — CENTRED-CELL INTERPOLATION. Node i represents a CELL of µ: the interval
+    // of width wt[i] centred on xmu[i], carrying probability mass wt[i]·pf[i]. This
+    // sampler returns a µ drawn CONTINUOUSLY from within that cell, rather than the
+    // node value itself.
+    //
+    // WHY THIS CHANGED (2026-08-11). Until v6.2 this returned xmu[lo] exactly, so a
+    // scattered µ could only take one of the tabulated values. The justification in the
+    // code was: "the 1000 GL nodes are dense, so the quantization is far finer than any
+    // downstream bin (BRF 19×72) and invisible in practice." That argument was written
+    // for the LIQUID grid and a 19×72 panel, and was silently inherited by the v6.2 ICE
+    // grid (498 trapezoidal nodes, 1° lattice) against a 45×120 panel. It stopped being
+    // true. Ice nodes fall in the 45 uniform-µ BDF bins in a repeating 1,1,2 pattern —
+    // period 3 — and the reflected BDF showed period-3 rings reaching ±37σ at 50 M
+    // photons. Radial ring residual, ice b1 r_eff=30, Θ₀=0, 50 M:
+    //
+    //      discrete nodes          RMS z = 18.23   max |z| = 37.3
+    //      centred-cell (this)     RMS z =  1.25   max |z| =  4.6   (noise floor 0.89)
+    //
+    // WHY *CENTRED*, and not node-to-node. buildMieCdf gives node i the mass of the cell
+    // CENTRED on xmu[i]. Interpolating from xmu[lo] to xmu[lo+1] would smear that mass
+    // over the wrong interval — half a cell toward backscatter — and <µ> would no longer
+    // equal g: measured 0.750735 against a tabulated g of 0.7532393, a 23σ error that
+    // verify_phase_assets.mjs would (correctly) reject. Spreading over
+    // [xmu[i] − wt[i]/2, xmu[i] + wt[i]/2] has mean xmu[i] EXACTLY, so
+    // <µ> = Σ wt·pf·µ / Σ wt·pf = g identically — for ANY grid and ANY weights. That is
+    // why one code path serves both the Gauss-Legendre liquid grid and the trapezoidal
+    // ice grid, and why the ≤1.1e-7 <µ>=g gate still passes untouched.
+    //
+    // COST: ~8.9 ns/call against 6.1 ns for the old discrete version (+2.8 ns; HG is
+    // 7.9 ns). At ~20 scatters/photon that is ≈ +2.7 % run time. Pre-refining the table
+    // instead — denser nodes, sampler unchanged — was measured and REJECTED: matching
+    // this smoothness needs ~8× refinement, whose 3977-node CDF is 31.1 kB against a
+    // 32 kB L1, costing 20.45 ns/call, 3.3× more than interpolating.
+    //
+    // Still ONE RNG draw, so the photon-for-photon RNG structure remains identical to
+    // HG's single muS draw. `xmu` runs forward (+1) to back (−1), index-aligned to cdf.
     //
     // PERFORMANCE (2026-07-27): this was a plain binary search over the 1000-node
     // CDF. Measured 43.9 ns/call versus 7.9 ns for the analytic HG sampler — and at
@@ -169,13 +209,44 @@ export const Physics = {
       if (cdf !== _mieGuideCdf) {
         _mieGuideCdf = cdf;
         _mieGuide = Physics.buildMieGuide(cdf);
+        _mieHalf  = _mieCellHalf.get(cdf) || Physics.buildMieCellHalf(xmu);
       }
       const g = _mieGuide;
       const j = Math.min(MIE_GUIDE_M - 1, (xi * MIE_GUIDE_M) | 0);
       let lo = g[j];
       const hb = g[j + 1];
       while (lo < hb && cdf[lo + 1] <= xi) lo++;
-      return xmu[lo];
+      // Position within cell `lo`: the CDF is linear across a cell (piecewise-constant
+      // density), so inverting it there means sampling uniformly inside the cell.
+      const c0 = cdf[lo];
+      const d  = (lo + 1 < cdf.length ? cdf[lo + 1] : 1.0) - c0;
+      const t  = d > 0 ? (xi - c0) / d : 0.5;          // 0..1 across the cell
+      // CLIP THE CELL to the physical domain, do not clamp the sample. µ cannot exceed
+      // ±1, and the end cells overhang: the ice grid's first cell is centred at µ = 1.0
+      // exactly with half-width 3.8e-9, so clamping the OUTPUT piled half of that cell's
+      // draws onto µ = 1.0 exactly — reintroducing a (tiny) discrete atom, and one the
+      // "continuous, not node-snapped" gate correctly flagged. Clipping the interval
+      // instead keeps the draw continuous. It shifts that cell's mean by at most half its
+      // overhang (~2e-9 here), which is ~5 orders below the 1.1e-7 <µ>=g gate.
+      let a = xmu[lo] - _mieHalf[lo];
+      let b = xmu[lo] + _mieHalf[lo];
+      if (a < -1) a = -1;
+      if (b >  1) b =  1;
+      return a + t * (b - a);
+    },
+
+    // Fallback cell half-widths, used only if a CDF reaches the sampler without having
+    // been built by buildMieCdf (no call site does this today). Midpoint construction:
+    // correct wherever the weights ARE midpoint widths (the trapezoidal ice grid) and a
+    // close approximation elsewhere. buildMieCdf's registered weights are exact.
+    buildMieCellHalf(xmu) {
+      const n = xmu.length, h = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const hi = i === 0 ? 1.0 : 0.5 * (xmu[i - 1] + xmu[i]);
+        const lo = i === n - 1 ? -1.0 : 0.5 * (xmu[i] + xmu[i + 1]);
+        h[i] = 0.5 * Math.abs(hi - lo);
+      }
+      return h;
     },
 
     // Guide table for sampleMieCosTheta: guide[j] = largest node index whose CDF

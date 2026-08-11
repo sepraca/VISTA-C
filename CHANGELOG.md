@@ -4,6 +4,99 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.3.0] — 2026-08-11
+
+### Fixed: tabulated phase functions are now sampled CONTINUOUSLY (centred-cell interpolation)
+
+**Every tabulated (liquid or ice) result changes. Henyey-Greenstein is bit-identical.**
+
+`Physics.sampleMieCosTheta` returned the table node value `xmu[lo]`, so a scattered µ could
+only ever take one of the tabulated values. The justification in the code read:
+
+> "The 1000 GL nodes are dense (esp. near the forward peak), so the angular quantization is
+> far finer than any downstream bin (BRF 19×72, path histograms) and invisible in practice."
+
+That was written for the **liquid** grid against a **19×72** panel. v6.2 inherited it for the
+**ice** grid — 498 trapezoidal nodes on a 1° lattice — against a **45×120** panel, and it
+stopped being true. Ice nodes fall into the 45 uniform-µ BDF bins in a repeating **1,1,2**
+pattern (period 3) and the reflected BDF developed **period-3 rings**. Because the artifact is
+systematic while noise falls as 1/√N, it got *worse* with more photons: at 50 M photons the
+radial ring residual reached **±37σ**.
+
+Node *i* is not a point — it represents a **cell** of µ of width `wt[i]` (its quadrature
+weight) centred on `xmu[i]`, carrying mass `wt[i]·pf[i]`. The sampler now draws continuously
+from within that cell. Radial ring residual, ice b1 r_eff=30 µm, Θ₀=0°, 50 M photons
+(noise floor 0.89):
+
+| sampler | RMS z | max abs z |
+|---|---|---|
+| discrete nodes (v6.2) | **18.23** | 37.3 |
+| centred-cell (v6.3) | **1.25** | 4.6 |
+
+**Why centred, not node-to-node.** `buildMieCdf` gives node *i* the mass of the cell *centred*
+on `xmu[i]`. Interpolating from `xmu[lo]` to `xmu[lo+1]` smears it half a cell toward
+backscatter and breaks ⟨µ⟩ = g — measured 0.750735 against a tabulated g of 0.7532393, a 23σ
+error. Spreading over `[xmu[i] − wt[i]/2, xmu[i] + wt[i]/2]` has mean `xmu[i]` **exactly**, so
+⟨µ⟩ = Σw·pf·µ / Σw·pf = g identically, for **any** grid and **any** weights. One code path
+therefore serves both the Gauss-Legendre liquid grid and the trapezoidal ice grid, and the
+≤1.1e-7 ⟨µ⟩=g gate passes untouched.
+
+**Cost: ~+2.8 ns/scatter (6.1 → 8.9 ns; HG is 7.9 ns), about +2.7 % run time.** Pre-refining
+the table instead — denser nodes, sampler unchanged — was measured and **rejected**: matching
+this smoothness needs ~8× refinement, and that 3977-node CDF is 31.1 kB against a 32 kB L1,
+costing 20.45 ns/call, **3.3× more than interpolating**. Still one RNG draw per scatter, so the
+photon-for-photon stream structure still matches HG.
+
+### Fixed: the ⟨µ⟩=g gate could not fail
+
+`verify_phase_assets.mjs` computed ⟨µ⟩ **analytically from the table**, i.e. the mean of the
+discrete-node distribution. It passed this entire sampler change without executing one line of
+the new code. New gates draw 2 M samples through the real RNG and check ⟨µ⟩=g empirically
+(1.3–1.9σ across four family/band/r_eff combinations), |µ| ≤ 1, and that samples are not
+node-snapped.
+
+That third gate caught a real bug: clamping the sampler's *output* piled half of the ice grid's
+first cell (centred at µ = 1.0 exactly, half-width 3.8e-9) onto µ = 1.0, re-creating a discrete
+atom. Fixed by clipping the **cell** to [−1,1] instead of clamping the sample.
+
+### Fixed: regen_exports.py silently downgraded tabulated exports to HG
+
+Schema 1.7 (v6.2) renamed `phase_function.type` `"mie"` → `"liquid"`/`"ice"`, but
+`regen_exports.py` still tested `== "mie"`. For every v6.2 export the branch fell through to
+the Henyey-Greenstein path and reconstructed a **tabulated** run as an **HG** one. The bug is
+only reachable by running the script, so nothing caught it until these exports were next
+regenerated — where `verify_inputs_match` refused the result. The identity guard is the reason
+this is a footnote rather than four corrupted reference artifacts.
+
+### Validation
+
+**C5 (VISTA-C vs PythonicDISORT, 20 M photons/band) — PASS, both families.** The ice
+improvement is independent evidence for the fix: a completely separate test, and only the
+family with the sampling defect moved.
+
+| pooled n_σ² | v6.2 | v6.3 |
+|---|---|---|
+| liquid b2 / b6 / b7 | 1.00 / 1.14 / 1.05 | 1.06 / 1.24 / 1.01 |
+| **ice b1 / b2 / b6 / b7 / b20** | 1.47 / 1.20 / 1.21 / 1.27 / 1.48 | **1.02 / 1.06 / 0.92 / 1.03 / 1.05** |
+
+ΔR within ±1.6σ everywhere. Ice now sits at the same ~1.0 floor as liquid.
+
+**Unaffected and verified:** both goldens PASS **bit-identical** (they are HG-only), and
+`verify_mie_transport` Gate 4 confirms HG remains bit-identical. 22 of the 26 illumination
+exports are HG and unchanged; the 4 tabulated ones and their figures were regenerated.
+
+### Known limitation (documented, not fixed)
+
+The BDF panel's uniform-µ bins have Δθ = Δµ/sin θ, which **diverges at nadir**: bin 0 spans
+θ = 0–12.1° while bin 44 spans 1.3°, and the φ bins there subtend only 0.45° of arc — a **27:1
+anisotropy**. A sharp scattering-angle feature (the liquid **cloudbow**, Θs ≈ 138°) crossing
+that grid obliquely renders as a **beaded arc**, worst near nadir and absent at Θ₀ = 0° where
+the locus coincides with the bin rings. This is display resolution, not a physics or sampling
+error: it is identical for both samplers, absent for smooth Henyey-Greenstein, and DISORT never
+shows it because DISORT evaluates radiance *at* angles rather than averaging over µ-bins.
+
+---
+
 ## [v6.2.0] — 2026-08-09
 
 ### Added: ice particle phase functions, VIIRS M11, and a new asset pipeline
