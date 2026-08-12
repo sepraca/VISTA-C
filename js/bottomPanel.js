@@ -838,7 +838,7 @@ export const BottomPanel = {
 
       // ---- Pixel rasterization (2026-07-27), replacing per-cell sector fills ----
       //
-      // The old code stroked one filled canvas path per bin. At 19×72 that was fine
+      // The old code stroked one filled canvas path per bin. At the old 19×72 that was fine
       // (~45 device px² per cell), but the uniform-µ grid puts 5400 cells into the same
       // 70-px-radius disc (~11 px²/cell), and because uniform-µ rings thin toward the
       // limb the outer rings fall to ~2 device px. Canvas anti-aliases every one of

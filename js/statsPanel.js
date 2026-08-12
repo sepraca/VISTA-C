@@ -191,7 +191,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
     // innerHTML blocks WITHOUT redrawing the bottom panel. The animation loop
     // (Photons.addAnimatedPath) calls a display update once per path vertex
     // at ~55 fps purely to advance the "Active photon: #N, step i/j" line --
-    // routing that through full updateDisplay() recomputed the 19×72 BDF grid
+    // routing that through full updateDisplay() recomputed the 45×120 BDF grid
     // (or re-rendered the μ/path canvases) plus the polar canvas repaint on
     // every animation frame. The panel redraw still happens at every chunk
     // boundary, animation finish (the caller's post-await updateDisplay), and
