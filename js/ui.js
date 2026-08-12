@@ -347,6 +347,10 @@ export const UI = {
       return (Number.isFinite(v) && v > 0) ? v : 1.0;
     },
     getBdfScaleAuto: function() { return document.getElementById("bdfScaleAuto")?.checked ?? false; },
+    // Principal-plane folding (v6.4). DISPLAY/PNG ONLY — never reaches the accumulator or
+    // the JSON export. Default OFF: the unfolded asymmetry is a model-free variance
+    // estimator and the graininess is pedagogically the point. See SimStats.foldBdfWeightsMirror.
+    getBdfFoldMirror: function() { return document.getElementById("bdfFoldMirror")?.checked ?? false; },
     getShowSurfaceHeatmap: function() { return document.getElementById("showSurfaceHeatmap")?.checked ?? true; },
 
     // --- Outcome color map ---

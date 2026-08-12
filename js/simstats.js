@@ -1208,4 +1208,86 @@ export const SimStats = {
       }
     },
 
+    // ---- Principal-plane mirror symmetry (v6.4) --------------------------------------
+    //
+    // THE PHYSICS. The incident beam is always dir = (sinΘ₀, 0, cosΘ₀) — it lies in the
+    // x–z plane with zero y-component — and EVERY illumination mode (centered,
+    // uniform-top, top+sunward-wall, uniform-domain [the N2 launch shift is x-only],
+    // periodic [y-symmetric tiling]) and EVERY observation mode (top/base, all-faces,
+    // centred pixel) is invariant under y → −y. So the whole transport problem is
+    // mirror-symmetric about the principal plane and the TRUE field obeys
+    //
+    //     BDF(θ, φ) = BDF(θ, 360° − φ)      exactly, in expectation
+    //
+    // φ bin k is centred at k·Δφ, so its mirror is bin (nP − k) mod nP. Bins 0 (φ = 0°)
+    // and nP/2 (φ = 180°) lie IN the principal plane and are self-paired.
+    //
+    // ⚠ THE ACCUMULATOR IS NEVER FOLDED. These are read-time helpers only. Folding where
+    // the accumulator lives would drive verify_rng.mjs Gate 5 to zero BY CONSTRUCTION and
+    // destroy the only test sensitive to the RNG state-overflow bug class (that gate read
+    // χ² 0.99 → 11.5 between 3 M and 12 M photons while every physics and conservation
+    // gate still passed). Fold for display; never for storage, export, or a gate.
+
+    // Average each mirror pair. Unbiased — the true field IS symmetric — and reduces the
+    // per-bin variance by 2, i.e. √2 in σ, exactly equivalent to doubling the photons.
+    // Returns a NEW array; the input is untouched.
+    foldBdfWeightsMirror(weightsFlat) {
+      const nT = BDF_MU_BINS, nP = BDF_PHI_BINS;
+      const out = new Float64Array(weightsFlat.length);
+      for (let ir = 0; ir < nT; ir++) {
+        const base = ir * nP;
+        for (let ip = 0; ip < nP; ip++) {
+          const m = (nP - ip) % nP;                    // mirror partner
+          // Self-paired bins (ip === m) average with themselves, i.e. are unchanged.
+          out[base + ip] = 0.5 * (weightsFlat[base + ip] + weightsFlat[base + m]);
+        }
+      }
+      return out;
+    },
+
+    // χ²_mirror — a MODEL-FREE noise check. Bins k and nP−k are two independent
+    // measurements of the same true value from ONE run, so their difference is pure
+    // Monte Carlo noise. For independent Poisson counts of equal mean,
+    // (a−b)²/(a+b) has expectation exactly 1.
+    //
+    // WHAT IT DOES AND DOES NOT TELL YOU — this distinction matters and was got wrong in
+    // the TODO that proposed it:
+    //   * It is SCALE-FREE. A 1,000-photon run also reads ≈1. It does NOT measure whether
+    //     you have enough photons; use bdfMedianRelNoisePct() for that.
+    //   * It measures whether the NOISE IS BEHAVING. Super-Poisson (>1) means correlated
+    //     or degenerate draws — this is exactly how the 2026-07-27 RNG state-overflow was
+    //     caught, growing with N while every physics gate passed. Sub-Poisson (<1) means
+    //     something has been smoothed or shares randomness.
+    //   * BLIND SPOT: any artifact that is ITSELF mirror-symmetric is invisible here. The
+    //     v6.3 ice period-3 rings were azimuthally symmetric, so this would have read ≈1
+    //     straight through them. It is a stream-health monitor, not an artifact detector.
+    //     Looking at the plot remains the thing that catches those.
+    //
+    // Returns null when there are too few paired counts to be meaningful.
+    bdfMirrorChi2(weightsFlat) {
+      const nT = BDF_MU_BINS, nP = BDF_PHI_BINS;
+      let s = 0, n = 0;
+      for (let ir = 0; ir < nT; ir++) {
+        const base = ir * nP;
+        for (let ip = 1; ip < nP / 2; ip++) {          // skip the self-paired 0 and nP/2
+          const a = weightsFlat[base + ip], b = weightsFlat[base + (nP - ip) % nP];
+          if (a + b > 0) { const d = a - b; s += d * d / (a + b); n++; }
+        }
+      }
+      return n >= 50 ? s / n : null;
+    },
+
+    // Median per-bin relative noise, in percent: 100/√counts for a Poisson count.
+    // THIS is the "have I run enough photons?" number, and it falls as 1/√N.
+    // Median rather than mean so a few near-empty grazing bins do not dominate.
+    bdfMedianRelNoisePct(weightsFlat) {
+      const v = [];
+      for (let i = 0; i < weightsFlat.length; i++) {
+        if (weightsFlat[i] > 0) v.push(100 / Math.sqrt(weightsFlat[i]));
+      }
+      if (v.length < 50) return null;
+      v.sort((x, y) => x - y);
+      return v[v.length >> 1];
+    },
+
   };

@@ -214,6 +214,47 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
              `${t.pausedMs > 0 ? " (excl. pause)" : ""}`;
     },
 
+    // BDF quality readouts (v6.4). TWO numbers, because they answer DIFFERENT questions
+    // and conflating them is how the TODO that proposed this got it wrong:
+    //
+    //   precision  = median per-bin 100/sqrt(counts). "How precise is this plot?"
+    //                Falls as 1/sqrt(N) -- THIS is the have-I-run-enough-photons number.
+    //   mirror X2  = mean over mirror pairs of (a-b)^2/(a+b). "Is the noise BEHAVING?"
+    //                SCALE-FREE: ~1.0 at any photon count, so it says nothing about
+    //                precision. >1 means super-Poisson (correlated or degenerate draws --
+    //                this is how the 2026-07-27 RNG state-overflow was caught, growing
+    //                with N while every physics gate passed); <1 means sub-Poisson.
+    //
+    // Both read the UNFOLDED accumulator, which is the only correct source: the
+    // principal-plane fold averages each mirror pair, which would zero the chi2 BY
+    // CONSTRUCTION and understate the noise by sqrt(2). The fold is applied downstream in
+    // bottomPanel for display only and never reaches these weights.
+    //
+    // BLIND SPOT worth stating to anyone reading this: a mirror-SYMMETRIC artifact is
+    // invisible to chi2. The v6.3 ice period-3 rings were azimuthally symmetric and would
+    // have read ~1.0 straight through. Stream health, not artifact detection.
+    // Computed HERE from SimStats.reflectedBdfWeights() rather than read back from
+    // BottomPanel: statsPanel cannot import BottomPanel (circular -- that is the whole
+    // reason setDrawPanelCallback exists). Using the canonical reflected grid also makes
+    // this a property of the RUN rather than of whichever view is currently selected,
+    // which is what a quality readout should be. ~5400 ops, negligible.
+    bdfQualityLine() {
+      const w = SimStats.reflectedBdfWeights();
+      const d = { chi2: SimStats.bdfMirrorChi2(w), noisePct: SimStats.bdfMedianRelNoisePct(w) };
+      if (d.chi2 === null && d.noisePct === null) return "";
+      const parts = [];
+      if (d.noisePct !== null) parts.push(`precision ${d.noisePct.toFixed(1)}%/bin`);
+      if (d.chi2 !== null) {
+        const tag = d.chi2 > 1.30 ? " super-Poisson!" : d.chi2 < 0.80 ? " sub-Poisson!" : "";
+        parts.push(`mirror χ² ${d.chi2.toFixed(2)}${tag}`);
+      }
+      // Both numbers describe the RUN (unfolded accumulator), not the displayed grid.
+      // With folding ON the plotted field is sqrt(2) more precise than stated, so say so
+      // rather than let the reader assume the number describes what they are looking at.
+      const foldNote = UI.getBdfFoldMirror() ? "  [display folded: √2 finer than stated]" : "";
+      return `\nBDF quality: ${parts.join("  |  ")}   (χ²: Poisson = 1)${foldNote}`;
+    },
+
     updateStatsText() {
       const s = SimStats.stats;
       const launched = Math.max(s.launched, 1);
@@ -308,7 +349,7 @@ ${IND}clear-sky incident: ${(ac.clearRecycled/launched).toFixed(3)} (${ac.clearR
       // keyboard focus survive every updateDisplay() call untouched.
       document.getElementById("statsTop").innerHTML =
 `Launched: ${s.launched}
-${activeInfo}${StatsPanel.runTimingLine()}`;
+${activeInfo}${StatsPanel.bdfQualityLine()}${StatsPanel.runTimingLine()}`;
 
       document.getElementById("statsMain").innerHTML =
 `<b>FINAL OUTCOMES</b>

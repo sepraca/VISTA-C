@@ -677,6 +677,22 @@
          user-settable colour-scale maximum. A fixed max of 1.0 wastes most of
          the colour range on cloud BRFs (typically ~0.2), flattening the Mie
          features (cloudbow, glory) we now resolve with uniform-µ binning. -->
+    <label id="showEntireDomainPlotsLabel" for="showEntireDomainPlots">Show entire-domain plots</label>
+    <input id="showEntireDomainPlots" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
+
+
+
+    <!-- BDF-ONLY CONTROLS (v6.4). Grouped and shown only when the bottom panel is set to
+         "BDF plots" -- they do nothing in the µ-histogram, path-length or phase modes, and
+         a live-looking control that silently does nothing is confusing (same reasoning as
+         the disable/dim treatment of "Show entire-domain plots" in ui.js).
+         NOTE "Show entire-domain plots" is deliberately NOT in this group: it also drives
+         the µ-histogram (bottomPanel.js:114), the path-length panel (:481) and the PNG/JSON
+         export, so it must stay visible in every mode.
+         display:contents so the wrapper is transparent to the parent grid -- the same
+         mechanism domainBoundaryGroup uses; a plain block div would break the label/input
+         column layout. Toggled in BottomPanel.drawBottomPanel(). -->
+    <div id="bdfOnlyGroup" style="display:none">
     <label for="bdfScaleMax">BDF color max</label>
     <input id="bdfScaleMax" type="number" min="0.001" max="10" step="0.05" value="1.0"
            onchange="BottomPanel.drawBottomPanel()" oninput="BottomPanel.drawBottomPanel()">
@@ -684,8 +700,19 @@
     <label for="bdfScaleAuto">BDF color max: auto</label>
     <input id="bdfScaleAuto" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
 
-    <label id="showEntireDomainPlotsLabel" for="showEntireDomainPlots">Show entire-domain plots</label>
-    <input id="showEntireDomainPlots" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
+    <!-- Principal-plane symmetry folding (v6.4). DEFAULT OFF, deliberately.
+         The transport problem is exactly mirror-symmetric about the principal plane, so
+         averaging bin pairs (k, 360°-k) is unbiased and buys √2 in noise — free, and
+         equivalent to doubling the photons. It is OFF by default because the UNFOLDED
+         asymmetry is a model-free variance estimator: bins k and 360°-k are two
+         independent measurements of the same true value from one run, which is how the
+         2026-07-27 RNG state-overflow bug was caught while every physics gate passed.
+         Folding by default would hide the graininess that IS the method in a tool built
+         to teach Monte Carlo RT. DISPLAY AND PNG ONLY — the accumulator and the JSON
+         export are never folded (see SimStats.foldBdfWeightsMirror). -->
+    <label for="bdfFoldMirror">Fold BDF about principal plane</label>
+    <input id="bdfFoldMirror" type="checkbox" onchange="BottomPanel.drawBottomPanel()">
+    </div>
 
     <div class="group-head">Visualization</div>
 

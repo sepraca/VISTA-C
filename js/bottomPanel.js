@@ -51,6 +51,20 @@ export const BottomPanel = {
 
       const mode = document.getElementById("bottomPanelMode")?.value ?? "mu";
 
+      // BDF-only controls (v6.4): colour max, colour max auto, principal-plane fold. They
+      // have no effect in the µ-histogram, path-length or phase modes, and a live-looking
+      // control that silently does nothing is confusing — the same reasoning behind the
+      // disable/dim treatment of "Show entire-domain plots" in ui.js.
+      //
+      // "contents" (not "block") keeps the wrapper transparent to the panel's label/input
+      // grid; a plain block would break the two-column layout. Same mechanism as
+      // domainBoundaryGroup.
+      //
+      // Set BEFORE the "hidden" early-return below, or the controls would linger on screen
+      // after the panel itself is hidden.
+      const bdfGroup = document.getElementById("bdfOnlyGroup");
+      if (bdfGroup) bdfGroup.style.display = (mode === "bdf") ? "contents" : "none";
+
       if (mode === "hidden") {
         panel.style.display = "none";
         return;
@@ -627,7 +641,8 @@ export const BottomPanel = {
       // No "(entire domain)" suffix (see the mu-histogram's reflLabel comment):
       // the exported PNG's domain box states it once now.
       const reflectedTitle = "Reflected";
-      const transmittedWeights = showEntireDomainBdf ? SimStats.transmittedBdfWeightsDomainWideCloudOnly()
+      // `let`, not `const`: the principal-plane fold below may replace it (display only).
+      let transmittedWeights = showEntireDomainBdf ? SimStats.transmittedBdfWeightsDomainWideCloudOnly()
                                : isDomainBdf ? SimStats.transmittedBdfWeightsCloudOnly() : SimStats.transmittedBdfWeights();
       const transmittedTitle = (isDomainBdf && !showEntireDomainBdf) ? "Net Transmitted (cloud-only)" : "Net Transmitted";
 
@@ -672,6 +687,14 @@ export const BottomPanel = {
         ? { nRef: nTop, sidesIncluded: SimStats._sidesIncluded() }
         : {};
 
+      // Principal-plane folding (v6.4) — DISPLAY AND PNG ONLY, default OFF.
+      // Applied here, at the last moment before the grids are built, so the accumulator,
+      // the JSON export and every gate continue to see raw unfolded weights.
+      if (UI.getBdfFoldMirror()) {
+        reflWeightsUsed    = SimStats.foldBdfWeightsMirror(reflWeightsUsed);
+        transmittedWeights = SimStats.foldBdfWeightsMirror(transmittedWeights);
+      }
+
       const reflectedGrid = BottomPanel.computeBdfGrid(reflWeightsUsed, reflOpts);
       const transmittedGrid = BottomPanel.computeBdfGrid(transmittedWeights, transOpts);
 
@@ -699,7 +722,12 @@ export const BottomPanel = {
         : isDomainBdf
         ? "Net down−up at surface (cloud-touched only; excludes clear-direct)"
         : "Net down−up at surface";
-      ctx2.fillText(`${transCaption}; uniform-µ bins (equal solid angle).`, w / 2, 212);
+      // The folding state is stated ON THE CANVAS, so it travels with the downloaded PNG.
+      // A folded figure that did not say so would be indistinguishable from a raw one while
+      // showing sqrt(2)-smoother noise -- the same provenance failure that forced schema 1.6
+      // (inputs.rng) and 1.8 (phase_function.sampling).
+      const foldNote = UI.getBdfFoldMirror() ? " FOLDED about principal plane (display only)." : "";
+      ctx2.fillText(`${transCaption}; uniform-µ bins (equal solid angle).${foldNote}`, w / 2, 212);
 
       // Normalization note (Phase 4). The 226-line is free in the rigorous
       // case (the clear-direct note below only draws for entire-domain views).

@@ -152,5 +152,62 @@ run({ ...P0, theta0: 0, surfaceAlbedo: 0.0, entryMode: "top" }, 400000);
 }
 domValues.pixelFraction = "1.0";
 
+// ---- Gate: principal-plane folding is DISPLAY-ONLY and behaves (v6.4) -------------
+//
+// WHY A GATE. Folding is a one-line temptation to "clean up" the accumulator. If it ever
+// migrates there, verify_rng.mjs Gate 5 goes to zero BY CONSTRUCTION and the project loses
+// the only test sensitive to the RNG state-overflow bug class (that gate read chi2
+// 0.99 -> 11.5 between 3M and 12M photons while every physics gate still passed).
+//
+// These checks are on the HELPERS, not on a rendered panel: they assert the properties the
+// display path relies on, and that the diagnostic can actually FAIL (an artifact-free test
+// is not a test -- see the analytic <mu>=g gate that passed an entire sampler rewrite).
+{
+  const { SimStats, BDF_MU_BINS: nT, BDF_PHI_BINS: nP } =
+        await import(new URL("../../js/simstats.js", import.meta.url));
+
+  let sd = 987654321;
+  const u = () => ((sd = (1103515245 * sd + 12345) & 0x7fffffff) / 0x7fffffff);
+  const gauss = () => { const a = Math.max(u(), 1e-12), b = u();
+                        return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b); };
+  const pois = m => Math.max(0, Math.round(m + Math.sqrt(m) * gauss()));
+  const mk = f => { const w = new Float64Array(nT * nP);
+    for (let ir = 0; ir < nT; ir++) for (let ip = 0; ip < nP; ip++) w[ir * nP + ip] = pois(f(ir, ip));
+    return w; };
+
+  const base = (ir, ip) => 200 + 50 * Math.cos(2 * Math.PI * ip / nP);   // symmetric in phi
+  const A = mk(base);
+  const c2A = SimStats.bdfMirrorChi2(A);
+  check(`mirror chi2 ~ 1 on a symmetric field (got ${c2A.toFixed(3)})`, c2A > 0.75 && c2A < 1.35);
+
+  // The statistic MUST be able to fail, or it is not a diagnostic.
+  const B = mk((ir, ip) => base(ir, ip) + (ip < nP / 2 ? 12 : 0));
+  const c2B = SimStats.bdfMirrorChi2(B);
+  check(`mirror chi2 RISES on an injected asymmetry (${c2A.toFixed(2)} -> ${c2B.toFixed(2)})`,
+        c2B > c2A + 0.2);
+
+  // Fold: unbiased (total preserved), pairs equalized, self-paired bins untouched.
+  const F = SimStats.foldBdfWeightsMirror(A);
+  const sum = a => Array.from(a).reduce((x, y) => x + y, 0);
+  check("fold preserves total counts (unbiased)", Math.abs(sum(A) - sum(F)) < 1e-9);
+  check("fold equalizes mirror pairs (chi2 -> 0)", SimStats.bdfMirrorChi2(F) < 1e-12);
+  let selfOk = true;
+  for (let ir = 0; ir < nT; ir++)
+    if (A[ir * nP] !== F[ir * nP] || A[ir * nP + nP / 2] !== F[ir * nP + nP / 2]) selfOk = false;
+  check("fold leaves the self-paired phi=0 and phi=180 bins untouched", selfOk);
+
+  // The input array must not be mutated -- the accumulator is shared, live state.
+  const A2 = mk(base); const before = Array.from(A2);
+  SimStats.foldBdfWeightsMirror(A2);
+  check("fold does NOT mutate its input (accumulator is shared live state)",
+        before.every((v, i) => v === A2[i]));
+
+  // Precision readout tracks 100/sqrt(counts).
+  const flat = new Float64Array(nT * nP).fill(400);
+  const p = SimStats.bdfMedianRelNoisePct(flat);
+  check(`precision readout = 100/sqrt(counts) (400 counts -> ${p.toFixed(2)}%, expect 5.00%)`,
+        Math.abs(p - 5) < 1e-9);
+}
+
 console.log(fails === 0 ? "\nALL PHASE-4 GATES PASS" : `\n${fails} FAILURES`);
 process.exitCode = fails ? 1 : 0;

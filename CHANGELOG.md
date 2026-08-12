@@ -4,6 +4,85 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.4.0] — 2026-08-12
+
+### Added: principal-plane symmetry folding — a DISPLAY option, default OFF
+
+The transport problem is exactly mirror-symmetric about the principal plane: the incident
+beam is `dir = (sinΘ₀, 0, cosΘ₀)`, with no y-component, and every illumination mode
+(centered, uniform-top, top+sunward-wall, uniform-domain, periodic) and every observation
+mode (top/base, all-faces, centred pixel) is invariant under y → −y. So the true field obeys
+BDF(θ,φ) = BDF(θ, 360°−φ) exactly, and averaging bin pairs is **unbiased** and buys √2 in
+noise — free, and exactly equivalent to doubling the photons.
+
+New checkbox **"Fold BDF about principal plane"**, and it is **OFF by default, deliberately**:
+
+- **The unfolded asymmetry is a model-free variance estimator, and that is rare.** Bins *k*
+  and *120−k* are two independent measurements of the same true value from a single run. It
+  needs no distributional assumption and no replicate. This project has twice been burned by
+  analytic σ models — a binomial σ on `EdownSfc` (a per-photon event rate that legitimately
+  exceeds 1) reported **+720,000σ** from a 0.1 % difference.
+- **It is how the 2026-07-27 RNG state-overflow bug was caught**, χ² growing 0.99 → 11.5
+  between 3 M and 12 M photons while every physics and conservation gate passed.
+- **VISTA-C teaches Monte Carlo RT; the graininess is the method.** Smoothing it by default
+  invites more confidence than the sample size has earned.
+
+**Display and PNG only.** The accumulator, the JSON export and every gate always see raw
+unfolded weights, so exports stay comparable and no schema change was needed — folding is
+trivially reproducible from the raw grid. The panel caption states "FOLDED about principal
+plane (display only)" whenever it is active, so a downloaded PNG can never be mistaken for a
+raw one.
+
+### Added: BDF quality readouts — two numbers, because they answer different questions
+
+The stats panel now reports **precision** (median per-bin 100/√counts) and **mirror χ²**
+(mean of (a−b)²/(a+b) over mirror pairs, Poisson = 1).
+
+They are not interchangeable, and the TODO that proposed this conflated them:
+
+| readout | answers | behaviour |
+|---|---|---|
+| precision | *how precise is this plot?* | falls as 1/√N — the have-I-run-enough number |
+| mirror χ² | *is the noise behaving?* | **scale-free**, ≈1.0 at any N |
+
+χ² > 1 means super-Poisson (correlated or degenerate draws — the RNG-overflow signature);
+< 1 means sub-Poisson. It says nothing about whether you have enough photons.
+
+**Stated blind spot:** a mirror-**symmetric** artifact is invisible to χ². The v6.3 ice
+period-3 rings were azimuthally symmetric and would have read ≈1.0 straight through them.
+This is a stream-health monitor, not an artifact detector — looking at the plot remains the
+thing that catches those.
+
+Both are computed from the **unfolded** accumulator, necessarily: folding zeroes the χ² by
+construction and understates the noise by √2. With folding on, the readout says so.
+
+### Changed: BDF-only controls are grouped and shown only in BDF mode
+
+"BDF color max", "BDF color max: auto" and the new fold checkbox now sit together at the end
+of the **Plot** group and appear only when the bottom panel is set to **BDF plots**. They have
+no effect in the µ-histogram, path-length or phase modes, and a live-looking control that
+silently does nothing is confusing — the same reasoning behind the existing disable/dim
+treatment of "Show entire-domain plots".
+
+**"Show entire-domain plots" is deliberately NOT in that group.** It also drives the
+µ-histogram, the path-length panel and the PNG/JSON export, so it stays visible in every mode.
+Moving the BDF trio *after* it achieves the grouping without mis-scoping it.
+
+### Added: gates for all of it
+
+`verify_phase4.mjs` gains six checks — χ² ≈ 1 on a symmetric field, χ² **rises** on an
+injected asymmetry (a diagnostic that cannot fail is not a diagnostic), fold preserves total
+counts, fold equalizes pairs, fold leaves the self-paired φ=0/180° bins untouched, fold does
+not mutate its input, and the precision readout equals 100/√counts.
+
+While adding them, the file's summary line and `process.exitCode` were found to run *before*
+the appended block, so a failure there would have printed FAIL and still exited 0. Moved to
+the end and verified by deliberate sabotage.
+
+**Both goldens remain bit-identical** and all 12 suites pass — the accumulator is untouched.
+
+---
+
 ## [Unreleased] — 2026-08-11
 
 Validation and tooling only. **No application code changed**; `js/` is untouched, both goldens

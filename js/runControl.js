@@ -292,7 +292,7 @@ export const RunControl = {
         if (gOut) gOut.style.display = "none";
         if (oOut) oOut.style.display = "none";
         if (gLab) gLab.textContent = "HG asymmetry parameter (g)";
-        if (oLab) oLab.textContent = "Single-scattering albedo (omega0)";
+        if (oLab) oLab.textContent = "Single-scattering albedo (\u03C9\u2080)";   // ω₀, matching index.html
         RunControl._savedG = RunControl._savedOmega0 = null;
         state.phase.active = false; state.phase.ready = false; state.phase.sel = null;
         RunControl.resetScene();
@@ -310,7 +310,7 @@ export const RunControl = {
       if (gOut) { gOut.style.display = ""; gOut.textContent = "\u2014"; }
       if (oOut) { oOut.style.display = ""; oOut.textContent = "\u2014"; }
       if (gLab) gLab.textContent = "g (band-averaged)";
-      if (oLab) oLab.textContent = "omega0 (band-averaged)";
+      if (oLab) oLab.textContent = "\u03C9\u2080 (band-averaged)";              // ω₀, matching the PNG header
       state.phase.active = true; state.phase.ready = false;
 
       // Revert to HG ONLY if the ASSETS fail to load. This guard used to also
