@@ -31,8 +31,16 @@ export const BottomPanel = {
       if (canvas2.width !== targetW || canvas2.height !== targetH) {
         canvas2.width = targetW;
         canvas2.height = targetH;
-        canvas2.style.width = logicalW + "px";
-        canvas2.style.height = logicalH + "px";
+        // NOTE (2026-08-12, responsive stage A): style.width/height are
+        // deliberately NOT set here. Pinning them to 700x245 overrode the
+        // stylesheet and made the panel un-shrinkable on narrow screens.
+        // CSS now sizes the ELEMENT (#muCanvas width:100%, height:auto, which
+        // follows the intrinsic 700:245 ratio of the width/height attributes),
+        // while this function keeps the DRAWING surface at a fixed logical
+        // 700x245. Every drawing routine and the PNG export work in logical
+        // units (exportUtils reads canvas2.width / 700), so the exported figure
+        // is identical no matter what size the element is displayed at --
+        // the display-fluid / export-fixed rule, TODO-responsive-layout.md 3.1.
       }
 
       const ctx2 = canvas2.getContext("2d");

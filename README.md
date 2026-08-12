@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.4.0** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.5.0** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -682,7 +682,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.4.0** (2026-08-12, principal-plane folding option and BDF quality readouts — display only, no physics change; both goldens bit-identical). A new checkbox folds the BDF about the principal plane for a free √2 in noise, **default OFF** because the unfolded asymmetry is a model-free variance estimator — it is how the 2026-07-27 RNG bug was caught. The stats panel now reports per-bin precision and mirror χ². See CHANGELOG.md's `[v6.4.0]` section.
+Latest tagged release: **v6.5.0** (2026-08-12, phone and small-screen layout — display only, no physics change; both goldens bit-identical, and the desktop bottom-panel PNG export byte-identical to v6.4.0 by SHA-256). Adds the viewport meta tag that mobile browsers need, a bottom panel bounded on both axes instead of fixed at 700 px, and an overlay-drawer layout below 930 px (`BASE_W × MIN_SCALE`, derived rather than hand-picked) where the control panel would otherwise take 64 % of a phone screen. Desktop and tablet rendering are unchanged. See CHANGELOG.md's `[v6.5.0]` section.
+
+Previous release: **v6.4.0** (2026-08-12, principal-plane folding option and BDF quality readouts — display only, no physics change; both goldens bit-identical). A new checkbox folds the BDF about the principal plane for a free √2 in noise, **default OFF** because the unfolded asymmetry is a model-free variance estimator — it is how the 2026-07-27 RNG bug was caught. The stats panel now reports per-bin precision and mirror χ². See CHANGELOG.md's `[v6.4.0]` section.
 
 Previous release: **v6.3.1** (2026-08-11, interface and provenance patch — no physics
 change; every count and exported array is bit-identical to v6.3.0). `js/constants.js` now
@@ -778,7 +780,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.4.0 is the version currently on `main` and in the hosted demo.
+v6.5.0 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -801,4 +803,4 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.4.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.5.0). GitHub. https://github.com/sepraca/VISTA-C

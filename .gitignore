@@ -44,3 +44,7 @@ MODIS_Phase Functions_netCDF4/
 # summed results (C5_results_*_100M.json) and the figures. Keeping the raw chunks out
 # avoids ~1.4 MB of regenerable binary-ish JSON per high-N campaign.
 tests/DISORT comparisons/modis-viirs/vista_*_c[0-9]*.json
+
+# Temporary responsive-layout diagnostic page (2026-08-12). Served from the repo
+# root so it can be loaded on phones/tablets over the LAN; not part of the app.
+viewport-check.html

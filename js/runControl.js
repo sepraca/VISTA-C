@@ -85,12 +85,32 @@ export const RunControl = {
     // the 3-D viewport offset (UI_PANEL_WIDTH) shrinks with the panel.
     applyUiScale: function() {
       const BASE_W = 1550, BASE_H = 900, MIN_SCALE = 0.6;
-      const scale = Math.max(MIN_SCALE,
+
+      // Narrow layout (2026-08-12). The threshold is DERIVED from the two
+      // constants that cause the problem, not hand-picked: below
+      // BASE_W * MIN_SCALE the Math.max clamp wins, so the panel stops
+      // shrinking while the window keeps shrinking. Past that point uniform
+      // scaling is the wrong tool -- on a 393px phone it left the panel at 64%
+      // of the screen and the 3-D viewport at 129px. Below the threshold the
+      // panel becomes an overlay drawer instead (CSS: html.narrow), so it no
+      // longer competes for width: UI_PANEL_WIDTH goes to 0 and the 3-D view
+      // takes the full window. --ui-scale is released back to 1 because the
+      // reason to shrink it (making room for the 3-D view) no longer applies.
+      const NARROW_W = BASE_W * MIN_SCALE;          // 930 px
+      const narrow = window.innerWidth < NARROW_W;
+
+      const scale = narrow ? 1 : Math.max(MIN_SCALE,
         Math.min(1, window.innerWidth / BASE_W, window.innerHeight / BASE_H));
-      const panelW = Math.round(440 * scale);   // scaled control-panel footprint
+      const panelW = narrow ? 0 : Math.round(440 * scale);  // 3-D viewport x-offset
+
       const root = document.documentElement.style;
+      document.documentElement.classList.toggle("narrow", narrow);
       root.setProperty("--ui-scale", scale.toFixed(3));
       root.setProperty("--ui-panel-w", panelW + "px");
+      // Publish the window height so #muPanel can bound itself vertically as
+      // well as horizontally. Same quantity the renderer is sized with, so the
+      // panel and the 3-D viewport cannot disagree about the window.
+      root.setProperty("--vh-px", window.innerHeight + "px");
       setUiPanelWidth(panelW);
       RunControl.updateExportButtonsLayout();
     },
@@ -108,6 +128,12 @@ export const RunControl = {
       const btns = document.getElementById("exportButtons");
       const legend = document.getElementById("legend");
       if (!btns || !legend) return;
+
+      // In the narrow layout the legend is display:none, so its
+      // getBoundingClientRect() is all zeros and the real-gap measurement below
+      // would be meaningless. The stacked column is imposed by CSS there
+      // (html.narrow #exportButtons), so there is nothing to decide.
+      if (document.documentElement.classList.contains("narrow")) return;
 
       const GAP_PX = 24; // minimum breathing room between the two, in real screen px
       btns.classList.remove("stacked");

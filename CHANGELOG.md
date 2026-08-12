@@ -4,6 +4,71 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.5.0] — 2026-08-12
+
+### Added: phone and small-screen layout — display only, no physics change
+
+VISTA-C rendered poorly on phones and was never told the real screen size. Three changes, all
+confined to presentation. **The accumulator, both goldens, and the export code paths are
+untouched.**
+
+Export verification, stated precisely: on **desktop**, bottom-panel PNGs exported from this build
+and from the hosted v6.4.0 have **identical SHA-256 digests** — byte-identical, not merely
+visually indistinguishable. The fixed 700 × 245 logical drawing surface and
+`downloadBottomPanel`'s `canvas2.width / 700` are what make that hold, and neither is touched
+here. **No export was exercised on iOS**, and the 3-D View PNG (which does depend on
+`UI_PANEL_WIDTH`) was not hashed; on desktop that value is unchanged at 440.
+
+Note also that the exported PNG's pixel dimensions have always depended on
+`devicePixelRatio` (`dpr = clamp(devicePixelRatio, 2, 4)`, so 1400 px wide at dpr 2 and 2100 px
+at dpr 3). Exports are therefore **not** byte-identical across devices, and never were. This is
+pre-existing and unchanged.
+
+**Viewport meta tag.** `index.html` had none, so mobile browsers assumed a ~980 px virtual
+viewport and zoomed the whole page down: `window.innerWidth` reported 980 on a 393 px phone, and
+the layout never saw a small screen. Effective scale was 0.25 — legible only by pinch-zoom.
+
+This is a phone-only fix, and provably so. Whenever the width term governs the UI scale, the
+virtual-viewport zoom cancels it exactly:
+
+    without meta:  scale(980) × zoom = (980/1550) × (w/980) = w/1550
+    with meta:     scale(w)                                 = w/1550
+
+The tag can therefore only matter where that identity breaks — where the `MIN_SCALE = 0.6` clamp
+binds, at **`innerWidth < 930 px`**. Measured on an iPad Pro (1024×1366) it was an exact no-op in
+both orientations, ratio 1.00; on a 393 px phone, ratio 2.37.
+
+**Fluid bottom panel.** `#muPanel` is now bounded on both axes instead of fixed at 700 px, and
+`getHiDpiPanelContext()` no longer pins `canvas.style.width/height` — that inline assignment
+overrode the stylesheet and was the actual reason the panel could not shrink. The **drawing
+surface stays 700×245 logical**, so `exportUtils`' `canvas2.width / 700` and every drawing
+routine are unaffected: the display is fluid, the export is fixed. The height bound exists
+because the canvas holds a fixed 700:245 aspect, so width *is* height — a 726 px panel is
+necessarily ~294 px tall, which covered the entire 3-D view on a 340 px landscape phone.
+
+**Narrow layout below 930 px.** The control panel becomes an overlay drawer, `UI_PANEL_WIDTH`
+goes to 0 so the 3-D view takes the full window, and `--ui-scale` is released to 1 (the reason to
+shrink it — making room for the 3-D view — no longer applies once the panel overlays rather than
+competes). Previously a phone gave the panel 64 % of the screen and the 3-D view 129 px.
+
+The threshold is **derived** from the two constants that cause the problem, `BASE_W × MIN_SCALE`,
+not hand-picked — this codebase has already been bitten by a hand-guessed `max-width: 1700px` for
+the export buttons that went stale when the legend was relaid out. The drawer is pure CSS
+(checkbox + label); no JS, so it cannot contribute to a module link failure.
+
+### Notes
+
+Two defects surfaced only by looking at the app on a real device, both with a clean 12/12 run:
+the 3-D view vanishing in phone landscape (panel had a width budget but no height budget), and
+the open drawer being untypeable because `drawBottomPanel()` re-asserts
+`panel.style.display = "block"` inline on every redraw, beating a normal stylesheet rule. The
+`display: none !important` that resolves the second is load-bearing and must not be cleaned up.
+
+Heights come from `--vh-px` (`window.innerHeight`) rather than CSS `vh`, which on iOS reports the
+large viewport and ignores Safari's collapsing toolbar.
+
+Desktop and tablet rendering are unchanged — confirmed on hardware, not merely by argument.
+
 ## [v6.4.0] — 2026-08-12
 
 ### Added: principal-plane symmetry folding — a DISPLAY option, default OFF

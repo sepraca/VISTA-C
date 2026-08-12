@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<!-- Without this, mobile browsers assume a ~980px virtual viewport and zoom the whole page
+     down to fit the physical screen, so applyUiScale() never sees the real device width.
+     Zoom is deliberately left ENABLED (no user-scalable=no / maximum-scale) — pinch-zoom is
+     the escape hatch for reading dense plots on small screens. -->
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>VISTA-C — 3D Monte Carlo Cloud Radiative Transfer Simulator</title>
 
 <script type="importmap">
@@ -21,6 +26,13 @@
        used for the 3-D viewport offset and to center the bottom panel/header. */
     --ui-scale: 1;
     --ui-panel-w: 440px;
+    /* window.innerHeight in px, published by applyUiScale(). Used to give the
+       bottom panel a HEIGHT budget as well as a width budget. Deliberately the
+       same quantity the 3-D renderer is sized with (setViewport/setSize), so the
+       two cannot disagree about how tall the window is -- and unlike `vh`, it
+       tracks mobile Safari's collapsing toolbar instead of reporting the large
+       viewport. Fallback matches BASE_H for the pre-JS paint. */
+    --vh-px: 900px;
   }
   body {
     margin: 0;
@@ -422,7 +434,29 @@
     transform-origin: bottom center;
     bottom: 34px;
     z-index: 10;
-    width: 700px;
+    /* Fluid below the desktop size (stage A, 2026-08-12). Divided by --ui-scale
+       for the same reason #ui's max-height is: transform:scale() is applied
+       AFTER layout, so a raw 100vw budget would be over-spent by 1/scale.
+       726 = 700 drawing width + 24 padding + 2 border, and box-sizing:border-box
+       makes the declared width the total -- so the desktop rendering is
+       byte-identical to the old fixed 700px content box.
+       The DRAWING surface stays 700x245 logical (see bottomPanel.js
+       getHiDpiPanelContext); only the CSS presentation size is fluid, so the
+       exported PNG is unaffected. See TODO-responsive-layout.md 3.1. */
+    box-sizing: border-box;
+    /* Bounded on BOTH axes. Width alone is not enough: on a short viewport
+       (phone landscape, innerHeight ~340px) a width-only rule made the panel
+       ~294px tall, which at bottom:34px covered the entire 3-D view.
+       The height term inverts the canvas geometry -- panel height =
+       (W - 26) * 245/700 + 47 chrome -- and solves for the W that keeps the
+       panel inside 40% of the window height:
+           W = (0.40*H/scale - 47) / 0.35 + 26
+       The 280px floor stops it collapsing to nothing on extreme viewports. */
+    width: max(280px, min(
+      726px,
+      calc((100vw - 24px) / var(--ui-scale)),
+      calc((0.40 * var(--vh-px) / var(--ui-scale) - 47px) / 0.35 + 26px)
+    ));
     background: rgba(71, 85, 105, 0.88);
     border: 1px solid rgba(203, 213, 225, 0.55);
     border-radius: 12px;
@@ -440,9 +474,103 @@
 
   #muCanvas {
     width: 100%;
-    height: 245px;
+    /* auto, not 245px: the canvas element's width/height ATTRIBUTES (700x245)
+       give it an intrinsic aspect ratio, so height follows the fluid width and
+       the plot never distorts. getHiDpiPanelContext() no longer pins
+       style.width/height, which is what previously forced 700px regardless. */
+    height: auto;
     display: block;
   }
+
+  /* ---- Narrow layout (stage B, 2026-08-12) --------------------------------
+     Threshold is DERIVED, not hand-picked: below BASE_W * MIN_SCALE =
+     1550 * 0.6 = 930px the uniform-scale clamp binds, so the control panel
+     stops shrinking while the screen keeps shrinking and its share of the
+     display grows without bound (64% of a 393px phone, leaving a 129px 3-D
+     viewport). This codebase has been bitten by hand-guessed breakpoints
+     before -- see the #exportButtons comment above -- so this one is tied to
+     the constants that actually cause the problem.
+
+     Below it the panel stops competing with the 3-D view for width: it becomes
+     an overlay drawer, UI_PANEL_WIDTH goes to 0, and --ui-scale is released
+     back to 1 so text is full size instead of shrunk to 0.6.
+     The drawer is pure CSS (checkbox + label) -- no JS, so it cannot break the
+     module graph. */
+  #uiToggleChk { display: none; }
+  #uiToggleLabel { display: none; }
+
+  html.narrow #uiToggleLabel {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 30;
+    padding: 10px 14px;
+    min-height: 44px;            /* touch target */
+    box-sizing: border-box;
+    background: rgba(37, 99, 235, 0.94);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  html.narrow #uiToggleLabel::before { content: "\2630  Controls"; }
+  html.narrow #uiToggleChk:checked ~ #uiToggleLabel::before { content: "\2715  Close"; }
+
+  html.narrow #ui { display: none; }
+  html.narrow #uiToggleChk:checked ~ #ui {
+    display: block;
+    top: 64px;
+    width: min(418px, calc(100vw - 24px));
+    /* --vh-px, not 100vh: on iOS `vh` reports the LARGE viewport and ignores
+       Safari's collapsing toolbar, so a vh-based cap lets the drawer run off
+       the bottom of the visible area. --vh-px is window.innerHeight. */
+    max-height: calc((var(--vh-px) - 76px) / var(--ui-scale));
+  }
+
+  /* The legend is reference material and is the widest element in the app;
+     at full scale it cannot fit a phone. Hidden here rather than scaled into
+     illegibility. */
+  html.narrow #legend { display: none; }
+
+  /* Top-RIGHT in narrow mode, opposite the drawer toggle, so the two do not
+     stack down the same edge and bury the only band of 3-D view left on a
+     short landscape viewport. */
+  html.narrow #exportButtons {
+    left: auto;
+    right: 12px;
+    top: 12px;
+    transform-origin: top right;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  html.narrow #exportButtons button {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+  html.narrow #uiToggleChk:checked ~ #exportButtons { display: none; }
+
+  /* The drawer and #muPanel are both z-index:10, and #muPanel comes later in
+     the DOM, so it painted ON TOP of the open drawer and swallowed taps meant
+     for the inputs beneath it. Hide it while the drawer is open -- same idiom
+     as the export buttons above. Safe: the canvas keeps its backing store, all
+     drawing is in logical units, and the PNG export reads canvas2.width, so a
+     hidden panel exports exactly as a visible one.
+
+     !important is load-bearing here and must not be removed: BottomPanel
+     .drawBottomPanel() sets `panel.style.display = "block"` INLINE on every
+     redraw, and a normal stylesheet rule loses to an inline style. An author
+     !important declaration outranks a normal inline declaration, which is
+     exactly this case. (Without it the rule is silently overwritten on the
+     next repaint -- which is what happened on first attempt.) */
+  html.narrow #uiToggleChk:checked ~ #muPanel { display: none !important; }
+
+  html.narrow #note { display: none; }
 
   #limitWarning {
     position: absolute;
@@ -521,6 +649,12 @@
 </style>
 </head>
 <body>
+<!-- Narrow-layout drawer toggle. Must precede #ui and #exportButtons so the
+     general-sibling selectors in the stylesheet can reach them. Invisible and
+     inert at >=930px. -->
+<input type="checkbox" id="uiToggleChk" />
+<label id="uiToggleLabel" for="uiToggleChk" aria-label="Toggle controls"></label>
+
 <div id="ui">
   <h1>VISTA-C</h1>
   <div class="subtitle">

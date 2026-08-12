@@ -37,7 +37,7 @@
 //
 // WHEN BUMPING: change it HERE, then run the test suite. The gate names any file that
 // disagrees. Do not hardcode the version anywhere else.
-export const APP_VERSION = "6.4.0";
+export const APP_VERSION = "6.5.0";
 
 // Photon entry/illumination mode (UI.getPhotonEntryMode(), physics.js entryMode param).
 export const EntryMode = Object.freeze({
