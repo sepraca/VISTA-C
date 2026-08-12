@@ -429,6 +429,28 @@ Then open **http://localhost:8000/** in any modern browser (Chrome, Firefox, Saf
 
 Three.js is loaded from jsDelivr CDN (version 0.164.1). An internet connection is required; an error box appears if it cannot load.
 
+### After updating: hard-refresh
+
+**If you pull a new version and the interface misbehaves — controls that do nothing, a blank
+bottom panel, a stale version in the header — do a hard refresh** (Cmd/Ctrl-Shift-R, or
+DevTools → Network → *Disable cache*, or *Empty Cache and Hard Reload*). Confirm the `<h1>`
+shows the version you expect.
+
+**Why this is worth calling out.** VISTA-C loads ~15 ES modules as separate requests, and the
+browser caches each one independently. If it serves you a new `main.js` against a cached older
+`constants.js`, an `import { NEW_THING }` that the cached file does not export is a **link-time**
+failure: the module graph never instantiates, so *no* JavaScript runs at all. Every inline
+handler is silently dead, and the app's own error box cannot appear — it lives inside a
+`try/catch` that never executes. The page looks loaded but is inert.
+
+Two things that do **not** help: appending a query string to the page URL
+(`index.html?v=123`) busts only the HTML, since the module requests carry no query string; and
+a plain reload, which often revalidates the HTML while reusing cached modules. That combination
+is exactly how this was first hit (2026-08-11, v6.3.1).
+
+The hosted GitHub Pages build revalidates with ETags and generally self-corrects, but a private/
+incognito window is the reliable way to see what a first-time visitor actually gets.
+
 ---
 
 ## Controls
