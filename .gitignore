@@ -37,3 +37,9 @@ g_comparison_old_vs_new.md
 # they exist, will live elsewhere and be tracked separately)
 MODIS_Phase Functions_netCDF4/
 
+# C5 high-N chunk intermediates (tests/DISORT comparisons/modis-viirs/).
+# 5 x 20 M jump() sub-streams per band, 40+ files, ~1.4 MB, fully regenerable from
+# vistac_run_chunk.mjs. Never tracked historically -- the committed artifacts are the
+# summed results (C5_results_*_100M.json) and the figures. Keeping the raw chunks out
+# avoids ~1.4 MB of regenerable binary-ish JSON per high-N campaign.
+tests/DISORT comparisons/modis-viirs/vista_*_c[0-9]*.json

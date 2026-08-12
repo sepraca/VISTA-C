@@ -37,6 +37,11 @@ import matplotlib.pyplot as plt
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
 
+# FAMILY (2026-08-11): this file predated the v6.2 two-family split and still looked for the
+# retired filenames vista_b<band>.json / beta_b<band>_r10.npy, so it crashed before producing
+# a single number. Same class of rot as the regen_exports.py schema-1.7 bug -- a script only
+# reachable by running it, unrun for two releases.
+FAMILY = "liquid"
 BANDS = [2, 6, 7]
 NCHUNK = 5
 WL = {2: 0.86, 6: 1.64, 7: 2.13}
@@ -58,7 +63,7 @@ def sig(w, N):
 
 
 def disort_binned(band, ssa, NQ=128):
-    beta = np.load(f"beta_b{band}_r10.npy")
+    beta = np.load(f"beta_{FAMILY}_b{band}_r10.npy")
     NL = NQ - 1
     ss = ssa if ssa < 1 else 1 - 1e-9
     o = pydisort(np.array([10.0]), np.array([ss]), NQ, np.atleast_2d(beta[:NL + 1]),
@@ -87,11 +92,11 @@ print("A. CHUNK SELF-CONSISTENCY  (chunk 0 does no jumps -> must equal the conti
 print("=" * 78)
 chunks = {}
 for band in BANDS:
-    cs = [json.load(open(f"vista_b{band}_c{c}.json")) for c in range(NCHUNK)]
+    cs = [json.load(open(f"vista_{FAMILY}_b{band}_c{c}.json")) for c in range(NCHUNK)]
     chunks[band] = cs
-    ref = json.load(open(f"vista_b{band}.json"))
+    ref = json.load(open(f"vista_{FAMILY}_b{band}.json"))
     same = (np.array(cs[0]["w"]) == np.array(ref["w"])).all() and cs[0]["refl"] == ref["refl"]
-    print(f"  band {band}: chunk0 == vista_b{band}.json  ->  {'EXACT MATCH' if same else 'MISMATCH'}")
+    print(f"  band {band}: chunk0 == vista_{FAMILY}_b{band}.json  ->  {'EXACT MATCH' if same else 'MISMATCH'}")
     assert same, "chunking machinery altered the stream"
 
 print()

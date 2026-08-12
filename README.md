@@ -800,4 +800,3 @@ by the project author.
 If you use this simulator in teaching or research, please cite as:
 
 > Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.3.1). GitHub. https://github.com/sepraca/VISTA-C
-pl

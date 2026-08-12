@@ -1,7 +1,14 @@
 // vistac_run_chunk.mjs -- one jump()-derived chunk of a large C5 run.
 //
-//   node vistac_run_chunk.mjs <band> <chunkIndex> <photonsPerChunk> [seed]
-//       -> writes vista_b<band>_c<chunkIndex>.json
+//   node vistac_run_chunk.mjs <band> <chunkIndex> <photonsPerChunk> [seed] [family]
+//       -> writes vista_<family>_b<band>_c<chunkIndex>.json
+//
+// FAMILY (added 2026-08-11): "liquid" (default) or "ice". This file hardcoded the liquid
+// grid and the pre-v6.2 output name long after the two-family split landed, so it could not
+// be run at all against the current asset layout -- and c5_highN_check.py looked for the
+// retired name vista_b<band>.json, which would have crashed on the first line it reached.
+// Same staleness class as the regen_exports.py schema-1.7 bug: a script only reachable by
+// running it, and nobody ran it for two releases.
 //
 // WHY CHUNKED -- AND WHAT THIS DOES *NOT* MEAN. Chunking here is purely an execution
 // workaround: the automation used to produce the C5 comparison caps a single command at
@@ -40,8 +47,9 @@ const chunk = Number(process.argv[3]);
 const N = Number(process.argv[4]);
 const seed = Number(process.argv[5] || 42);
 
-const grid = JSON.parse(readFileSync(new URL("grid_liquid.json", D)));
-const bb = JSON.parse(readFileSync(new URL(`liquid_modis_b${band}.json`, D)));
+const family = process.argv[6] || "liquid";
+const grid = JSON.parse(readFileSync(new URL(`grid_${family}.json`, D)));
+const bb = JSON.parse(readFileSync(new URL(`${family}_modis_b${band}.json`, D)));
 const WT = Float64Array.from(grid.wt), XMU = Float64Array.from(grid.xmu);
 // SELECT r_eff BY VALUE, NEVER BY A HARDCODED INDEX (2026-08-08).
 // This was `k = 8`, which is 10 um in the 24-radius grid of the older per-band assets but
@@ -52,10 +60,16 @@ const R_EFF_UM = 10.0;
 const k = bb.cer_um.findIndex(v => Math.abs(v - R_EFF_UM) < 1e-9);
 if (k < 0) throw new Error(`r_eff ${R_EFF_UM} um not in band ${band}: ${bb.cer_um}`);
 const cdf = Physics.buildMieCdf(Float64Array.from(bb.pf[k]), WT);
+// SSA_OVERRIDE: mirrors vistac_run.mjs. Ice b1/b2 are EXACTLY conservative (ssa = 1), which
+// is singular in discrete ordinates -- DISORT converges only down to 1-1e-7. Both codes must
+// therefore solve the identical problem, so these bands are run with SSA_OVERRIDE=0.9999999.
+// Missing here until 2026-08-11, which would have made a 100 M ice b1/b2 run compare a
+// conservative MC against a slightly absorbing DISORT and manufactured a fake bias.
+const ssaUsed = process.env.SSA_OVERRIDE ? Number(process.env.SSA_OVERRIDE) : bb.ssa[k];
 
 // Identical to vistac_run.mjs -- the plane-parallel proxy case.
 const p = { tauCloud: 10, slabW: 500, slabD: 500, theta0: 30 * Math.PI / 180,
-            g: bb.g[k], omega0: bb.ssa[k], surfaceAlbedo: 0.0, betaExt: 10.0,
+            g: bb.g[k], omega0: ssaUsed, surfaceAlbedo: 0.0, betaExt: 10.0,
             surfaceDistanceKm: 0.5, entryMode: "center", mieCdf: cdf, mieXmu: XMU };
 
 const nMU = 45, nPHI = 120, w = new Float64Array(nMU * nPHI);
@@ -78,9 +92,10 @@ for (let i = 0; i < N; i++) {
   w[ir * nPHI + ip]++;
 }
 
-writeFileSync(new URL(`vista_b${band}_c${chunk}${seed===42?"":"_s"+seed}.json`, import.meta.url),
+writeFileSync(new URL(`vista_${family}_b${band}_c${chunk}${seed===42?"":"_s"+seed}.json`, import.meta.url),
   JSON.stringify({ band, chunk, seed, N, refl, abs: abs_, trans, nMU, nPHI,
-                   w: Array.from(w), ssa: bb.ssa[k], g: bb.g[k],
+    family, ssa: ssaUsed, ssa_table: bb.ssa[k], g: bb.g[k],
+                   w: Array.from(w),
                    stateAtStart, stateAtEnd: RNG.state() }));
 console.log(`b${band} c${chunk}: N=${N / 1e6}M R=${(refl / N).toFixed(6)} `
           + `A=${(abs_ / N).toFixed(6)} T=${(trans / N).toFixed(6)} `

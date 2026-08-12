@@ -1,8 +1,14 @@
-import json,sys,numpy as np,warnings; warnings.filterwarnings("ignore")
+import json,sys,os,numpy as np,warnings; warnings.filterwarnings("ignore")
 # FAMILY (v6.2): "liquid" (default) or "ice". Selects the asset set, the beta files and the
 # band list. Ice covers bands 1/2/6/7/20; the two conservative ones (1, 2) are included via
 # the SSA_CONSERVATIVE clamp below, matched on the VISTA-C side by SSA_OVERRIDE.
 FAMILY = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("liquid","ice") else "liquid"
+# HIGHN=1 sums the five jump()-derived 20 M chunks into a 100 M run (vistac_run_chunk.mjs).
+# Chunk 0 does no jumps, so it reproduces the contiguous 20 M reference exactly -- that
+# identity is checked by c5_highN_check.py and is what makes the sum trustworthy.
+HIGHN = os.environ.get("HIGHN") == "1"
+NCHUNK = 5
+TAG = "_100M" if HIGHN else ""
 from PythonicDISORT import pydisort
 from scipy.interpolate import PchipInterpolator
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -66,7 +72,13 @@ SSA_CONSERVATIVE = 1.0 - 1e-7
 
 def get(band,NQ=None):
     if NQ is None: NQ=NQUAD
-    V=json.load(open(f"vista_{FAMILY}_b{band}.json")); N=V["N"]; w=np.array(V["w"],float).reshape(nMU,nPHI)
+    if HIGHN:
+        cs=[json.load(open(f"vista_{FAMILY}_b{band}_c{c}.json")) for c in range(NCHUNK)]
+        V=dict(cs[0]); V["N"]=sum(c["N"] for c in cs); V["refl"]=sum(c["refl"] for c in cs)
+        V["trans"]=sum(c["trans"] for c in cs)
+        w=sum(np.array(c["w"],float).reshape(nMU,nPHI) for c in cs); N=V["N"]
+    else:
+        V=json.load(open(f"vista_{FAMILY}_b{band}.json")); N=V["N"]; w=np.array(V["w"],float).reshape(nMU,nPHI)
     BV=np.pi*(w/N)/(mu_c[:,None]*dmu*dphi); SV=np.pi*(np.sqrt(np.maximum(w,1))/N)/(mu_c[:,None]*dmu*dphi)
     beta=np.load(f"beta_{FAMILY}_b{band}_r10.npy"); NL=NQ-1
     ss=V["ssa"] if V["ssa"]<1 else SSA_CONSERVATIVE
@@ -109,10 +121,11 @@ for j,band in enumerate(bands):
         if i==0: ax.set_title(f'MODIS band {band}  ({WL[band]:.2f} µm)   ω₀ = {V["ssa"]:.5f}',fontsize=11,pad=8)
         else: ax.set_title(lab,fontsize=9,pad=6)
 fig.suptitle(f'C5 validation ({"ice particle" if FAMILY=="ice" else "liquid droplet"}) — VISTA-C vs PythonicDISORT, principal plane\n'
-             'τ=10, Θ₀=30°, A$_s$=0, r$_{eff}$=10 µm;  plane-parallel proxy W=500, centered beam, 20M photons (xoshiro128** seed 42)',
+             f'τ=10, Θ₀=30°, A$_s$=0, r$_{{eff}}$=10 µm;  plane-parallel proxy W=500, centered beam, '
+             f'{"100M photons (5 × 20M jump() sub-streams)" if HIGHN else "20M photons"} (xoshiro128** seed 42)',
              fontsize=12.5, y=1.02)
 fig.tight_layout()
-fig.savefig(f"C5_{FAMILY}_principal_plane.png",dpi=125,bbox_inches='tight')
-json.dump({"family":FAMILY,"rng":{"name":"xoshiro128**","seed":42},"bands":RESULTS},open(f"C5_results_{FAMILY}.json","w"),indent=2)
-print(f"wrote C5_results_{FAMILY}.json")
-print(f"\nwrote C5_{FAMILY}_principal_plane.png")
+fig.savefig(f"C5_{FAMILY}_principal_plane{TAG}.png",dpi=125,bbox_inches='tight')
+json.dump({"family":FAMILY,"rng":{"name":"xoshiro128**","seed":42},"bands":RESULTS},open(f"C5_results_{FAMILY}{TAG}.json","w"),indent=2)
+print(f"wrote C5_results_{FAMILY}{TAG}.json")
+print(f"\nwrote C5_{FAMILY}_principal_plane{TAG}.png")

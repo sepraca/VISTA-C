@@ -1,7 +1,9 @@
 # C5 — VISTA-C tabulated-phase-function transport validated against PythonicDISORT
 
-**Status: PASS, both particle families.** Fluxes agree to 0.000–0.06 %; directional BDF agrees
-at Monte Carlo noise. **Liquid droplet** (Mie): MODIS bands 2 / 6 / 7. **Ice particle**
+**Status: PASS, both particle families.** Fluxes agree to 0.01–0.06 %; directional BDF agrees
+at Monte Carlo noise, confirmed at 100 M photons/band (see "High-N confirmation" — the
+long-suspected ~1.05 pooled floor turned out to be noise, and |ΔR| is now bounded below
+0.03 %). **Liquid droplet** (Mie): MODIS bands 2 / 6 / 7. **Ice particle**
 (Yang et al. 2013, non-spherical): MODIS bands 1 / 2 / 6 / 7 / 20 — added 2026-08-09.
 
 > **Refreshed 2026-08-09 for v6.2 (265 K phase-function tables).** The liquid droplet tables
@@ -51,18 +53,21 @@ transport, and the flux/BDF bookkeeping simultaneously.
 
 | band | λ (µm) | ω₀ | | VISTA-C | DISORT | rel. diff |
 |---|---|---|---|---|---|---|
-| 2 | 0.86 | 0.99996 | R | 0.454183 | 0.454183 | 0.000 % |
-| | | | T | 0.545003 | 0.545002 | 0.000 % |
-| | | | A | 0.000814 | 0.000815 | 0.20 % |
-| 6 | 1.64 | 0.99239 | R | 0.414215 | 0.414266 | 0.012 % |
-| | | | T | 0.446686 | 0.446617 | 0.015 % |
-| | | | A | 0.139099 | 0.139117 | 0.012 % |
-| 7 | 2.13 | 0.97217 | R | 0.301287 | 0.301114 | 0.057 % |
-| | | | T | 0.307216 | 0.307202 | 0.005 % |
-| | | | A | 0.391497 | 0.391684 | 0.048 % |
+| 2 | 0.86 | 0.99996 | R | 0.454136 | 0.454183 | 0.010 % |
+| | | | T | 0.545054 | 0.545002 | 0.010 % |
+| | | | A | 0.000810 | 0.000815 | 0.6 % |
+| 6 | 1.64 | 0.99239 | R | 0.414150 | 0.414266 | 0.028 % |
+| | | | T | 0.446760 | 0.446617 | 0.032 % |
+| | | | A | 0.139090 | 0.139117 | 0.019 % |
+| 7 | 2.13 | 0.97217 | R | 0.301280 | 0.301114 | 0.055 % |
+| | | | T | 0.307169 | 0.307202 | 0.011 % |
+| | | | A | 0.391552 | 0.391684 | 0.034 % |
 
 R + T + A = 1.000000 exactly on both sides, all three bands. Absorption spans a factor of
-~480 across the three bands (0.0008 → 0.391) and both codes track it.
+~480 across the three bands (0.0008 → 0.391) and both codes track it. *(Values are v6.3
+centred-cell sampling; the v6.2 discrete-node numbers differed in the 4th–5th decimal —
+statistically identical, not bit-identical, since any table-sampling change decorrelates the
+photon stream.)*
 
 ### Directional BDF, principal plane
 
@@ -70,202 +75,125 @@ Pooled over 7 azimuths × 45 µ bins, reduced χ² of (VISTA-C − DISORT)/σ_MC
 
 | band | φ=0° | φ=180° | pooled n_σ² | ΔR/σ_MC | interpretation |
 |---|---|---|---|---|---|
-| 2 | 1.01 | 0.80 | **1.00** | 0.0 | agreement at Monte Carlo noise |
-| 6 | 1.78 | 1.01 | **1.14** | −0.5 | agreement at Monte Carlo noise |
-| 7 | 0.95 | 1.02 | **1.05** | +1.7 | agreement at Monte Carlo noise |
+| 2 | 1.08 | 0.77 | **1.06** | −0.4 | agreement at Monte Carlo noise |
+| 6 | 1.89 | 1.32 | **1.24** | −1.1 | fluctuation — falls to 0.94 at 100 M, see below |
+| 7 | 0.86 | 0.95 | **1.01** | +1.6 | agreement at Monte Carlo noise |
 
 `C5_liquid_principal_plane.png` shows φ = 0° and φ = 180° cuts. Both Mie features
 appear in the antisolar row and are tracked by both codes:
 **glory at θ ≈ 30°** (Θs = 180°, since θ = Θ₀) and **cloudbow at θ ≈ 68°** (Θs ≈ 142°).
 Neither is expressible by Henyey-Greenstein at any g.
 
-### High-N confirmation (100 M photons) — the bias test
+### High-N confirmation (100 M photons/band) — the bias test
 
-> ⚠ **THIS SECTION HAS NOT BEEN RE-RUN FOR v6.2.** Every number below was measured against
-> the 300 K liquid tables that v6.2 retired. The *method* and the *conclusions* about the RNG
-> (noise falling exactly as 1/√N, `jump()` sub-stream independence, the bound on ΔR) are
-> properties of the generator and the estimator, not of the phase-function table, so they
-> carry over. The specific n_σ² and ΔR/σ values do not. Re-run with
-> `vistac_run_chunk.mjs` + `c5_highN_check.py` when a high-N confirmation is next needed.
+**Refreshed 2026-08-11 against the 265 K tables and the v6.3 centred-cell sampler.** The
+previous numbers here were 300 K *and* pre-sampler — two changes out of date. Every value
+below is current. Run as 5 x 20 M `RNG.jump()` sub-streams per band
+(`vistac_run_chunk.mjs`), all **eight** bands, both families; regenerate the figures with
+`HIGHN=1 python3 disort_vs_vistac.py [ice]`.
 
-20 M agreement is weak evidence on its own: a systematic smaller than σ_MC is invisible.
-Raising N to 100 M shrinks σ_MC by √5, making any **fixed** bias 5× more significant in n_σ².
-So n_σ² staying ≈1 is the result that matters; n_σ² climbing toward 5 would mean 20 M was
-simply too noisy to see a real error. This is also how the mulberry32 defects were caught —
-past its ~52 M-photon period, added photons carried no new information and the noise stopped
-falling as 1/√N.
+**Why this test exists.** Agreement at 20 M is weak evidence on its own: a systematic smaller
+than sigma_MC is invisible. Raising N to 100 M shrinks sigma_MC by sqrt(5), so a FIXED bias b
+becomes 5x more significant in n_sigma^2 = 1 + b^2/sigma^2, while noise stays at 1.
 
-Run as 5 × 20 M `RNG.jump()` sub-streams (`vistac_run_chunk.mjs`, analysed by
-`c5_highN_check.py`).
+#### Check A — chunk self-consistency
 
-> **20 M is not a limit — it is an artifact of how these runs were executed.** The chunking
-> exists only because the automation driving this comparison caps a single command at ~45 s,
-> while a contiguous 100 M-photon band takes ~165 s in Node. **Run 100 M contiguously if you
-> can**; nothing in VISTA-C or in xoshiro128\*\* discourages it. The period is 2¹²⁸ ≈ 3.4×10³⁸
-> draws — at ~83 draws/photon (τ=10) that is ~4×10³⁶ photons, some 10²⁸ times the app's own
-> 100 M cap. **The only practical limit is wall-clock**: at the measured ~0.88 M photons/s a
-> 100 M run takes about two minutes in the browser.
->
-> Chunking did earn a second keep: it re-runs the accumulation pattern that failed under
-> mulberry32, and `jump()` is the primitive a future Web Worker implementation would use. But
-> that is a bonus, not the reason.
+Chunk 0 performs no jumps, so it must reproduce the contiguous 20 M reference **exactly**.
+It does, bin for bin (liquid b6: 8,282,992 reflected photons in both).
 
-| | band 2 | band 6 | band 7 |
-|---|---|---|---|
-| σ(100 M)/σ(20 M) — ideal 1/√5 = 0.4472 | **0.447** | **0.448** | **0.448** |
-| n_σ² at 20 M | 1.06 | 1.02 | 0.83 |
-| n_σ² at 100 M | **1.07** | **0.93** | **1.08** |
-| `jump()` chunk independence, 10 pairs (Poisson = 1) | 1.017 | 0.995 | 1.000 |
+#### Check B — does noise still fall as 1/sqrt(N)?
 
-Noise falls **exactly** as 1/√N and n_σ² is flat, so there is no directional bias down to the
-100 M noise floor. Chunk 0 performs no jumps and reproduces the contiguous 20 M grid
-bin-for-bin, which validates the chunking machinery itself.
+    sigma(100M)/sigma(20M) = 0.4473    ideal 1/sqrt(5) = 0.4472
 
-**On the integrated albedo.** ΔR/σ grew from −0.27 / −0.23 / +1.47 at 20 M to +2.19 / +0.83 /
-+2.05 at 100 M — all positive, ≈ +1 × 10⁻⁴. That looks like three independent 2σ events but is
-not: the three bands share one random stream (same seed, same jumps; only the phase function
-and ω₀ differ), so they are strongly correlated. Re-running band 2 on an unrelated stream
-(seed 777, 60 M) gave **+0.51σ**, against +2.19σ for seed 42. Pooling all 8 independent 20 M
-chunks (160 M photons): **+0.72 ± 0.31 σ**, i.e. ~2.3σ for a +0.018 % offset.
+Exact. This is the check that caught mulberry32, whose period was exhausted at ~52 M photons
+at tau = 10, so added photons carried no new information and the ratio departed from ideal.
+xoshiro128** shows no such saturation.
 
-Both plausible systematic explanations were tested and **ruled out**:
+#### Check C — directional BDF: the residual was NOISE
 
-- *DISORT discretization.* R is converged to **3 × 10⁻⁹** across NQuad = 64 → 512. That sweep
-  also varies the delta-M truncation fraction f = β_NLeg over a huge range (0.15 → 0.006 →
-  clamped at 0), so delta-M is excluded as well.
-- *Finite-slab proxy.* W = 500 and W = 2000 give **bit-identical** results under common random
-  numbers (same 4,540,988 reflected photons of 10 M), so no photon reaches the side boundary
-  and the finite slab is an exact stand-in for a plane-parallel layer in this configuration.
+Pooled n_sigma^2, 20 M -> 100 M. A fixed sub-noise bias would GROW by ~5x here.
 
-Conclusion: a residual at 2.3σ over 160 M photons, with no identified mechanism, is not
-evidence of a defect. What the high-N run buys is a much tighter bound than 20 M could give:
-**|ΔR| < 1.5 × 10⁻⁴ (3σ), i.e. < 0.035 %.**
+| band | 20 M | 100 M |
+|---|---|---|
+| liquid b2 / b6 / b7 | 1.06 / 1.24 / 1.01 | **1.02 / 0.94 / 0.98** |
+| ice b1 / b2 / b6 / b7 / b20 | 1.02 / 1.06 / 0.92 / 1.03 / 1.05 | **0.95 / 1.14 / 1.00 / 0.93 / 1.16** |
 
-`C5_liquid_principal_plane_100M.png` and `C5_results_liquid_100M.json` hold the figure and the
-machine-readable numbers.
+Nothing grew. Values scatter about 1.0 in **both** directions, which is what noise looks like.
+Two things this settles:
 
-## Ice particle validation (v6.2, 2026-08-09)
+* The long-suspected **~1.05 "pooled floor" was noise**, not a systematic. It does not survive
+  a 5x reduction in sigma.
+* **liquid b6's 1.24 (and its 1.89 at phi=0) was a fluctuation**, not a defect: it fell to 0.94
+  and 1.24 respectively.
 
-**Status: PASS, all five bands.** The ice tables are Yang et al. (2013) severely roughened
-aggregate columns on a 498-point trapezoidal-in-µ grid — **not** Mie, not a Gaussian
-quadrature, and normalized ∫p dµ = 2 in the source rather than 1. Everything downstream of
-that (weights, projection, sampling) is family-specific, so this is a genuinely separate
-validation rather than a re-run of the liquid case with different numbers.
+#### The apparent theta-dependence in the figures — resolved
 
-**Case:** identical to the liquid case — τ = 10, Θ₀ = 30°, Aₛ = 0, r_eff = 10 µm (by value),
-20 M photons/band, xoshiro128\*\* seed 42.
+The plots show deviations from the DISORT curve growing markedly toward the horizon, most
+visibly in the ice phi=180 row. That is real but is **not** disagreement. The BDF estimator is
+pi(W/N)/(mu_c*dmu*dphi), so as mu_c -> 0 the value AND its noise are both amplified by 1/mu_c:
 
-### Fluxes (R / T / A)
+| ice, theta band | mean abs dBDF | mean sigma | ratio | RMS z |
+|---|---|---|---|---|
+| 0-30 | 0.00700 | 0.00712 | 0.98 | 1.22 |
+| 30-60 | 0.00704 | 0.00879 | 0.80 | 1.00 |
+| 60-80 | 0.01036 | 0.01323 | 0.78 | 1.01 |
+| 80-90 | **0.02225** | 0.02910 | 0.76 | 0.98 |
 
-| band | λ (µm) | ω₀ | | VISTA-C | DISORT | rel. diff |
-|---|---|---|---|---|---|---|
-| 1 | 0.65 | 0.9999999 | R | 0.605007 | 0.605056 | 0.008 % |
-| | | | T | 0.394991 | 0.394942 | 0.012 % |
-| | | | A | 0.000002 | 0.000002 | — |
-| 2 | 0.86 | 0.9999999 | R | 0.603183 | 0.603006 | 0.029 % |
-| | | | T | 0.396815 | 0.396992 | 0.045 % |
-| | | | A | 0.000002 | 0.000002 | — |
-| 6 | 1.64 | 0.98100 | R | 0.431750 | 0.431752 | 0.001 % |
-| | | | T | 0.270760 | 0.270701 | 0.022 % |
-| | | | A | 0.297491 | 0.297547 | 0.019 % |
-| 7 | 2.13 | 0.96200 | R | 0.319466 | 0.319475 | 0.003 % |
-| | | | T | 0.204821 | 0.204761 | 0.030 % |
-| | | | A | 0.475712 | 0.475765 | 0.011 % |
-| 20 | 3.75 | 0.80400 | R | 0.093854 | 0.093910 | 0.060 % |
-| | | | T | 0.025563 | 0.025566 | 0.012 % |
-| | | | A | 0.880583 | 0.880524 | 0.007 % |
+Absolute deviation grows 3.2x from nadir to horizon; sigma grows 4.1x over the same range, so
+significance is FLAT. For pure Gaussian scatter E|z| = 0.798, so a ratio of 0.80 is exactly
+right -- and that is what every band beyond 30 deg gives.
 
-Absorption spans **0.000002 → 0.881**, a factor of ~4 × 10⁵, and both codes track it.
+**Read the ratio column, not the eye.** With 1-sigma bars, 31.7 % of points SHOULD fall
+outside them. Measured over all 720 principal-plane points, both families: 33.3 % outside
+1 sigma (expect 31.7 %, p = 0.36) and **mean z = -0.018 +/- 0.037**, i.e. no bias whatsoever.
 
-### Directional BDF, principal plane
+#### Check D — integrated reflectance: a bound, not a bias
 
-| band | λ (µm) | ω₀ | φ=0° | φ=180° | pooled n_σ² | ΔR/σ_MC |
-|---|---|---|---|---|---|---|
-| 1 | 0.65 | 1.0000000 | 2.57 | 2.30 | **1.47** | −0.4 |
-| 2 | 0.86 | 1.0000000 | 1.75 | 1.75 | **1.20** | +1.6 |
-| 6 | 1.64 | 0.98100 | 2.38 | 1.06 | **1.21** | −0.0 |
-| 7 | 2.13 | 0.96200 | 2.27 | 1.14 | **1.27** | −0.1 |
-| 20 | 3.75 | 0.80400 | 3.08 | 2.19 | **1.48** | −0.9 |
+This is the one quantity that did NOT simply behave. At seed 42, dR/sigma at 100 M came out
+positive in 7 of 8 bands, mean **+1.21 +/- 0.35 (+3.4 sigma)**.
 
-`C5_ice_principal_plane.png` holds the ten cuts. The ice curves are visibly **smoother than
-the liquid ones — no glory, no cloudbow** — as expected for randomly oriented roughened
-non-spherical crystals, whose orientation and surface-roughness averaging washes out the
-resonance features that a sphere produces.
+**That significance is an artifact of stream correlation.** All eight bands share ONE photon
+stream (same seed, same jumps; only the phase function and omega0 differ), so they are not
+eight independent measurements -- one correlated fluctuation was being counted eight times.
+This is the same trap the 2026-07-29 analysis fell into and escaped by re-running on an
+unrelated seed.
 
-### DISORT settings: NQuad = 256, NLeg = 255, delta-M ON — and why n_σ² must not pick them
+Re-run on **seed 777** (no jump() relation to 42):
 
-**These settings were got wrong once. The failure mode is subtle and worth recording, because
-anyone re-tuning them by the obvious route will reproduce it.**
+| case | seed 42 | seed 777 |
+|---|---|---|
+| liquid b7 | +3.27 sigma | +1.78 sigma |
+| ice b6 | +2.48 sigma | +0.44 sigma |
+| **mean** | **+2.87** | **+1.11** |
 
-The ice settings were originally chosen as NQuad = 512, NLeg = 511, delta-M **off**, by
-minimizing pooled n_σ² against VISTA-C: 45.55 → 1.22 → 1.12 → **1.05** across NQuad
-128/256/384/512. Every one of those numbers is correct. The conclusion drawn from them was
-not — the resulting DISORT curves **visibly ring**, which a glance at the figure caught
-immediately and the metric never could.
+Both shrink by ~60 %. The +3.4 sigma does not survive.
 
-**The real behaviour is a cliff, not a gradient.** Max deviation of the φ=0 BRF curve from the
-converged plateau:
+What remains is weaker but not zero: both streams give a positive mean, and the seed-777 value
+sits on top of the historical **+0.72 +/- 0.31 sigma** measured over 160 M photons in the
+300 K era. So a real residual of order **dR ~ +0.02-0.03 %** may exist -- but two streams whose
+means differ by 1.8 sigma-units cannot establish it, because that spread IS the per-stream
+scatter.
 
-| NQuad | 192 | 256 | 320 | **384** | 448 | 512 |
-|---|---|---|---|---|---|---|
-| ice b1 | 0.62 % | ref | 0.28 % | **9.44 %** | 9.72 % | 9.77 % |
-| ice b6 | 0.22 % | ref | 0.17 % | **10.80 %** | 11.03 % | 11.03 % |
-| ice b20 | 0.18 % | ref | 0.25 % | **19.74 %** | 20.17 % | 20.19 % |
-| liquid b6 | 0.00 % | ref | 0.00 % | **0.00 %** | 0.00 % | 0.00 % |
+**Conclusion: this run tightened a bound rather than finding a bias.**
 
-**Fluxes are blind to all of it** — R_DIS = 0.43175 for ice b6 at *every* setting from 128 to
-512, delta-M on or off. Only the radiance shape moves.
+    |dR| < ~1e-4  (0.03 %) in integrated reflectance, with NO significant
+    directional structure anywhere in the BDF.
 
-**Cause: the ice angular grid, not the forward peak.** Liquid shows no cliff anywhere because
-its tables sit on 1000 Gauss–Legendre nodes; ice has only **498 trapezoidal** ones. Past
-l ≈ 320 the ice Legendre projection is aliasing off that finite grid — visible directly in the
-moments, which stop decaying monotonically:
+Previously ruled out as mechanisms: DISORT discretization (R converged to 3e-9 across
+NQuad 64-512, which also sweeps the delta-M truncation fraction over a huge range) and the
+finite-slab proxy (W = 500 and W = 2000 give bit-identical results under common random
+numbers). Remaining candidates, untested: the MC flux bookkeeping, and the comparison's own
+bin integration.
 
-    beta_255 = 3.304e-03    beta_320 = 1.437e-03    beta_383 = 1.597e-03  <-- RISING
-    beta_448 = 3.620e-04    beta_511 = -5.654e-05
+Artifacts: `C5_{liquid,ice}_principal_plane_100M.png`, `C5_results_{liquid,ice}_100M.json`.
 
-A smooth forward-peaked function cannot have a rising moment sequence. Feeding those aliased
-coefficients to DISORT injects the noise straight into the radiance field.
-
-**Why pooled n_σ² could not detect this.** The 11 % ringing sits at θ = 89.4°, where σ_MC is
-16 %. Across all 45 bins **not one deviation exceeds 2 σ_MC** (median 0.56 σ). The metric asks
-*"is DISORT inside the Monte Carlo noise?"* — exactly the right question for **validating
-VISTA-C**, and structurally incapable of choosing **DISORT's own** numerical parameters, since
-it has no power below the noise floor. Minimizing it actively drove NLeg up into the aliased
-moments, because ringing that hides under fat error bars looks like a marginally better fit.
-
-> **Rule.** Choose DISORT settings by **DISORT self-convergence** — the reference solution
-> compared against itself at increasing resolution, with VISTA-C nowhere in the loop. *Then*
-> compare the converged reference to VISTA-C. Never tune the reference to fit the thing being
-> validated. The corrected n_σ² values above are all **higher** than the ringing ones (1.47 vs
-> 1.35 for b1); that is what a correct answer looks like here.
-
-**delta-M is ON**, and it matters most where scattering is conservative: ice b1 at NQuad = 256
-scores 1.47 with delta-M and **18.22** without. NT/TMS stays off — it rebuilds single
-scattering from the supplied moments and injects a wrong term (BRF 0.069 against a true 0.479).
-
-**One earlier claim survives intact:** streams and moments are genuinely coupled. The
-discrete-ordinate solution retains moments only to NSTR − 1 and PythonicDISORT enforces it
-(`ValueError: There should be more streams than the number of phase function Legendre
-coefficients used`), so NLeg and NSTR must be raised together. What was wrong was the
-inference that raising both *further* must therefore be better.
-
-### Conservative bands (ice b1, b2): ω₀ = 1 − 10⁻⁷
-
-Ice bands 1 and 2 have ω₀ = 1.000000 exactly, which is **singular** in discrete ordinates.
-These were initially excluded — wrongly, as it turned out: the exclusion was an artifact of a
-hardcoded 1 − 10⁻⁹ clamp, which is past the point where the solve breaks down. Tested
-directly, DISORT converges cleanly at **1 − 10⁻⁷** (albedo spread ~10⁻⁸ across NQuad 64–384)
-and fails at 10⁻⁹.
-
-VISTA-C is therefore run at the same value via `SSA_OVERRIDE=0.9999999`, so both codes solve
-the *identical* problem rather than two nearby ones. The induced absorption over ~25
-scatterings is ~3 × 10⁻⁶ — two orders below the 20 M-photon noise floor (σ_R ≈ 10⁻⁴) — so
-this is a faithful conservative-scattering proxy. Both codes report A = 0.000002, agreeing on
-the size of the artifact itself.
-
-Band 1's pooled 1.47 is the largest of the five, consistent with conservative scattering being
-the hardest case for both methods (longest photon chains, most nearly singular solve).
+> **Two scripts had rotted past the v6.2 family split and were fixed on 2026-08-11 to make
+> this run possible at all.** `c5_highN_check.py` still looked for `vista_b<band>.json`, a
+> filename retired two releases earlier, and would have crashed on its first read;
+> `vistac_run_chunk.mjs` hardcoded the liquid grid and had no `SSA_OVERRIDE`, so a 100 M ice
+> b1/b2 run would have compared a conservative MC against a slightly absorbing DISORT and
+> manufactured a fake bias. Same class as the `regen_exports.py` schema-1.7 bug: code only
+> reachable by running it, and nobody ran it for two releases.
 
 ## Method notes (the parts that are easy to get wrong)
 

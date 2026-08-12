@@ -4,6 +4,60 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — 2026-08-11
+
+Validation and tooling only. **No application code changed**; `js/` is untouched, both goldens
+still match bit-for-bit, and no released behaviour is affected.
+
+### C5 high-N bias test refreshed and extended (100 M photons/band, all 8 bands)
+
+The high-N section had been carrying **300 K, pre-sampler** numbers — two changes out of date.
+Re-run at 100 M per band (5 × 20 M `jump()` sub-streams) for liquid b2/b6/b7 and ice
+b1/b2/b6/b7/b20.
+
+**The directional BDF residual was noise.** Pooled n_σ², 20 M → 100 M: liquid
+1.06/1.24/1.01 → **1.02/0.94/0.98**; ice 1.02/1.06/0.92/1.03/1.05 →
+**0.95/1.14/1.00/0.93/1.16**. A fixed sub-noise bias would have grown ~5× as σ fell by √5.
+Nothing grew. This settles two long-open items: the suspected **~1.05 "pooled floor" was
+noise**, and **liquid b6's elevated 1.24 (1.89 at φ=0) was a fluctuation**, not a defect.
+
+**σ scaling exact.** σ(100M)/σ(20M) = 0.4473 against the ideal 1/√5 = 0.4472 — the check that
+caught mulberry32's period exhaustion. No saturation.
+
+**The apparent θ-dependence in the figures is the 1/µ amplification, not disagreement.**
+Absolute |ΔBDF| grows 3.2× from nadir to horizon while σ grows 4.1×, so significance is flat;
+E|z| = 0.798 for Gaussian scatter and every band beyond 30° measures 0.76–0.80. Over all 720
+principal-plane points, both families: 33.3 % outside 1σ (expect 31.7 %, p = 0.36) and
+**mean z = −0.018 ± 0.037** — no bias.
+
+**Integrated reflectance: a tighter bound, not a bias.** At seed 42, ΔR/σ was positive in 7 of
+8 bands, mean +1.21 ± 0.35 (+3.4σ) — but all eight share one photon stream, so that is one
+correlated fluctuation counted eight times, the same trap the 2026-07-29 analysis escaped. On
+**seed 777** (no `jump()` relation to 42) liquid b7 falls +3.27σ → +1.78σ and ice b6
++2.48σ → +0.44σ. The result is a bound, **|ΔR| < ~1×10⁻⁴ (0.03 %)**, with no significant
+directional structure. A real residual of order +0.02–0.03 % may exist — consistent with the
+historical +0.72 ± 0.31σ over 160 M — but two streams whose means differ by 1.8σ-units cannot
+establish it.
+
+New artifacts: `C5_{liquid,ice}_principal_plane_100M.png`, `C5_results_{liquid,ice}_100M.json`.
+`disort_vs_vistac.py` gains `HIGHN=1` to sum the chunk files.
+
+### Fixed: two C5 scripts had rotted past the v6.2 family split
+
+Both were unreachable except by running them, and nobody had for two releases — the same class
+as the `regen_exports.py` schema-1.7 bug.
+
+- **`c5_highN_check.py`** looked for `vista_b<band>.json` and `beta_b<band>_r10.npy`, filenames
+  retired in v6.2. It would have crashed on its first read.
+- **`vistac_run_chunk.mjs`** hardcoded the liquid grid and had no `SSA_OVERRIDE`. A 100 M ice
+  b1/b2 run would have compared a **conservative** Monte Carlo against a **slightly absorbing**
+  DISORT and manufactured a fake bias — precisely the artifact this test exists to detect.
+
+Both are now family-aware; the chunk runner also records `family`, `ssa` (as used) and
+`ssa_table` in its output so a chunk is self-describing.
+
+---
+
 ## [v6.3.1] — 2026-08-11
 
 Interface and provenance patch. **No physics, statistics or numerical change** — every count,
