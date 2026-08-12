@@ -187,6 +187,27 @@ bin integration.
 
 Artifacts: `C5_{liquid,ice}_principal_plane_100M.png`, `C5_results_{liquid,ice}_100M.json`.
 
+#### Reproducing this WITHOUT chunking
+
+**Chunking is not a requirement.** It is an artifact of the automation that produced these
+results, which caps a single command at ~45 s while 100 M photons takes ~2 min in Node.
+Nothing in VISTA-C or in xoshiro128\*\* needs it, and the app's own 100 M cap is ~10^28 times
+below the generator's period. Run it contiguously instead:
+
+```
+node vistac_run.mjs 6 100000000 42 liquid
+mv vista_liquid_b6.json vista_liquid_b6_100M.json     # keeps the 20 M reference intact
+HIGHN=1 python3 disort_vs_vistac.py
+```
+
+`HIGHN=1` prefers `vista_<family>_b<band>_100M.json` when present and only falls back to
+summing chunks. The chunked path is retained because it is how the committed artifacts were
+made, and because chunk 0 performs no jumps and so reproduces the contiguous 20 M reference
+exactly -- the identity that makes summing trustworthy in the first place.
+
+The raw chunk files are **gitignored**: ~1.4 MB per campaign, fully regenerable, and never
+tracked historically. The committed artifacts are the summed results and the figures.
+
 > **Two scripts had rotted past the v6.2 family split and were fixed on 2026-08-11 to make
 > this run possible at all.** `c5_highN_check.py` still looked for `vista_b<band>.json`, a
 > filename retired two releases earlier, and would have crashed on its first read;

@@ -40,7 +40,15 @@ historical +0.72 ± 0.31σ over 160 M — but two streams whose means differ by 
 establish it.
 
 New artifacts: `C5_{liquid,ice}_principal_plane_100M.png`, `C5_results_{liquid,ice}_100M.json`.
-`disort_vs_vistac.py` gains `HIGHN=1` to sum the chunk files.
+`disort_vs_vistac.py` gains `HIGHN=1`, which prefers a **contiguous** `vista_<family>_b<band>_100M.json`
+and falls back to summing chunks — chunking is an artifact of the automation's ~45 s command
+cap, not a requirement, and a user should just run 100 M contiguously (~2 min in Node). Raw
+chunk files are gitignored: ~1.4 MB per campaign, regenerable, never tracked historically.
+
+**Accepted, not chased:** the sub-0.03 % integrated-reflectance residual is within the
+tolerance this code is intended to meet and is being left as a documented bound rather than
+pursued further. Establishing it either way would need many independent RNG streams, not more
+photons on one.
 
 ### Fixed: two C5 scripts had rotted past the v6.2 family split
 

@@ -3,9 +3,19 @@ import json,sys,os,numpy as np,warnings; warnings.filterwarnings("ignore")
 # band list. Ice covers bands 1/2/6/7/20; the two conservative ones (1, 2) are included via
 # the SSA_CONSERVATIVE clamp below, matched on the VISTA-C side by SSA_OVERRIDE.
 FAMILY = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("liquid","ice") else "liquid"
-# HIGHN=1 sums the five jump()-derived 20 M chunks into a 100 M run (vistac_run_chunk.mjs).
-# Chunk 0 does no jumps, so it reproduces the contiguous 20 M reference exactly -- that
-# identity is checked by c5_highN_check.py and is what makes the sum trustworthy.
+# HIGHN=1 selects the 100 M dataset. It prefers a CONTIGUOUS file and falls back to summing
+# the five jump()-derived 20 M chunks.
+#
+# CHUNKING IS NOT A REQUIREMENT -- it is an artifact of the automation that produced these
+# results, which caps a single command at ~45 s while 100 M photons takes ~2 min in Node.
+# Nothing in VISTA-C or xoshiro128** needs it. A user should simply run
+#
+#     node vistac_run.mjs <band> 100000000 42 <family>     # -> vista_<family>_b<band>.json
+#
+# and rename that to vista_<family>_b<band>_100M.json, which this reads directly. The chunked
+# path is kept because it is how the committed artifacts were made, and because chunk 0 does
+# no jumps and therefore reproduces the contiguous 20 M reference EXACTLY -- an identity
+# c5_highN_check.py verifies, and the reason the sum is trustworthy at all.
 HIGHN = os.environ.get("HIGHN") == "1"
 NCHUNK = 5
 TAG = "_100M" if HIGHN else ""
@@ -72,7 +82,10 @@ SSA_CONSERVATIVE = 1.0 - 1e-7
 
 def get(band,NQ=None):
     if NQ is None: NQ=NQUAD
-    if HIGHN:
+    if HIGHN and os.path.exists(f"vista_{FAMILY}_b{band}_100M.json"):
+        V=json.load(open(f"vista_{FAMILY}_b{band}_100M.json")); N=V["N"]
+        w=np.array(V["w"],float).reshape(nMU,nPHI)
+    elif HIGHN:
         cs=[json.load(open(f"vista_{FAMILY}_b{band}_c{c}.json")) for c in range(NCHUNK)]
         V=dict(cs[0]); V["N"]=sum(c["N"] for c in cs); V["refl"]=sum(c["refl"] for c in cs)
         V["trans"]=sum(c["trans"] for c in cs)
