@@ -12,12 +12,14 @@ VISTA-C rendered poorly on phones and was never told the real screen size. Three
 confined to presentation. **The accumulator, both goldens, and the export code paths are
 untouched.**
 
-Export verification, stated precisely: on **desktop**, bottom-panel PNGs exported from this build
-and from the hosted v6.4.0 have **identical SHA-256 digests** — byte-identical, not merely
-visually indistinguishable. The fixed 700 × 245 logical drawing surface and
-`downloadBottomPanel`'s `canvas2.width / 700` are what make that hold, and neither is touched
-here. **No export was exercised on iOS**, and the 3-D View PNG (which does depend on
-`UI_PANEL_WIDTH`) was not hashed; on desktop that value is unchanged at 440.
+Export verification, stated precisely: on **desktop**, **both** exports — the bottom-panel PNG
+and the 3-D View PNG — have **identical SHA-256 digests** between this build and the hosted
+v6.4.0. Byte-identical, not merely visually indistinguishable. For the bottom panel that follows
+from the fixed 700 × 245 logical drawing surface and `downloadBottomPanel`'s
+`canvas2.width / 700`; for the 3-D view it confirms the `UI_PANEL_WIDTH`-driven crop
+(`exportUtils.js:545`) is unchanged at 440 on desktop. The 3-D result also establishes that the
+WebGL render is byte-reproducible here — otherwise a cross-build match would have been
+impossible. **No export was exercised on iOS**, and that gap is accepted as open.
 
 Note also that the exported PNG's pixel dimensions have always depended on
 `devicePixelRatio` (`dpr = clamp(devicePixelRatio, 2, 4)`, so 1400 px wide at dpr 2 and 2100 px
