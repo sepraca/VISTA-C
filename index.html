@@ -635,7 +635,15 @@
          (rather than greying out dead inputs) makes the (family, band, r_eff) → (g, ω₀)
          coupling explicit, which is the pedagogical point of the option. -->
     <label id="gLabel">HG asymmetry parameter (g)</label>
-    <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01" onblur="UI.getG()">
+    <!-- BUG FIX 2026-08-11: this called UI.getG() but never redrew the panel, so editing g
+         left the Phase function plot showing the OLD curve. The physics was always right
+         (UI.getG() is re-read when the run starts); only the plot was stale. The workaround
+         users found was to select a MODIS/VIIRS band and switch back, because the tabulated
+         selectors call RunControl.onPhaseSelectionChange(), which DOES redraw.
+         onchange as well as onblur: pressing Enter in a number input fires change, not blur. -->
+    <input id="gValue" type="number" value="0.85" min="-0.99" max="0.99" step="0.01"
+           onblur="UI.getG(); BottomPanel.drawBottomPanel()"
+           onchange="UI.getG(); BottomPanel.drawBottomPanel()">
     <span id="gMieReadout" class="mie-readout" style="display:none"></span>
 
     <label id="omega0Label">Single-scattering albedo (ω₀)</label>
@@ -655,10 +663,13 @@
 
     <label>Bottom panel</label>
     <select id="bottomPanelMode" onchange="BottomPanel.drawBottomPanel()">
-      <option value="mu" selected>μ histograms</option>
+      <!-- Default is "phase" (2026-08-11): p(Θs) depends only on the scattering medium,
+           not on run data, so the panel is populated at startup and after a Reset instead
+           of blank, and it doubles as a visual reminder of the active phase function. -->
+      <option value="mu">μ histograms</option>
       <option value="bdf">BDF plots</option>
       <option value="path">Path lengths</option>
-      <option value="phase">Phase function</option>
+      <option value="phase" selected>Phase function</option>
       <option value="hidden">hidden</option>
     </select>
 

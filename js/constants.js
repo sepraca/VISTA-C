@@ -19,6 +19,26 @@
 // if any value here ever changes, the corresponding <option value="..."> in
 // index.html must be updated to match by hand.
 
+// ---------------------------------------------------------------------------------
+// APP VERSION — the single source of truth (v6.3.1, 2026-08-11).
+//
+// Until now the version lived ONLY in prose: CHANGELOG.md, README.md and CITATION.cff
+// each carried it independently, and nothing in js/ or index.html knew it at all. Two
+// consequences, both of which actually happened:
+//   * CITATION.cff sat at 6.0.7 through the v6.1.0 AND v6.2.0 releases, because nothing
+//     tied it to anything;
+//   * with several browser windows open on different builds, the app itself gave no way
+//     to tell them apart (author-reported, 2026-08-11).
+//
+// Everything version-facing now derives from this constant: the <h1> header, the JSON
+// export (`app_version`) and the PNG diagnostic header. tests/review-harness/
+// verify_version.mjs asserts that CHANGELOG's newest entry, README's "Latest tagged
+// release", and CITATION.cff all agree with it, so the drift above cannot recur silently.
+//
+// WHEN BUMPING: change it HERE, then run the test suite. The gate names any file that
+// disagrees. Do not hardcode the version anywhere else.
+export const APP_VERSION = "6.3.1";
+
 // Photon entry/illumination mode (UI.getPhotonEntryMode(), physics.js entryMode param).
 export const EntryMode = Object.freeze({
   CENTER:         "center",

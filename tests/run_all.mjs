@@ -75,6 +75,7 @@ function gate(name, scriptRel, args = []) {
 console.log("VISTA-C test battery\n" + "-".repeat(52));
 
 // --- Self-contained gates (judged by exit code) ---
+gate("verify_version (docs agree)",       "tests/review-harness/verify_version.mjs");
 gate("verify_phase3 (periodic boundary)", "tests/review-harness/verify_phase3.mjs");
 gate("verify_phase4 (rigorous BRF/BTF)",  "tests/review-harness/verify_phase4.mjs");
 gate("verify_p4 (fast mode / slicing)",   "tests/review-harness/verify_p4.mjs");

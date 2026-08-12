@@ -376,9 +376,11 @@ export const RunControl = {
       if (oEl) oEl.value = sel.ssa.toFixed(4);
       const gOut = document.getElementById("gMieReadout");
       const oOut = document.getElementById("omega0MieReadout");
-      // 3 dp for g in the panel readout (author preference, 2026-07-27); the JSON
-      // export keeps full precision, and the PNG header keeps 4 dp.
-      if (gOut) gOut.textContent = sel.g.toFixed(3);
+      // 4 dp for g in the panel readout (author, 2026-08-11 — supersedes the 3 dp
+      // preference of 2026-07-27). Band-averaged g values differ in the 4th place, and
+      // 3 dp rounds MODIS b1 liquid's 0.8618 to a misleading 0.862. The JSON export
+      // keeps full precision; the PNG header already used 4 dp.
+      if (gOut) gOut.textContent = sel.g.toFixed(4);
       if (oOut) oOut.textContent = sel.ssa.toFixed(5);
       RunControl.resetScene();   // new scattering => clear accumulated stats
     },

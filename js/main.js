@@ -1,6 +1,7 @@
 // main.js — Entry point. Imports all modules, wires callbacks, sets up
 // window.* globals for HTML event attributes, and starts the simulation.
 
+import { APP_VERSION } from './constants.js';
 import { setDrawPanelCallback } from './statsPanel.js';
 import { world } from './state.js';
 import { BottomPanel } from './bottomPanel.js';
@@ -13,6 +14,13 @@ import { SimStats } from './simstats.js';
 import { StatsPanel } from './statsPanel.js';
 
 try {
+  // Stamp the version into the page header and title. Several browser windows open on
+  // different builds were previously indistinguishable (author, 2026-08-11).
+  // Sourced from constants.js — never hardcode it here.
+  const h1 = document.querySelector("h1");
+  if (h1) h1.textContent = `VISTA-C (v${APP_VERSION})`;
+  document.title = `VISTA-C v${APP_VERSION} — 3D Monte Carlo Cloud Radiative Transfer Simulator`;
+
   // Wire BottomPanel into StatsPanel.updateDisplay() without a circular import.
   setDrawPanelCallback(() => BottomPanel.drawBottomPanel());
 

@@ -4,7 +4,7 @@ import { state, UI_PANEL_WIDTH } from './state.js';
 import { SimStats, MU_BINS, BDF_MU_BINS, BDF_PHI_BINS } from './simstats.js';
 import { UI, showLimitWarning } from './ui.js';
 import { RNG } from './rng.js';
-import { EntryMode, DomainBoundary } from './constants.js';
+import { EntryMode, DomainBoundary, APP_VERSION } from './constants.js';
 import { BottomPanel } from './bottomPanel.js';
 
 // Legend box geometry (2026-07 relayout, driven by a user PPT mockup
@@ -289,7 +289,10 @@ export const Export = {
         // different photon stream before and after the mulberry32 → xoshiro128**
         // swap, so a figure showing only the seed is not reproducible from itself.
         // Kept on ONE line -- the header is fixed at 12 rows (see note below).
-        `RNG: ${RNG.name()} (seed ${RNG.currentSeed()})`,
+        // VISTA-C version appended here rather than on its own row: the header is fixed
+        // at 12 rows (downloadBottomPanel slices them in groups of 3), and this is the
+        // provenance line already.
+        `RNG: ${RNG.name()} (seed ${RNG.currentSeed()}) , VISTA-C v${APP_VERSION}`,
         `Photon illumination: ${Export.photonEntryLabel(UI.getPhotonEntryMode())}`,
         // f_pix appended to this line (not its own row) so the header stays at
         // 12 lines -- downloadBottomPanel slices rows in fixed groups of 3.
@@ -1316,6 +1319,11 @@ export const Export = {
         schema_version: Export.SCHEMA_VERSION,
         generated: new Date().toISOString(),
         generator: "VISTA-C — browser Monte Carlo cloud radiative transfer",
+        // app_version (v6.3.1): schema_version says what SHAPE the file has; this says
+        // which BUILD produced it. They move independently — v6.3.0 changed the sampler
+        // without touching the schema, so schema alone cannot attribute a result to a
+        // build. Sourced from constants.js APP_VERSION.
+        app_version: APP_VERSION,
         inputs,
         outputs,
         mu_histograms,

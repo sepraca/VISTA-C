@@ -12,7 +12,7 @@ Originally developed as an intuitive educational tool for students, scientists, 
 
 Open `index.html` via a local server (see [Running Locally](#running-locally) below).  
 A hosted version is available at: https://sepraca.github.io/VISTA-C/  
-*(The hosted version tracks `main`, which is currently at the tagged **v6.3.0** release
+*(The hosted version tracks `main`, which is currently at the tagged **v6.3.1** release
 — see Version History below. All tagged releases are available from the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page.)*
 
@@ -660,7 +660,17 @@ See [CHANGELOG.md](CHANGELOG.md) for the full, dated change history, and the
 [Releases](https://github.com/sepraca/VISTA-C/releases) page for
 tagged versions.
 
-Latest tagged release: **v6.3.0** (2026-08-11, continuous phase-function sampling).
+Latest tagged release: **v6.3.1** (2026-08-11, interface and provenance patch — no physics
+change; every count and exported array is bit-identical to v6.3.0). `js/constants.js` now
+exports `APP_VERSION` as the single source of truth for the version: it is rendered in the app
+header, stamped into the JSON export (`app_version`) and the PNG header, and gated by
+`verify_version.mjs` against CHANGELOG, README and CITATION.cff. Previously the version lived
+only in prose, which is how CITATION.cff came to sit at 6.0.7 through two releases. Also fixed:
+the HG phase-function plot not redrawing when *g* is edited; the bottom panel now defaults to
+the phase-function plot (populated at startup rather than blank); and the band-averaged *g*
+readout shows 4 decimals. See CHANGELOG.md's `[v6.3.1]` section.
+
+Previous release: **v6.3.0** (2026-08-11, continuous phase-function sampling).
 Tabulated (liquid and ice) phase functions are now sampled **continuously within each table
 cell** rather than snapped to node values. Node *i* represents a cell of µ of width `wt[i]`
 centred on `xmu[i]`; drawing from within that cell removes an angular-quantization artifact
@@ -744,7 +754,7 @@ Recent history: **v6.0.4** (2026-07-18) — UI/rendering and legend/labeling fix
 **v6.0.3** (2026-07-14) — sunward ground-illumination asymmetry fix (superseded by the
 v6.0.5 redesign); **v6.0.2** (2026-07-14) — Uniform domain illumination with
 open/periodic boundary, R/T/A component breakdown, rigorous BRF/BTF (Phase 4).
-v6.3.0 is the version currently on `main` and in the hosted demo.
+v6.3.1 is the version currently on `main` and in the hosted demo.
 
 ---
 
@@ -767,5 +777,5 @@ by the project author.
 
 If you use this simulator in teaching or research, please cite as:
 
-> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.3.0). GitHub. https://github.com/sepraca/VISTA-C
+> Platnick, S. (2026). *VISTA-C: An Interactive 3D Monte Carlo Visualization of Cloud Radiative Transfer* (v6.3.1). GitHub. https://github.com/sepraca/VISTA-C
 pl

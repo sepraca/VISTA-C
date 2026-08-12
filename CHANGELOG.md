@@ -4,6 +4,65 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.3.1] — 2026-08-11
+
+Interface and provenance patch. **No physics, statistics or numerical change** — every count,
+mean and exported array is bit-identical to v6.3.0.
+
+### Added: a single source of truth for the version
+
+`js/constants.js` now exports `APP_VERSION`. Until now the version lived **only in prose**,
+repeated independently in CHANGELOG.md, README.md and CITATION.cff, with nothing in `js/` or
+`index.html` aware of it at all. Two things followed, both of which actually happened:
+
+- **CITATION.cff sat at 6.0.7 through the v6.1.0 AND v6.2.0 releases**, caught only by chance
+  during the v6.3.0 doc pass. A citation file naming the wrong release is a provenance error,
+  not a typo: for four months it would have had anyone citing VISTA-C name a version that did
+  not contain the work they were citing.
+- With several browser windows open on different builds, **the app gave no way to tell them
+  apart** (author-reported).
+
+Everything version-facing now derives from that constant — the `<h1>` header and page title,
+the JSON export's new `app_version`, and the PNG diagnostic header (appended to the RNG
+provenance line, since the header is fixed at 12 rows).
+
+`app_version` is deliberately distinct from `schema_version`: schema says what **shape** a file
+has, `app_version` says which **build** produced it, and they move independently — v6.3.0
+changed the sampler without touching the schema, so schema alone could not attribute a result
+to a build.
+
+### Added: `verify_version.mjs` gate
+
+Asserts that CHANGELOG's **newest** entry, CITATION.cff, and both README version statements
+agree with `APP_VERSION`, and that nothing hardcodes a version outside it. It checks the
+*newest* CHANGELOG entry rather than mere presence — a stale version still appears somewhere
+in a file that records every past release, so "is it mentioned" proves nothing. It does not
+check the git tag: tagging happens after the bump commit, so requiring it would fail the suite
+on every legitimate pre-release commit.
+
+### Fixed: the HG phase-function plot did not redraw when *g* changed
+
+`index.html`'s *g* input called `UI.getG()` but never `BottomPanel.drawBottomPanel()`, so
+editing *g* left the Phase function panel showing the previous curve. **The physics was never
+affected** — `UI.getG()` is re-read when a run starts — but the plot was stale. The workaround
+users found (select a MODIS/VIIRS band, switch back) worked because the tabulated selectors
+call `RunControl.onPhaseSelectionChange()`, which does redraw. Now hooked on both `onblur` and
+`onchange`, since pressing Enter in a number input fires `change`, not `blur`.
+
+### Changed: bottom panel defaults to the phase-function plot
+
+Was μ histograms, which are empty until photons have been run, so the panel started blank and
+was blank again after every Reset. p(Θs) depends only on the scattering medium, not on run
+data, so it renders immediately and doubles as a visual reminder of the active phase function.
+
+### Changed: band-averaged *g* readout shows 4 decimals
+
+Was 3, which rounds MODIS b1 liquid's 0.8618 to a misleading 0.862 — these values differ in
+the fourth place. The JSON export always kept full precision and the PNG header already used
+4 dp; only the panel readout was short. Supersedes the 3 dp preference recorded 2026-07-27.
+
+---
+
 ## [v6.3.0] — 2026-08-11
 
 ### Fixed: tabulated phase functions are now sampled CONTINUOUSLY (centred-cell interpolation)
