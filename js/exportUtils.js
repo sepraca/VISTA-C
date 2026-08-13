@@ -167,13 +167,64 @@ function tracePath(ctx, x, y, w, h, r) {
 }
 
 export const Export = {
-    downloadDataURL: function(dataURL, filename) {
+    // Low-level: synthesise a download by clicking a temporary <a download>.
+    //
+    // MUST be given a blob: (or http(s):) URL. Do NOT pass a data: URL --
+    // iOS Safari ignores the `download` attribute on data: URLs and does
+    // nothing at all: no file, no error, no exception for a caller's try/catch
+    // to see. That was the 2026-08-12 bug in which both PNG exports were
+    // silently inert on iPhone and iPad while the JSON export (already
+    // blob-based) worked. A dpr-3 PNG also produces a multi-megabyte data URL,
+    // which Safari caps independently, so the blob path fixes two problems.
+    //
+    // The guard below is deliberate: without it this regression is invisible
+    // until someone tries it on an iOS device.
+    downloadViaLink: function(url, filename) {
+      if (typeof url === "string" && url.startsWith("data:")) {
+        console.warn(
+          "downloadViaLink received a data: URL; iOS Safari will silently ignore it. " +
+          "Use Export.downloadBlob()/downloadCanvasPng() instead.");
+      }
       const link = document.createElement("a");
-      link.href = dataURL;
+      link.href = url;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    },
+
+    // Download a Blob. Single mechanism for every export (PNG and JSON), so
+    // there is one code path to verify rather than three.
+    downloadBlob: function(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      Export.downloadViaLink(url, filename);
+      // Deferred revoke. Safari has historically aborted an in-flight download
+      // when its object URL is revoked in the same task; FileSaver.js defers
+      // for this reason. The JSON export revoked immediately and worked on
+      // iPad, but that was a ~1 MB blob -- a multi-megabyte PNG is exactly the
+      // case where the race would show. A 1 s hold costs nothing.
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    },
+
+    // Canvas -> PNG download. toBlob() is asynchronous, so failures here CANNOT
+    // reach a caller's surrounding try/catch -- they must be reported from
+    // inside the callback or they vanish, which is the same failure mode this
+    // whole change exists to fix.
+    downloadCanvasPng: function(canvas, filename) {
+      if (typeof canvas.toBlob !== "function") {
+        // Pre-2017 browsers only. Reached on no current target; iOS Safari has
+        // had toBlob since 11.
+        Export.downloadViaLink(canvas.toDataURL("image/png"), filename);
+        return;
+      }
+      canvas.toBlob(function(blob) {
+        if (!blob) {
+          showLimitWarning("Unable to encode PNG. The image may be too large for this browser.");
+          console.error("canvas.toBlob returned null for", filename);
+          return;
+        }
+        Export.downloadBlob(blob, filename);
+      }, "image/png");
     },
 
     timestampForFilename: function() {
@@ -649,8 +700,7 @@ export const Export = {
         }
 
         const cropped = Export.autoCropCanvas(canvasOut, {pad: 70});
-        const dataURL = cropped.toDataURL("image/png");
-        Export.downloadDataURL(dataURL, `mc_cloud_rt_3d_view_${Export.timestampForFilename()}.png`);
+        Export.downloadCanvasPng(cropped, `mc_cloud_rt_3d_view_${Export.timestampForFilename()}.png`);
       } catch (err) {
         showLimitWarning("Unable to export 3D view. Browser may be blocking canvas export.");
         console.error(err);
@@ -761,8 +811,7 @@ export const Export = {
 
         ctx.drawImage(canvas2, 0, headerH);
 
-        const dataURL = canvasOut.toDataURL("image/png");
-        Export.downloadDataURL(dataURL, `mc_cloud_rt_${mode}_panel_${Export.timestampForFilename()}.png`);
+        Export.downloadCanvasPng(canvasOut, `mc_cloud_rt_${mode}_panel_${Export.timestampForFilename()}.png`);
       } catch (err) {
         showLimitWarning("Unable to export bottom panel.");
         console.error(err);
@@ -1337,9 +1386,7 @@ export const Export = {
         const data = Export.getExportDataObject();
         const json = JSON.stringify(data, null, 2);
         const blob = new Blob([json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        Export.downloadDataURL(url, `mc_cloud_rt_data_${Export.timestampForFilename()}.json`);
-        URL.revokeObjectURL(url);
+        Export.downloadBlob(blob, `mc_cloud_rt_data_${Export.timestampForFilename()}.json`);
       } catch (err) {
         showLimitWarning("Unable to export data file.");
         console.error(err);

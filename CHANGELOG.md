@@ -4,6 +4,67 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [v6.5.1] — 2026-08-13
+
+### Fixed: PNG export did nothing on iOS
+
+Both PNG exports built a `data:` URL with `canvas.toDataURL()` and handed it to a synthesised
+`<a download>` click. **iOS Safari ignores the `download` attribute on `data:` URLs**, so on
+iPhone and iPad the buttons produced no file, no error, and no exception — the surrounding
+`try/catch` never fired and the console stayed clean.
+
+The cause was established by a discriminating test rather than inferred: the JSON export already
+used `URL.createObjectURL(blob)` and **worked on iPad**, while both PNG exports failed, in the
+same session on the same device. Transport was the only difference between them.
+
+All three exports now share **one blob-based path**: `canvas.toBlob()` → `createObjectURL` →
+`<a download>` → deferred revoke. One mechanism to verify instead of three.
+
+Details worth recording:
+
+- **`toBlob()` is asynchronous**, so a failure inside it cannot reach the caller's `try/catch`.
+  A null blob is reported from within the callback — otherwise the fix would reproduce the exact
+  silent-failure mode it exists to cure.
+- **The object URL revoke is deferred ~1 s.** The JSON export revoked in the same task and
+  worked, but that was a ~1 MB blob; a multi-megabyte PNG is where a same-task revoke could race
+  an in-flight download. Safari has history here.
+- A `data:` URL passed to the low-level link helper now logs a `console.warn`, so a future
+  regression is visible without an iOS device to hand.
+
+### Added: `verify_export_download.mjs` — transport gate (13 suites)
+
+This defect passed all 12 suites, produced no console output, and was found only by a human
+tapping the button on an iPad. Node has no download behaviour to observe, so a runtime gate is
+impossible; this is a **source-level** gate asserting the code has not drifted back to the
+transport known to fail silently. Narrow, but it can fail — verified by sabotage: routing the
+bottom panel back through `toDataURL` trips it, and so does collapsing the deferred revoke.
+
+### Verification
+
+Desktop PNG exports from this build and from hosted v6.5.0 are **pixel-identical for both the
+bottom panel and the 3-D view**. The 3-D result is the stronger one: it captures a live WebGL
+render plus an `autoCropCanvas` bounding-box computation, and reproduced exactly across two page
+loads and two builds (at identical window size).
+The encoder entry point changed (`toDataURL` → `toBlob`), which can legitimately alter PNG
+compression choices without altering a single pixel, so pixel comparison is the meaningful test;
+`tools/compare_png_exports.py` was added for exactly this distinction. Both goldens remain
+bit-identical and no export schema changed.
+
+3-D View PNG dimensions are a property of the browser window, not the app, so that export is
+only comparable between runs at identical window size.
+
+### Also added: `tools/compare_png_exports.py`
+
+Reports pixel identity for same-size exports and, for different sizes, whether the ratio is a
+clean `devicePixelRatio` scale. Companion to `compare_json_exports.py`. Verified against
+identical-pixels-different-bytes, a single altered pixel, and a 3/2 dpr scale.
+
+Note for anyone diffing figures across machines: PNG exports are **not** expected to match
+between devices. Export size scales with `devicePixelRatio`, and text rasterisation differs
+between platforms — a macOS/iPadOS comparison of the same run showed ~4.8 % of pixels differing,
+with ~90 % of that in text bands and the polar-plot interiors agreeing to within 0.7 %. That is
+pre-existing rendering behaviour, unrelated to this release.
+
 ## [v6.5.0] — 2026-08-12
 
 ### Added: phone and small-screen layout — display only, no physics change
