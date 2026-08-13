@@ -638,6 +638,34 @@ running statistics, so an export taken after one or more Launch One clicks is
 not reproducible from `rng_seed` alone (the stream has moved on from its
 initial state by then).
 
+**Measured, 2026-08-12.** A 1,000,000-photon run (MODIS band 1, tabulated
+liquid-water phase function at r_eff = 10 µm, Θ₀ = 30°, seed 42, schema 1.8)
+was exported from macOS Safari and repeated on iPadOS Safari. The two files are
+**identical in every field except the `generated` timestamp — including the
+derived BDF floats**, which the caveat above allows to drift at the
+machine-epsilon level. Note this run exercises the *tabulated* sampler with
+centred-cell CDF inversion and oblique illumination, not just Henyey-Greenstein,
+so it puts real load on `log`, `acos` and the trig calls.
+
+Scope of that result, stated precisely: it covers **two platforms but one
+engine family** — macOS and iPadOS Safari are both JavaScriptCore. It therefore
+does *not* exercise the cross-engine `acos`/`cos` rounding noted above; a
+Safari-versus-Chrome comparison would be needed for that, and remains untested.
+
+**Use `tools/compare_exports.py`, not `shasum`, to compare JSON exports.** Every
+export carries a wall-clock `generated` field, so raw digests of two identical
+runs always differ — that difference alone is what made these two files look
+unequal at first. The script hashes the export with that field stripped and, on
+a mismatch, reports exactly which leaves differ:
+
+```bash
+python3 tools/compare_exports.py runA.json runB.json
+# -> IDENTICAL  (ignoring 'generated'), exit status 0
+```
+
+Exported PNGs carry no timestamp, so plain `shasum -a 256` is the right tool for
+those.
+
 ### Comparison plots
 
 `tests/Illumination comparisons/illumination_comparison.py` builds a 4×2 figure
