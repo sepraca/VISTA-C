@@ -652,14 +652,14 @@ engine family** — macOS and iPadOS Safari are both JavaScriptCore. It therefor
 does *not* exercise the cross-engine `acos`/`cos` rounding noted above; a
 Safari-versus-Chrome comparison would be needed for that, and remains untested.
 
-**Use `tools/compare_exports.py`, not `shasum`, to compare JSON exports.** Every
+**Use `tools/compare_json_exports.py`, not `shasum`, to compare JSON exports.** Every
 export carries a wall-clock `generated` field, so raw digests of two identical
 runs always differ — that difference alone is what made these two files look
 unequal at first. The script hashes the export with that field stripped and, on
 a mismatch, reports exactly which leaves differ:
 
 ```bash
-python3 tools/compare_exports.py runA.json runB.json
+python3 tools/compare_json_exports.py runA.json runB.json
 # -> IDENTICAL  (ignoring 'generated'), exit status 0
 ```
 
