@@ -629,9 +629,10 @@ print(exp.fluxes["R_reflected"])
 
 Because the xoshiro128** RNG is deterministic, two runs at the same seed, photon
 count, and horizontal extent reproduce these exports exactly — all photon
-tallies are bit-identical across browsers and platforms (only the derived BDF
-floats may differ at the ~10⁻¹⁵ machine-epsilon level from cross-engine
-rounding in `acos`/`cos`). Note: this only holds starting from a fresh
+tallies are bit-identical across browsers and platforms (the sole exception,
+now measured rather than anticipated, is `bdf.theta_centers_deg`, which can
+differ by 1–2 ULP from cross-engine rounding in `acos` — see below). Note:
+this only holds starting from a fresh
 **Launch Ensemble** or **Reset** — successive **Launch One** clicks draw new,
 distinct photons from the *advancing* RNG stream and accumulate into the
 running statistics, so an export taken after one or more Launch One clicks is
@@ -647,10 +648,32 @@ machine-epsilon level. Note this run exercises the *tabulated* sampler with
 centred-cell CDF inversion and oblique illumination, not just Henyey-Greenstein,
 so it puts real load on `log`, `acos` and the trig calls.
 
-Scope of that result, stated precisely: it covers **two platforms but one
-engine family** — macOS and iPadOS Safari are both JavaScriptCore. It therefore
-does *not* exercise the cross-engine `acos`/`cos` rounding noted above; a
-Safari-versus-Chrome comparison would be needed for that, and remains untested.
+That result covers two platforms but one engine family — macOS and iPadOS
+Safari are both JavaScriptCore — so it does not by itself exercise the
+cross-engine rounding noted above.
+
+**Cross-engine, measured 2026-08-13.** The same run exported from Safari
+(JavaScriptCore) and Chrome (V8) on the same machine differs in **exactly one
+place: 5 of the 45 entries of `bdf.theta_centers_deg`, each by 1–2 ULP**
+(relative difference ~2 × 10⁻¹⁶):
+
+| µ bin | Safari | Chrome | ULPs |
+|---|---|---|---|
+| 0 | 8.5490788305216121 | 8.5490788305216103 | 1 |
+| 15 | 49.038211447650653 | 49.038211447650639 | 2 |
+| 25 | 64.320711380543145 | 64.320711380543159 | 1 |
+| 31 | 72.542396876277905 | 72.54239687627792 | 1 |
+| 36 | 79.112051869879835 | 79.112051869879849 | 1 |
+
+**Every photon tally, every BDF weight, every flux, and `mu_centers` itself are
+bit-identical.** The divergence is confined to `theta_centers_deg =
+acos(mu_centers)`, because ECMAScript does not require `acos` to be correctly
+rounded and the two engines' implementations differ in the last bit.
+
+This has **no effect on quantitative use**: the export's own schema notes
+already direct quantitative work to `mu_centers` / `mu_edges` and describe
+`theta_centers_deg` as provided for labelling. The one array that moves across
+engines is the one that was never meant to be computed against.
 
 **Use `tools/compare_json_exports.py`, not `shasum`, to compare JSON exports.** Every
 export carries a wall-clock `generated` field, so raw digests of two identical
